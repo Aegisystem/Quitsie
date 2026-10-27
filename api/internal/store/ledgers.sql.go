@@ -38,6 +38,37 @@ func (q *Queries) CreateLedger(ctx context.Context, arg CreateLedgerParams) erro
 	return err
 }
 
+const deleteLedger = `-- name: DeleteLedger :one
+UPDATE ledgers
+SET deleted_at = ?, version = ?
+WHERE id = ? AND deleted_at IS NULL
+RETURNING id, kind, name, currency, simplify_debts, invite_link_hash, version, created_at, deleted_at
+`
+
+type DeleteLedgerParams struct {
+	DeletedAt *time.Time
+	Version   int64
+	ID        string
+}
+
+// A deleted ledger stays as a versioned row so sync can remove it from replicas.
+func (q *Queries) DeleteLedger(ctx context.Context, arg DeleteLedgerParams) (Ledger, error) {
+	row := q.db.QueryRowContext(ctx, deleteLedger, arg.DeletedAt, arg.Version, arg.ID)
+	var i Ledger
+	err := row.Scan(
+		&i.ID,
+		&i.Kind,
+		&i.Name,
+		&i.Currency,
+		&i.SimplifyDebts,
+		&i.InviteLinkHash,
+		&i.Version,
+		&i.CreatedAt,
+		&i.DeletedAt,
+	)
+	return i, err
+}
+
 const getLedger = `-- name: GetLedger :one
 SELECT id, kind, name, currency, simplify_debts, invite_link_hash, version, created_at, deleted_at FROM ledgers
 WHERE id = ?
@@ -45,6 +76,95 @@ WHERE id = ?
 
 func (q *Queries) GetLedger(ctx context.Context, id string) (Ledger, error) {
 	row := q.db.QueryRowContext(ctx, getLedger, id)
+	var i Ledger
+	err := row.Scan(
+		&i.ID,
+		&i.Kind,
+		&i.Name,
+		&i.Currency,
+		&i.SimplifyDebts,
+		&i.InviteLinkHash,
+		&i.Version,
+		&i.CreatedAt,
+		&i.DeletedAt,
+	)
+	return i, err
+}
+
+const getLedgerByInviteLink = `-- name: GetLedgerByInviteLink :one
+SELECT id, kind, name, currency, simplify_debts, invite_link_hash, version, created_at, deleted_at FROM ledgers
+WHERE invite_link_hash = CAST(?1 AS TEXT) AND deleted_at IS NULL
+`
+
+func (q *Queries) GetLedgerByInviteLink(ctx context.Context, inviteLinkHash string) (Ledger, error) {
+	row := q.db.QueryRowContext(ctx, getLedgerByInviteLink, inviteLinkHash)
+	var i Ledger
+	err := row.Scan(
+		&i.ID,
+		&i.Kind,
+		&i.Name,
+		&i.Currency,
+		&i.SimplifyDebts,
+		&i.InviteLinkHash,
+		&i.Version,
+		&i.CreatedAt,
+		&i.DeletedAt,
+	)
+	return i, err
+}
+
+const setLedgerInviteLink = `-- name: SetLedgerInviteLink :one
+UPDATE ledgers
+SET invite_link_hash = ?, version = ?
+WHERE id = ? AND deleted_at IS NULL
+RETURNING id, kind, name, currency, simplify_debts, invite_link_hash, version, created_at, deleted_at
+`
+
+type SetLedgerInviteLinkParams struct {
+	InviteLinkHash *string
+	Version        int64
+	ID             string
+}
+
+// Stores the hash of a new Invite link, replacing the previous one, or revokes it with NULL.
+func (q *Queries) SetLedgerInviteLink(ctx context.Context, arg SetLedgerInviteLinkParams) (Ledger, error) {
+	row := q.db.QueryRowContext(ctx, setLedgerInviteLink, arg.InviteLinkHash, arg.Version, arg.ID)
+	var i Ledger
+	err := row.Scan(
+		&i.ID,
+		&i.Kind,
+		&i.Name,
+		&i.Currency,
+		&i.SimplifyDebts,
+		&i.InviteLinkHash,
+		&i.Version,
+		&i.CreatedAt,
+		&i.DeletedAt,
+	)
+	return i, err
+}
+
+const updateLedger = `-- name: UpdateLedger :one
+UPDATE ledgers
+SET name = ?, simplify_debts = ?, version = ?
+WHERE id = ? AND deleted_at IS NULL
+RETURNING id, kind, name, currency, simplify_debts, invite_link_hash, version, created_at, deleted_at
+`
+
+type UpdateLedgerParams struct {
+	Name          string
+	SimplifyDebts bool
+	Version       int64
+	ID            string
+}
+
+func (q *Queries) UpdateLedger(ctx context.Context, arg UpdateLedgerParams) (Ledger, error) {
+	row := q.db.QueryRowContext(ctx, updateLedger,
+		arg.Name,
+		arg.SimplifyDebts,
+		arg.Version,
+		arg.ID,
+	)
 	var i Ledger
 	err := row.Scan(
 		&i.ID,
