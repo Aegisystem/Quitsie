@@ -127,3 +127,62 @@ describe('exact', () => {
     })
   })
 })
+
+describe('percentage', () => {
+  it('takes each percentage of the total and keeps it, in hundredths, to re-edit', () => {
+    const percentages = [
+      { participantId: 'ana', value: 5000 },
+      { participantId: 'beto', value: 2500 },
+      { participantId: 'carla', value: 2500 },
+    ]
+    expect(splitExpense(1000, { method: 'percentage', percentages })).toEqual({
+      ok: true,
+      value: [
+        { participantId: 'ana', amount: 500, splitValue: 5000 },
+        { participantId: 'beto', amount: 250, splitValue: 2500 },
+        { participantId: 'carla', amount: 250, splitValue: 2500 },
+      ],
+    })
+  })
+
+  it('gives the leftover to the largest remainder before looking at ids', () => {
+    // 33.33 %, 33.33 % and 33.34 % of 10.00 are 3.333, 3.333 and 3.334.
+    const percentages = [
+      { participantId: 'ana', value: 3333 },
+      { participantId: 'beto', value: 3333 },
+      { participantId: 'carla', value: 3334 },
+    ]
+    expect(splitExpense(1000, { method: 'percentage', percentages })).toEqual({
+      ok: true,
+      value: [
+        { participantId: 'ana', amount: 333, splitValue: 3333 },
+        { participantId: 'beto', amount: 333, splitValue: 3333 },
+        { participantId: 'carla', amount: 334, splitValue: 3334 },
+      ],
+    })
+  })
+
+  it('needs the percentages to add up to exactly 100 %', () => {
+    const percentages = [
+      { participantId: 'ana', value: 5000 },
+      { participantId: 'beto', value: 4000 },
+    ]
+    expect(splitExpense(1000, { method: 'percentage', percentages })).toEqual({
+      ok: false,
+      error: { code: 'sum-mismatch', difference: -1000 },
+    })
+  })
+
+  it('rejects negative percentages and fractions of a hundredth', () => {
+    for (const value of [-1000, 0.5]) {
+      const percentages = [
+        { participantId: 'ana', value: 10000 },
+        { participantId: 'beto', value },
+      ]
+      expect(splitExpense(1000, { method: 'percentage', percentages })).toEqual({
+        ok: false,
+        error: { code: 'invalid-value', participantId: 'beto' },
+      })
+    }
+  })
+})
