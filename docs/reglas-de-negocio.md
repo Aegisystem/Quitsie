@@ -6,7 +6,8 @@ Reglas acordadas durante el diseño. El vocabulario sigue [CONTEXT.md](../CONTEX
 
 - Un Gasto tiene descripción, fecha (por defecto hoy, editable), un total mayor que cero y una Categoría opcional.
 - Tiene al menos un Aporte y al menos una Cuota; los Aportes suman el total y las Cuotas también.
-- Con Porcentajes, los porcentajes suman exactamente 100.
+- Con Porcentajes, cada porcentaje admite hasta dos decimales y entre todos suman exactamente 100.
+- Con Proporciones, los pesos son enteros positivos; una proporción como 1,5:1 se escribe 3:2.
 - Si el reparto no es exacto (100 entre 3), el sobrante se asigna de forma determinista, se ve en la previsualización y las Cuotas se guardan ya calculadas: nunca se recalculan.
 - Los importes respetan los decimales de su moneda.
 - Puede editar o borrar un Gasto de Grupo cualquier Miembro vinculado; uno sin grupo, cualquiera de sus dos Participantes.
