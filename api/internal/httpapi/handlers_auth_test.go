@@ -202,3 +202,21 @@ func TestALoginCodeNeedsAnEmailAddress(t *testing.T) {
 		wantProblem(t, phone.do(http.MethodPost, "/api/v1/auth/login-code", body), http.StatusBadRequest, httpapi.ProblemCodeValidationFailed)
 	}
 }
+
+func TestSigningOutEndsTheSessionOfThatDeviceOnly(t *testing.T) {
+	api := newTestAPI(t)
+	laptop, _ := api.signedIn(t, "ana@example.com")
+	phone, _ := api.signedIn(t, "ana@example.com")
+	copied := laptop.sessionCookie()
+
+	resp := laptop.do(http.MethodPost, "/api/v1/auth/logout", "")
+
+	wantStatus(t, resp, http.StatusNoContent)
+	if c := cookie(resp, auth.SessionCookieName); c == nil || c.MaxAge >= 0 {
+		t.Errorf("logout cookie = %v, want one that deletes the session cookie", c)
+	}
+	wantProblem(t, laptop.do(http.MethodGet, "/api/v1/me", ""), http.StatusUnauthorized, httpapi.ProblemCodeUnauthenticated)
+	// The server ended the session too, so a copy of the cookie is useless.
+	wantProblem(t, api.withSessionCookie(t, copied).do(http.MethodGet, "/api/v1/me", ""), http.StatusUnauthorized, httpapi.ProblemCodeUnauthenticated)
+	decode[httpapi.User](t, phone.do(http.MethodGet, "/api/v1/me", ""), http.StatusOK)
+}

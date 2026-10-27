@@ -31,7 +31,6 @@ var unimplemented = slices.Concat(unimplementedAuth, unimplementedLedgers, unimp
 var unimplementedAuth = []operationRequest{
 	{"StartGoogleLogin", http.MethodGet, "/api/v1/auth/google?returnTo=/groups", ""},
 	{"FinishGoogleLogin", http.MethodGet, "/api/v1/auth/google/callback?code=c&state=s", ""},
-	{"Logout", http.MethodPost, "/api/v1/auth/logout", ""},
 	{"ListSessions", http.MethodGet, "/api/v1/auth/sessions", ""},
 	{"RevokeSession", http.MethodDelete, "/api/v1/auth/sessions/" + someID, ""},
 	{"UpdateMe", http.MethodPatch, "/api/v1/me", "{}"},
@@ -70,7 +69,7 @@ var unimplementedRecords = []operationRequest{
 // The operations that have a real handler, per area.
 var (
 	implementedBase    = []string{"GetHealth"}
-	implementedAuth    = []string{"RequestLoginCode", "VerifyLoginCode", "GetMe"}
+	implementedAuth    = []string{"RequestLoginCode", "VerifyLoginCode", "GetMe", "Logout"}
 	implementedLedgers = []string{}
 	implementedRecords = []string{}
 	implemented        = slices.Concat(implementedBase, implementedAuth, implementedLedgers, implementedRecords)

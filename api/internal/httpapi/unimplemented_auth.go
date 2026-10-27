@@ -17,10 +17,6 @@ func (s *Server) FinishGoogleLogin(context.Context, FinishGoogleLoginRequestObje
 	return nil, errNotImplemented
 }
 
-func (s *Server) Logout(context.Context, LogoutRequestObject) (LogoutResponseObject, error) {
-	return nil, errNotImplemented
-}
-
 func (s *Server) ListSessions(context.Context, ListSessionsRequestObject) (ListSessionsResponseObject, error) {
 	return nil, errNotImplemented
 }

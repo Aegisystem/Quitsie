@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
+	"net/url"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -253,4 +254,31 @@ func withClock(c **clock) func(*auth.Config) {
 		*c = &clock{now: time.Date(2026, 10, 27, 12, 0, 0, 0, time.UTC)}
 		cfg.Now = (*c).Now
 	}
+}
+
+// sessionCookie returns the session cookie the client holds, or nil.
+func (c *client) sessionCookie() *http.Cookie {
+	u, err := url.Parse(c.api.srv.URL)
+	if err != nil {
+		c.t.Fatal(err)
+	}
+	for _, ck := range c.http.Jar.Cookies(u) {
+		if ck.Name == auth.SessionCookieName {
+			return ck
+		}
+	}
+	return nil
+}
+
+// withSessionCookie returns a new client holding a copy of ck, as someone
+// who stole it would.
+func (a *testAPI) withSessionCookie(t *testing.T, ck *http.Cookie) *client {
+	t.Helper()
+	c := a.newClient(t)
+	u, err := url.Parse(a.srv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.http.Jar.SetCookies(u, []*http.Cookie{{Name: ck.Name, Value: ck.Value, Path: "/", Secure: true, HttpOnly: true}})
+	return c
 }

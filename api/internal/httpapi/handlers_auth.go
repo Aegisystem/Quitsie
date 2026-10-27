@@ -71,6 +71,22 @@ func (s *Server) VerifyLoginCode(ctx context.Context, req VerifyLoginCodeRequest
 
 var sixDigits = regexp.MustCompile(`^[0-9]{6}$`)
 
+func (s *Server) Logout(ctx context.Context, _ LogoutRequestObject) (LogoutResponseObject, error) {
+	user, _ := auth.CurrentUser(ctx)
+	session, _ := auth.CurrentSession(ctx)
+	// Already ended, say on another device: signing out is done either way.
+	if err := s.deps.Auth.EndSession(ctx, user.ID, session.ID); err != nil && !errors.Is(err, auth.ErrSessionNotFound) {
+		return nil, err
+	}
+	return Logout204Response{Headers: Logout204ResponseHeaders{SetCookie: clearSessionCookie()}}, nil
+}
+
+// clearSessionCookie is the Set-Cookie header that signs the browser out.
+func clearSessionCookie() *string {
+	c := auth.ClearSessionCookie().String()
+	return &c
+}
+
 func (s *Server) GetMe(ctx context.Context, _ GetMeRequestObject) (GetMeResponseObject, error) {
 	user, _ := auth.CurrentUser(ctx) // requireSession checked there is one
 	return GetMe200JSONResponse(userFrom(user)), nil
