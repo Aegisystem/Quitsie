@@ -166,7 +166,8 @@ function owe(total: bigint, split: Split): Result<Owed[], SplitError> {
 }
 
 // Turns a SplitMethod into OwedShares that add up to exactly the total (ADR 0003).
-// Whoever ends up owing nothing gets no OwedShare: a Participant owes something.
+// Everyone in the split gets one, even when it rounds down to zero (1 cent at
+// 50 %), so that re-editing the Expense keeps the split as it was typed.
 export function splitExpense(total: number, split: Split): Result<OwedShare[], SplitError> {
   assertAmount(total)
   if (total <= 0) return fail({ code: 'total-not-positive' })
@@ -177,9 +178,5 @@ export function splitExpense(total: number, split: Split): Result<OwedShare[], S
 
   const owed = owe(BigInt(total), split)
   if (!owed.ok) return owed
-  return ok(
-    owed.value
-      .filter(({ amount }) => amount > 0n)
-      .map(({ participantId, amount, splitValue }) => ({ participantId, amount: Number(amount), splitValue })),
-  )
+  return ok(owed.value.map(({ participantId, amount, splitValue }) => ({ participantId, amount: Number(amount), splitValue })))
 }

@@ -32,12 +32,13 @@ describe('equal', () => {
     })
   })
 
-  it('leaves out whoever ends up owing nothing, since that is not an OwedShare', () => {
+  it('keeps the OwedShare of whoever the rounding leaves owing nothing, so re-editing keeps the split', () => {
     expect(splitExpense(2, { method: 'equal', participantIds: ['ana', 'beto', 'carla'] })).toEqual({
       ok: true,
       value: [
         { participantId: 'ana', amount: 1, splitValue: null },
         { participantId: 'beto', amount: 1, splitValue: null },
+        { participantId: 'carla', amount: 0, splitValue: null },
       ],
     })
   })
@@ -116,14 +117,17 @@ describe('exact', () => {
     })
   })
 
-  it('leaves out a Participant whose amount is zero', () => {
+  it('keeps a Participant whose amount is zero', () => {
     const amounts = [
       { participantId: 'ana', value: 10000 },
       { participantId: 'beto', value: 0 },
     ]
     expect(splitExpense(10000, { method: 'exact', amounts })).toEqual({
       ok: true,
-      value: [{ participantId: 'ana', amount: 10000, splitValue: null }],
+      value: [
+        { participantId: 'ana', amount: 10000, splitValue: null },
+        { participantId: 'beto', amount: 0, splitValue: null },
+      ],
     })
   })
 })
@@ -158,6 +162,21 @@ describe('percentage', () => {
         { participantId: 'ana', amount: 333, splitValue: 3333 },
         { participantId: 'beto', amount: 333, splitValue: 3333 },
         { participantId: 'carla', amount: 334, splitValue: 3334 },
+      ],
+    })
+  })
+
+  it('keeps the OwedShare that a small percentage rounds down to zero', () => {
+    // 50 % of 0.01 is 0.005: the cent goes to Ana, the lowest id.
+    const percentages = [
+      { participantId: 'ana', value: 5000 },
+      { participantId: 'beto', value: 5000 },
+    ]
+    expect(splitExpense(1, { method: 'percentage', percentages })).toEqual({
+      ok: true,
+      value: [
+        { participantId: 'ana', amount: 1, splitValue: 5000 },
+        { participantId: 'beto', amount: 0, splitValue: 5000 },
       ],
     })
   })
@@ -293,7 +312,7 @@ describe('adjustment', () => {
     })
   })
 
-  it('leaves out whoever the adjustment brings to exactly zero', () => {
+  it('keeps whoever the adjustment brings to exactly zero, with their adjustment', () => {
     const adjustments = [
       { participantId: 'ana', value: -3000 },
       { participantId: 'beto', value: 0 },
@@ -302,6 +321,7 @@ describe('adjustment', () => {
     expect(splitExpense(6000, { method: 'adjustment', adjustments })).toEqual({
       ok: true,
       value: [
+        { participantId: 'ana', amount: 0, splitValue: -3000 },
         { participantId: 'beto', amount: 3000, splitValue: 0 },
         { participantId: 'carla', amount: 3000, splitValue: 0 },
       ],
@@ -369,6 +389,21 @@ describe('every SplitMethod, on random Expenses', () => {
     }
   }
 
+  function participantsIn(split: Split): string[] {
+    switch (split.method) {
+      case 'equal':
+        return [...split.participantIds]
+      case 'exact':
+        return split.amounts.map(({ participantId }) => participantId)
+      case 'percentage':
+        return split.percentages.map(({ participantId }) => participantId)
+      case 'weights':
+        return split.weights.map(({ participantId }) => participantId)
+      case 'adjustment':
+        return split.adjustments.map(({ participantId }) => participantId)
+    }
+  }
+
   function owedShares(total: number, split: Split): OwedShare[] {
     const result = splitExpense(total, split)
     if (!result.ok) throw new Error(`unexpected ${result.error.code}`)
@@ -382,7 +417,9 @@ describe('every SplitMethod, on random Expenses', () => {
   function expectSumAndOrderIndependence(total: number, split: Split): OwedShare[] {
     const shares = owedShares(total, split)
     expect(shares.reduce((acc, { amount }) => acc + BigInt(amount), 0n)).toBe(BigInt(total))
-    expect(shares.every(({ amount }) => Number.isSafeInteger(amount) && amount > 0)).toBe(true)
+    expect(shares.every(({ amount }) => Number.isSafeInteger(amount) && amount >= 0)).toBe(true)
+    // Everyone in the split keeps an OwedShare, even one rounded down to zero.
+    expect(new Set(shares.map(({ participantId }) => participantId))).toEqual(new Set(participantsIn(split)))
     expect(byParticipant(owedShares(total, reordered(split)))).toEqual(byParticipant(shares))
     return shares
   }
