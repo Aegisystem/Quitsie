@@ -90,3 +90,57 @@ func TestChangesSinceZeroBringEverythingTheUserCanSee(t *testing.T) {
 		t.Errorf("the Expense came without its shares: %+v", c.Expenses[0])
 	}
 }
+
+func TestChangesSinceACursorBringOnlyLaterChangesIncludingDeletions(t *testing.T) {
+	ctx := context.Background()
+	db := openMigrated(t)
+	cursor := seedBusyGroup(t, db)
+	write(t, db, func(q *store.Queries, version int64) error {
+		current, err := q.GetExpense(ctx, "expense-1")
+		if err != nil {
+			return err
+		}
+		e := equalSplit("expense-1")
+		e.Version = version
+		if _, err := q.UpdateExpense(ctx, e, current.Version); err != nil {
+			return err
+		}
+		_, err = q.DeleteSettlement(ctx, store.DeleteSettlementParams{ID: "settlement-1", DeletedAt: &now, Version: version})
+		return err
+	})
+
+	c := changesSince(t, db, "ana", cursor)
+
+	assertIDs(t, "Ledgers", ledgerIDs(c))
+	assertIDs(t, "Members", memberIDs(c))
+	assertIDs(t, "Expenses", expenseIDs(c), "expense-1")
+	assertIDs(t, "Settlements", settlementIDs(c), "settlement-1")
+	assertIDs(t, "Activities", activityIDs(c))
+	if len(c.Expenses) == 1 && c.Expenses[0].Total != 10000 {
+		t.Errorf("pulled Expense = %+v, want the edited one", c.Expenses[0].Expense)
+	}
+	if len(c.Settlements) == 1 && c.Settlements[0].DeletedAt == nil {
+		t.Errorf("pulled Settlement = %+v, want its deletion date", c.Settlements[0])
+	}
+}
+
+func TestChangesBringTheWholeLedgerTheUserJustJoined(t *testing.T) {
+	ctx := context.Background()
+	db := openMigrated(t)
+	seedBusyGroup(t, db)
+	cursor := write(t, db, func(q *store.Queries, version int64) error {
+		return q.CreateMember(ctx, newMember("member-pending", "ledger-1", nil, version))
+	})
+	write(t, db, func(q *store.Queries, version int64) error {
+		_, err := q.ClaimMember(ctx, store.ClaimMemberParams{ID: "member-pending", UserID: "carla", Version: version})
+		return err
+	})
+
+	c := changesSince(t, db, "carla", cursor)
+
+	assertIDs(t, "Ledgers", ledgerIDs(c), "ledger-1")
+	assertIDs(t, "Members", memberIDs(c), "member-ana", "member-beto", "member-pending")
+	assertIDs(t, "Expenses", expenseIDs(c), "expense-1")
+	assertIDs(t, "Settlements", settlementIDs(c), "settlement-1")
+	assertIDs(t, "Activities", activityIDs(c), "activity-1")
+}
