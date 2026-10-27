@@ -485,3 +485,131 @@ func TestAGroupWithSomeBalanceCannotBeDeleted(t *testing.T) {
 		t.Errorf("ledgers = %+v, want the Group alive", ledgers)
 	}
 }
+
+func TestAddPendingMember(t *testing.T) {
+	w := newWorld(t)
+	ana := w.signIn("Ana")
+	groupID := ana.createGroup(`{"name":"Casa","currency":"COP"}`)
+
+	rec := ana.send(http.MethodPost, "/api/v1/groups/"+groupID+"/members", `{"name":" Carla ","email":"carla@example.com"}`)
+
+	m := decode[httpapi.Member](t, rec, http.StatusCreated)
+	if m.Name != "Carla" || m.Email == nil || *m.Email != "carla@example.com" || m.UserId != nil || m.Status != httpapi.Active || m.LedgerId.String() != groupID {
+		t.Errorf("member = %+v, want Carla pending in the Group with her email", m)
+	}
+	changes := ana.pull()
+	if len(membersOf(changes, groupID)) != 2 {
+		t.Errorf("members = %+v, want Ana and Carla", membersOf(changes, groupID))
+	}
+	if kinds := strings.Join(activityKinds(changes, groupID), ","); kinds != "group_created,member_added" {
+		t.Errorf("activities = %s, want group_created,member_added", kinds)
+	}
+}
+
+func TestAddPendingMemberNeedsAName(t *testing.T) {
+	w := newWorld(t)
+	ana := w.signIn("Ana")
+	groupID := ana.createGroup(`{"name":"Casa","currency":"COP"}`)
+
+	rec := ana.send(http.MethodPost, "/api/v1/groups/"+groupID+"/members", `{"name":""}`)
+
+	decodeProblem(t, rec, http.StatusBadRequest, httpapi.ProblemCodeValidationFailed)
+}
+
+// member is the Member memberID as p sees it.
+func (p *person) member(ledgerID, memberID string) store.Member {
+	p.w.t.Helper()
+	for _, m := range membersOf(p.pull(), ledgerID) {
+		if m.ID == memberID {
+			return m
+		}
+	}
+	p.w.t.Fatalf("no Member %s in %s", memberID, ledgerID)
+	return store.Member{}
+}
+
+func TestRemoveAPendingMemberWithBalanceZero(t *testing.T) {
+	w := newWorld(t)
+	ana := w.signIn("Ana")
+	groupID := ana.createGroup(`{"name":"Casa","currency":"COP","pendingMembers":[{"name":"Beto"}]}`)
+	betoID := ana.memberID(groupID, "Beto")
+
+	rec := ana.send(http.MethodDelete, "/api/v1/groups/"+groupID+"/members/"+betoID, "")
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("code = %d, want 204 (body %q)", rec.Code, rec.Body.String())
+	}
+	if m := ana.member(groupID, betoID); m.Status != "former" {
+		t.Errorf("Beto = %+v, want a former member", m)
+	}
+	if kinds := strings.Join(activityKinds(ana.pull(), groupID), ","); kinds != "group_created,member_removed" {
+		t.Errorf("activities = %s, want group_created,member_removed", kinds)
+	}
+}
+
+func TestAMemberWithSomeBalanceCannotBeRemoved(t *testing.T) {
+	w := newWorld(t)
+	ana := w.signIn("Ana")
+	groupID := ana.createGroup(`{"name":"Casa","currency":"COP","pendingMembers":[{"name":"Beto"}]}`)
+	betoID := ana.memberID(groupID, "Beto")
+	ana.expense(groupID, "COP", ana.memberID(groupID, "Ana"), map[string]int64{betoID: 5000})
+
+	rec := ana.send(http.MethodDelete, "/api/v1/groups/"+groupID+"/members/"+betoID, "")
+
+	decodeProblem(t, rec, http.StatusConflict, httpapi.ProblemCodeNonzeroBalance)
+	if m := ana.member(groupID, betoID); m.Status != "active" {
+		t.Errorf("Beto = %+v, want still active", m)
+	}
+}
+
+func TestRemoveMemberOnlyFindsActiveMembersOfThatGroup(t *testing.T) {
+	w := newWorld(t)
+	ana := w.signIn("Ana")
+	groupID := ana.createGroup(`{"name":"Casa","currency":"COP","pendingMembers":[{"name":"Beto"}]}`)
+	otherID := ana.createGroup(`{"name":"Oficina","currency":"COP","pendingMembers":[{"name":"Carla"}]}`)
+	betoID := ana.memberID(groupID, "Beto")
+	ana.send(http.MethodDelete, "/api/v1/groups/"+groupID+"/members/"+betoID, "")
+
+	for name, memberID := range map[string]string{
+		"a former member":             betoID,
+		"a Member of another Group":   ana.memberID(otherID, "Carla"),
+		"a Member that never existed": someID,
+	} {
+		t.Run(name, func(t *testing.T) {
+			rec := ana.send(http.MethodDelete, "/api/v1/groups/"+groupID+"/members/"+memberID, "")
+
+			decodeProblem(t, rec, http.StatusNotFound, httpapi.ProblemCodeNotFound)
+		})
+	}
+}
+
+func TestLeaveGroupWithBalanceZero(t *testing.T) {
+	w := newWorld(t)
+	ana := w.signIn("Ana")
+	groupID := ana.createGroup(`{"name":"Casa","currency":"COP","pendingMembers":[{"name":"Beto"}]}`)
+
+	rec := ana.send(http.MethodPost, "/api/v1/groups/"+groupID+"/leave", "")
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("code = %d, want 204 (body %q)", rec.Code, rec.Body.String())
+	}
+	if dropped := ana.pull().DroppedLedgerIDs; len(dropped) != 1 || dropped[0] != groupID {
+		t.Errorf("dropped ledgers = %v, want the Group", dropped)
+	}
+	again := ana.send(http.MethodPatch, "/api/v1/groups/"+groupID, `{"name":"Otra"}`)
+	decodeProblem(t, again, http.StatusNotFound, httpapi.ProblemCodeNotFound)
+}
+
+func TestNobodyLeavesAGroupOwingOrBeingOwed(t *testing.T) {
+	w := newWorld(t)
+	ana := w.signIn("Ana")
+	groupID := ana.createGroup(`{"name":"Casa","currency":"COP","pendingMembers":[{"name":"Beto"}]}`)
+	ana.expense(groupID, "COP", ana.memberID(groupID, "Ana"), map[string]int64{ana.memberID(groupID, "Beto"): 5000})
+
+	rec := ana.send(http.MethodPost, "/api/v1/groups/"+groupID+"/leave", "")
+
+	decodeProblem(t, rec, http.StatusConflict, httpapi.ProblemCodeNonzeroBalance)
+	if dropped := ana.pull().DroppedLedgerIDs; len(dropped) != 0 {
+		t.Errorf("dropped ledgers = %v, want none", dropped)
+	}
+}

@@ -12,6 +12,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/google/uuid"
+	openapi_types "github.com/oapi-codegen/runtime/types"
 
 	"github.com/Aegisystem/Quitsie/api/internal/auth"
 	"github.com/Aegisystem/Quitsie/api/internal/domain"
@@ -431,4 +432,148 @@ func (s *Server) DeleteGroup(ctx context.Context, req DeleteGroupRequestObject) 
 		return answer(err, respond)
 	}
 	return DeleteGroup204Response{}, nil
+}
+
+// --- members ---
+
+func memberResponse(m store.Member) Member {
+	r := Member{
+		Id:       uuid.MustParse(m.ID),
+		LedgerId: uuid.MustParse(m.LedgerID),
+		Name:     m.Name,
+		Status:   MemberStatus(m.Status),
+		Version:  m.Version,
+	}
+	if m.UserID != nil {
+		id := uuid.MustParse(*m.UserID)
+		r.UserId = &id
+	}
+	if m.Email != nil {
+		email := openapi_types.Email(*m.Email)
+		r.Email = &email
+	}
+	return r
+}
+
+func (s *Server) AddPendingMember(ctx context.Context, req AddPendingMemberRequestObject) (AddPendingMemberResponseObject, error) {
+	respond := func(status int, p Problem) AddPendingMemberResponseObject {
+		return AddPendingMemberdefaultApplicationProblemPlusJSONResponse{Body: p, StatusCode: status}
+	}
+	user, err := currentUser(ctx)
+	if err != nil {
+		return answer(err, respond)
+	}
+	pending, err := cleanPendingMember(*req.Body)
+	if err != nil {
+		return answer(err, respond)
+	}
+	var member store.Member
+	_, err = store.Write(ctx, s.deps.DB, func(q *store.Queries, version int64) error {
+		snap, _, err := open(ctx, q, req.GroupId.String(), "group", user.ID)
+		if err != nil {
+			return err
+		}
+		member = store.Member{
+			ID:        newID(),
+			LedgerID:  snap.Ledger.ID,
+			Name:      pending.name,
+			Email:     pending.email,
+			Status:    "active",
+			Version:   version,
+			CreatedAt: time.Now().UTC(),
+		}
+		err = q.CreateMember(ctx, store.CreateMemberParams{
+			ID:        member.ID,
+			LedgerID:  member.LedgerID,
+			Name:      member.Name,
+			Email:     member.Email,
+			Version:   version,
+			CreatedAt: member.CreatedAt,
+		})
+		if err != nil {
+			return fmt.Errorf("add pending member: %w", err)
+		}
+		return activity(ctx, q, member.LedgerID, user.ID, "member_added", map[string]any{"memberId": member.ID, "name": member.Name}, version)
+	})
+	if err != nil {
+		return answer(err, respond)
+	}
+	return AddPendingMember201JSONResponse(memberResponse(member)), nil
+}
+
+// memberOf finds the Member memberID in snap, in any status.
+func memberOf(snap ledgers.Snapshot, memberID string) (store.Member, bool) {
+	for _, m := range snap.Members {
+		if m.ID == memberID {
+			return m, true
+		}
+	}
+	return store.Member{}, false
+}
+
+// retire turns the active Member m into a former member, who stays on past
+// Expenses but no longer sees the Group. Only with Balance zero: nobody leaves
+// or is removed owing or being owed.
+func retire(ctx context.Context, q *store.Queries, snap ledgers.Snapshot, m store.Member, version int64) error {
+	for _, b := range snap.Balances() {
+		if b.MemberID == m.ID {
+			return errNonzeroBalance
+		}
+	}
+	if _, err := q.MarkMemberFormer(ctx, store.MarkMemberFormerParams{ID: m.ID, Version: version}); err != nil {
+		return fmt.Errorf("mark member former: %w", err)
+	}
+	return nil
+}
+
+func (s *Server) RemoveMember(ctx context.Context, req RemoveMemberRequestObject) (RemoveMemberResponseObject, error) {
+	respond := func(status int, p Problem) RemoveMemberResponseObject {
+		return RemoveMemberdefaultApplicationProblemPlusJSONResponse{Body: p, StatusCode: status}
+	}
+	user, err := currentUser(ctx)
+	if err != nil {
+		return answer(err, respond)
+	}
+	_, err = store.Write(ctx, s.deps.DB, func(q *store.Queries, version int64) error {
+		snap, _, err := open(ctx, q, req.GroupId.String(), "group", user.ID)
+		if err != nil {
+			return err
+		}
+		m, ok := memberOf(snap, req.MemberId.String())
+		if !ok || m.Status != "active" {
+			return errNotFound
+		}
+		if err := retire(ctx, q, snap, m, version); err != nil {
+			return err
+		}
+		return activity(ctx, q, snap.Ledger.ID, user.ID, "member_removed", map[string]any{"memberId": m.ID}, version)
+	})
+	if err != nil {
+		return answer(err, respond)
+	}
+	return RemoveMember204Response{}, nil
+}
+
+func (s *Server) LeaveGroup(ctx context.Context, req LeaveGroupRequestObject) (LeaveGroupResponseObject, error) {
+	respond := func(status int, p Problem) LeaveGroupResponseObject {
+		return LeaveGroupdefaultApplicationProblemPlusJSONResponse{Body: p, StatusCode: status}
+	}
+	user, err := currentUser(ctx)
+	if err != nil {
+		return answer(err, respond)
+	}
+	_, err = store.Write(ctx, s.deps.DB, func(q *store.Queries, version int64) error {
+		snap, me, err := open(ctx, q, req.GroupId.String(), "group", user.ID)
+		if err != nil {
+			return err
+		}
+		if err := retire(ctx, q, snap, me, version); err != nil {
+			return err
+		}
+		return activity(ctx, q, snap.Ledger.ID, user.ID, "member_left", map[string]any{"memberId": me.ID}, version)
+	})
+	if err != nil {
+		return answer(err, respond)
+	}
+	return LeaveGroup204Response{}, nil
 }

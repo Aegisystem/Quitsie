@@ -9,19 +9,7 @@ import "context"
 
 // --- groups ---
 
-func (s *Server) AddPendingMember(context.Context, AddPendingMemberRequestObject) (AddPendingMemberResponseObject, error) {
-	return nil, errNotImplemented
-}
-
-func (s *Server) RemoveMember(context.Context, RemoveMemberRequestObject) (RemoveMemberResponseObject, error) {
-	return nil, errNotImplemented
-}
-
 func (s *Server) UndoClaim(context.Context, UndoClaimRequestObject) (UndoClaimResponseObject, error) {
-	return nil, errNotImplemented
-}
-
-func (s *Server) LeaveGroup(context.Context, LeaveGroupRequestObject) (LeaveGroupResponseObject, error) {
 	return nil, errNotImplemented
 }
 
