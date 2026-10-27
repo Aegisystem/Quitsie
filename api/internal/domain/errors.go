@@ -23,4 +23,9 @@ var (
 	ErrFriendshipNotTwoMembers = errors.New("a friendship has exactly two members")
 	// ErrUnknownLedgerKind: the ledger is neither a Group nor a Friendship.
 	ErrUnknownLedgerKind = errors.New("unknown ledger kind")
+	// ErrUnknownSplitMethod: the SplitMethod is not one of the five known ones.
+	ErrUnknownSplitMethod = errors.New("unknown split method")
+	// ErrInvalidSplitValues: the SplitMethod's inputs are malformed (for
+	// example, percentages that do not add up to 100%).
+	ErrInvalidSplitValues = errors.New("invalid split values")
 )

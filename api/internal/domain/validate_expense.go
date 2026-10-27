@@ -38,8 +38,60 @@ func ValidateExpense(ledger Ledger, e Expense) error {
 	if err := checkParticipants(ledger, debtors); err != nil {
 		return fmt.Errorf("owed shares: %w", err)
 	}
-	return nil
+	return checkSplitValues(e.SplitMethod, e.OwedShares)
 }
+
+// checkSplitValues checks the format of the SplitMethod's inputs kept to
+// re-edit the Expense. It never recomputes the OwedShares from them.
+//
+// Provisional rule, pending the user's confirmation in docs/reglas-de-negocio.md:
+// percentages have two decimals (hundredths adding up to 10000), weights are
+// positive integers, every OwedShare of a percentage, weights or adjustment split
+// carries its value, and equal and exact splits carry none.
+func checkSplitValues(method SplitMethod, shares []OwedShare) error {
+	switch method {
+	case SplitPercentage:
+		// Percentages are in hundredths, so they add up to 10000 (100%).
+		var sum int64
+		for _, s := range shares {
+			if s.SplitValue == nil || *s.SplitValue <= 0 || *s.SplitValue > fullPercentage {
+				return fmt.Errorf("member %q: percentage must be between 0.01%% and 100%%: %w", s.MemberID, ErrInvalidSplitValues)
+			}
+			sum += *s.SplitValue
+		}
+		if sum != fullPercentage {
+			return fmt.Errorf("percentages add up to %d hundredths, not %d: %w", sum, fullPercentage, ErrInvalidSplitValues)
+		}
+		return nil
+	case SplitWeights:
+		for _, s := range shares {
+			if s.SplitValue == nil || *s.SplitValue <= 0 {
+				return fmt.Errorf("member %q: weight must be a positive integer: %w", s.MemberID, ErrInvalidSplitValues)
+			}
+		}
+		return nil
+	case SplitAdjustment:
+		// An adjustment is an amount in minor units and may be zero or negative.
+		for _, s := range shares {
+			if s.SplitValue == nil {
+				return fmt.Errorf("member %q: missing adjustment: %w", s.MemberID, ErrInvalidSplitValues)
+			}
+		}
+		return nil
+	case SplitEqual, SplitExact:
+		for _, s := range shares {
+			if s.SplitValue != nil {
+				return fmt.Errorf("member %q: %s split takes no values: %w", s.MemberID, method, ErrInvalidSplitValues)
+			}
+		}
+		return nil
+	default:
+		return fmt.Errorf("%w: %q", ErrUnknownSplitMethod, method)
+	}
+}
+
+// fullPercentage is 100% in hundredths of a percent.
+const fullPercentage = 10000
 
 // checkParticipants checks that each Participant is an active Member of ledger
 // and appears only once.

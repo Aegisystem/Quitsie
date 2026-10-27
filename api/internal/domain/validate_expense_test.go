@@ -66,6 +66,7 @@ func TestValidateExpenseRejects(t *testing.T) {
 		{"a former member", func(e *domain.Expense) { e.OwedShares[1].MemberID = "dani" }, domain.ErrNotActiveMember},
 		{"a currency other than the Group currency", func(e *domain.Expense) { e.Currency = "EUR" }, domain.ErrNotGroupCurrency},
 		{"an unknown currency", func(e *domain.Expense) { e.Currency = "ABC" }, domain.ErrUnknownCurrency},
+		{"an unknown split method", func(e *domain.Expense) { e.SplitMethod = "shares" }, domain.ErrUnknownSplitMethod},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -117,5 +118,44 @@ func TestValidateExpenseRejectsAnUnknownLedgerKind(t *testing.T) {
 	ledger.Kind = "club"
 	if err := domain.ValidateExpense(ledger, dinner()); !errors.Is(err, domain.ErrUnknownLedgerKind) {
 		t.Errorf("err = %v, want ErrUnknownLedgerKind", err)
+	}
+}
+
+func TestValidateExpenseChecksTheSplitValues(t *testing.T) {
+	tests := []struct {
+		name   string
+		method domain.SplitMethod
+		values []*int64 // one per OwedShare of dinner: Ana 5.25, Beto 5.25
+		want   error
+	}{
+		{"percentages adding up to 100%", domain.SplitPercentage, []*int64{ptr(5000), ptr(5000)}, nil},
+		{"percentages with two decimals", domain.SplitPercentage, []*int64{ptr(4999), ptr(5001)}, nil},
+		{"percentages under 100%", domain.SplitPercentage, []*int64{ptr(5000), ptr(4999)}, domain.ErrInvalidSplitValues},
+		{"percentages over 100%", domain.SplitPercentage, []*int64{ptr(5000), ptr(5001)}, domain.ErrInvalidSplitValues},
+		{"a missing percentage", domain.SplitPercentage, []*int64{ptr(10000), nil}, domain.ErrInvalidSplitValues},
+		{"a negative percentage", domain.SplitPercentage, []*int64{ptr(12000), ptr(-2000)}, domain.ErrInvalidSplitValues},
+		{"a zero percentage", domain.SplitPercentage, []*int64{ptr(10000), ptr(0)}, domain.ErrInvalidSplitValues},
+		{"positive weights", domain.SplitWeights, []*int64{ptr(1), ptr(1)}, nil},
+		{"a missing weight", domain.SplitWeights, []*int64{ptr(1), nil}, domain.ErrInvalidSplitValues},
+		{"a zero weight", domain.SplitWeights, []*int64{ptr(1), ptr(0)}, domain.ErrInvalidSplitValues},
+		{"a negative weight", domain.SplitWeights, []*int64{ptr(2), ptr(-1)}, domain.ErrInvalidSplitValues},
+		{"adjustments of any sign", domain.SplitAdjustment, []*int64{ptr(-25), ptr(0)}, nil},
+		{"a missing adjustment", domain.SplitAdjustment, []*int64{ptr(25), nil}, domain.ErrInvalidSplitValues},
+		{"equal parts without values", domain.SplitEqual, []*int64{nil, nil}, nil},
+		{"equal parts with a value", domain.SplitEqual, []*int64{nil, ptr(1)}, domain.ErrInvalidSplitValues},
+		{"exact amounts without values", domain.SplitExact, []*int64{nil, nil}, nil},
+		{"exact amounts with a value", domain.SplitExact, []*int64{ptr(525), nil}, domain.ErrInvalidSplitValues},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := dinner()
+			e.SplitMethod = tt.method
+			for i, v := range tt.values {
+				e.OwedShares[i].SplitValue = v
+			}
+			if err := domain.ValidateExpense(trip(), e); !errors.Is(err, tt.want) {
+				t.Errorf("err = %v, want %v", err, tt.want)
+			}
+		})
 	}
 }
