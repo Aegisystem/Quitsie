@@ -13,4 +13,14 @@ var (
 	ErrMissingShares = errors.New("an expense needs at least one paid share and one owed share")
 	// ErrSharesDoNotAddUp: the PaidShares or the OwedShares do not add up to the total.
 	ErrSharesDoNotAddUp = errors.New("shares do not add up to the total")
+	// ErrDuplicateParticipant: a Participant has two PaidShares or two OwedShares.
+	ErrDuplicateParticipant = errors.New("participant appears twice")
+	// ErrNotActiveMember: a Participant is not an active Member of the ledger.
+	ErrNotActiveMember = errors.New("not an active member of the ledger")
+	// ErrNotGroupCurrency: a record of a Group is not in the Group currency.
+	ErrNotGroupCurrency = errors.New("currency is not the group currency")
+	// ErrFriendshipNotTwoMembers: a Friendship's ledger does not have exactly two Members (ADR 0004).
+	ErrFriendshipNotTwoMembers = errors.New("a friendship has exactly two members")
+	// ErrUnknownLedgerKind: the ledger is neither a Group nor a Friendship.
+	ErrUnknownLedgerKind = errors.New("unknown ledger kind")
 )

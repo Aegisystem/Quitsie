@@ -57,6 +57,15 @@ func TestValidateExpenseRejects(t *testing.T) {
 				{MemberID: "carla", Amount: 1052}, // MaxInt64 + MaxInt64 + 1052 wraps to 1050
 			}
 		}, domain.ErrSharesDoNotAddUp},
+		{"the same Participant paying twice", func(e *domain.Expense) {
+			e.PaidShares = []domain.PaidShare{{MemberID: "ana", Amount: 1000}, {MemberID: "ana", Amount: 50}}
+		}, domain.ErrDuplicateParticipant},
+		{"the same Participant owing twice", func(e *domain.Expense) { e.OwedShares[1].MemberID = "ana" }, domain.ErrDuplicateParticipant},
+		{"a payer who is not in the Group", func(e *domain.Expense) { e.PaidShares[0].MemberID = "eva" }, domain.ErrNotActiveMember},
+		{"a debtor who is not in the Group", func(e *domain.Expense) { e.OwedShares[1].MemberID = "eva" }, domain.ErrNotActiveMember},
+		{"a former member", func(e *domain.Expense) { e.OwedShares[1].MemberID = "dani" }, domain.ErrNotActiveMember},
+		{"a currency other than the Group currency", func(e *domain.Expense) { e.Currency = "EUR" }, domain.ErrNotGroupCurrency},
+		{"an unknown currency", func(e *domain.Expense) { e.Currency = "ABC" }, domain.ErrUnknownCurrency},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -66,5 +75,47 @@ func TestValidateExpenseRejects(t *testing.T) {
 				t.Errorf("err = %v, want %v", err, tt.want)
 			}
 		})
+	}
+}
+
+// friendship is the ledger of Ana and her Friend Beto.
+func friendship() domain.Ledger {
+	return domain.Ledger{
+		Kind: domain.LedgerFriendship,
+		Members: []domain.Member{
+			{ID: "ana", Status: domain.MemberActive},
+			{ID: "beto", Status: domain.MemberActive},
+		},
+	}
+}
+
+func TestValidateExpenseAcceptsAnyCurrencyInAFriendship(t *testing.T) {
+	for _, c := range []domain.Currency{"USD", "JPY", "KWD"} {
+		e := dinner()
+		e.Currency = c
+		if err := domain.ValidateExpense(friendship(), e); err != nil {
+			t.Errorf("ValidateExpense(dinner in %s) = %v, want nil", c, err)
+		}
+	}
+}
+
+func TestValidateExpenseRejectsAFriendshipWithoutExactlyTwoMembers(t *testing.T) {
+	crowded := friendship()
+	crowded.Members = append(crowded.Members, domain.Member{ID: "carla", Status: domain.MemberActive})
+	alone := friendship()
+	alone.Members = alone.Members[:1]
+
+	for name, ledger := range map[string]domain.Ledger{"three members": crowded, "one member": alone} {
+		if err := domain.ValidateExpense(ledger, dinner()); !errors.Is(err, domain.ErrFriendshipNotTwoMembers) {
+			t.Errorf("%s: err = %v, want ErrFriendshipNotTwoMembers", name, err)
+		}
+	}
+}
+
+func TestValidateExpenseRejectsAnUnknownLedgerKind(t *testing.T) {
+	ledger := trip()
+	ledger.Kind = "club"
+	if err := domain.ValidateExpense(ledger, dinner()); !errors.Is(err, domain.ErrUnknownLedgerKind) {
+		t.Errorf("err = %v, want ErrUnknownLedgerKind", err)
 	}
 }
