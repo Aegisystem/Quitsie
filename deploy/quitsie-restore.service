@@ -1,0 +1,43 @@
+# Install as /etc/systemd/system/quitsie-restore.service on the VM (provision.sh does it).
+#
+# Runs once per boot, before the app and Litestream. On a fresh VM with no
+# database it brings the latest backup back from R2. It does nothing when the
+# database already exists or when R2 has no backup yet (the very first deploy).
+# If R2 cannot be reached it fails, and so do the units that require it: better
+# stopped than started with an empty database that diverges from the backup.
+[Unit]
+Description=Restore the Quitsie database from R2 when the VM has none
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+User=quitsie
+Group=quitsie
+StateDirectory=quitsie
+StateDirectoryMode=0750
+UMask=0077
+# R2 credentials: LITESTREAM_ACCESS_KEY_ID, LITESTREAM_SECRET_ACCESS_KEY, R2_ACCOUNT_ID.
+EnvironmentFile=/etc/quitsie/litestream.env
+ExecStart=/usr/bin/litestream restore -config /etc/litestream.yml -if-db-not-exists -if-replica-exists /var/lib/quitsie/quitsie.db
+TimeoutStartSec=10min
+
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+CapabilityBoundingSet=
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

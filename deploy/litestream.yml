@@ -1,11 +1,22 @@
-# Draft for Litestream 0.5. Install as /etc/litestream.yml on the VM.
+# Litestream 0.5. Install as /etc/litestream.yml on the VM (provision.sh does it).
 #
 # Litestream reads the SQLite WAL and continuously copies it to Cloudflare R2.
-# Credentials come from the environment (/etc/quitsie/litestream.env):
-# LITESTREAM_ACCESS_KEY_ID and LITESTREAM_SECRET_ACCESS_KEY, plus
-# R2_ACCOUNT_ID, which is expanded below. Litestream detects the R2 endpoint
-# and applies the settings R2 needs on its own.
+# It holds no secrets: credentials come from the environment
+# (/etc/quitsie/litestream.env): LITESTREAM_ACCESS_KEY_ID and
+# LITESTREAM_SECRET_ACCESS_KEY, plus R2_ACCOUNT_ID, which is expanded below.
+# For an *.r2.cloudflarestorage.com endpoint (https:// is required for the
+# detection) Litestream applies the settings R2 needs on its own.
+
+# Full snapshots daily, kept for a week: that is how far back a point-in-time
+# restore can reach. The database is small, so the storage is negligible.
+snapshot:
+  interval: 24h
+  retention: 168h
+
 dbs:
   - path: /var/lib/quitsie/quitsie.db
     replica:
-      url: s3://quitsie-backups/quitsie.db?endpoint=https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com
+      # region=auto is what R2 documents. The default sync-interval (1s) costs
+      # one R2 write per second while the app is writing; the free tier allows
+      # 1,000,000 writes a month (see docs/despliegue.md).
+      url: s3://quitsie-backups/quitsie.db?endpoint=https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com&region=auto

@@ -1,32 +1,36 @@
-# Draft. Install as /etc/systemd/system/quitsie.service on the VM.
+# Install as /etc/systemd/system/quitsie.service on the VM (provision.sh does it).
 [Unit]
 Description=Quitsie (API + PWA)
-After=network-online.target
+# A fresh VM must get its database back from R2 before the app can create an
+# empty one: quitsie-restore.service does that and holds the R2 credentials,
+# so the app never sees them. If the restore fails, the app does not start.
+Requires=quitsie-restore.service
+After=network-online.target quitsie-restore.service
 Wants=network-online.target
 
 [Service]
 Type=simple
 User=quitsie
 Group=quitsie
-# Creates /var/lib/quitsie owned by the quitsie user.
+# Creates /var/lib/quitsie owned by the quitsie user; the database holds
+# personal data, so nobody else can read it.
 StateDirectory=quitsie
+StateDirectoryMode=0750
 WorkingDirectory=/var/lib/quitsie
+UMask=0077
 
 # Only cloudflared connects to it: no public port.
 Environment=QUITSIE_ADDR=127.0.0.1:8080
 Environment=QUITSIE_DB_PATH=/var/lib/quitsie/quitsie.db
-# App secrets (Resend, Google OAuth) live only on the VM.
+# App secrets (Resend, Google OAuth) live only on the VM. Optional until the
+# app needs them.
 EnvironmentFile=-/etc/quitsie/quitsie.env
-# R2 credentials, needed by the restore below.
-EnvironmentFile=/etc/quitsie/litestream.env
 
-# On a fresh VM, bring the database back from R2 before the first start.
-# Does nothing when the database already exists or there is no backup yet.
-ExecStartPre=/usr/bin/litestream restore -config /etc/litestream.yml -if-db-not-exists -if-replica-exists /var/lib/quitsie/quitsie.db
+# /usr/local/bin/quitsie is installed by quitsie-deploy (see deploy.yml).
 ExecStart=/usr/local/bin/quitsie
 Restart=on-failure
 RestartSec=2
-# The server finishes in-flight requests on SIGTERM; give it time.
+# The server finishes in-flight requests on SIGTERM (10 s at most); give it time.
 TimeoutStopSec=15
 
 NoNewPrivileges=true
@@ -34,6 +38,16 @@ ProtectSystem=strict
 ProtectHome=true
 PrivateTmp=true
 PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+CapabilityBoundingSet=
+SystemCallArchitectures=native
 
 [Install]
 WantedBy=multi-user.target

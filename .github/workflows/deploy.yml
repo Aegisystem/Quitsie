@@ -1,0 +1,171 @@
+name: Deploy
+
+# Ships the binary that CI built for a commit of main to the VM, over a
+# Cloudflare Tunnel protected by Cloudflare Access. See docs/despliegue.md.
+#
+# It stays inert until the repository variable DEPLOY_SSH_HOST exists, so main
+# is not red before the infrastructure is set up. Needs:
+#   secrets   CF_ACCESS_CLIENT_ID, CF_ACCESS_CLIENT_SECRET, DEPLOY_SSH_KEY
+#   variables DEPLOY_SSH_HOST, DEPLOY_SSH_HOST_KEY, QUITSIE_URL
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  # Deploys the latest green CI run of main: the first deploy, or a redeploy.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+# One deploy at a time. A deploy in progress is never cancelled; a newer one
+# waits behind it and replaces any older one that was also waiting.
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  select:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # workflow_run also fires for pull requests from forks whose branch is
+    # called main: only a push to this repository's main counts.
+    if: >-
+      vars.DEPLOY_SSH_HOST != '' && (
+        (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+        (github.event_name == 'workflow_run' &&
+          github.event.workflow_run.conclusion == 'success' &&
+          github.event.workflow_run.event == 'push' &&
+          github.event.workflow_run.head_branch == 'main' &&
+          github.event.workflow_run.head_repository.full_name == github.repository)
+      )
+    outputs:
+      go: ${{ steps.pick.outputs.go }}
+      run_id: ${{ steps.pick.outputs.run_id }}
+      sha: ${{ steps.pick.outputs.sha }}
+    steps:
+      - name: Pick the CI run to deploy
+        id: pick
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          EVENT_RUN_ID: ${{ github.event.workflow_run.id }}
+          EVENT_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          if [ "$EVENT" = workflow_dispatch ]; then
+            picked=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml --branch main \
+              --event push --status success --limit 1 --json databaseId,headSha \
+              --jq '.[0] // empty | "\(.databaseId) \(.headSha)"')
+            [ -n "$picked" ] || { echo "::error::There is no successful CI run on main to deploy"; exit 1; }
+            read -r run_id sha <<<"$picked"
+          else
+            run_id=$EVENT_RUN_ID
+            sha=$EVENT_SHA
+            # Only the tip of main deploys. If it moved on, the newer commit
+            # deploys itself when its own CI passes.
+            tip=$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha)
+            if [ "$tip" != "$sha" ]; then
+              echo "main is at $tip, not $sha: nothing to deploy for this run."
+              echo "go=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          fi
+          [[ $sha =~ ^[0-9a-f]{40}$ ]] || { echo "::error::Unexpected commit SHA: $sha"; exit 1; }
+          echo "Deploying $sha from CI run $run_id"
+          { echo "go=true"; echo "run_id=$run_id"; echo "sha=$sha"; } >> "$GITHUB_OUTPUT"
+
+  deploy:
+    needs: select
+    if: needs.select.outputs.go == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: production
+      url: ${{ vars.QUITSIE_URL }}
+    steps:
+      - name: Download the binary CI built
+        uses: actions/download-artifact@v8
+        with:
+          name: quitsie-linux-amd64
+          path: bin
+          run-id: ${{ needs.select.outputs.run_id }}
+          github-token: ${{ github.token }}
+
+      # Cloudflare's own signed apt repository, as on the VM.
+      - name: Install cloudflared
+        run: |
+          sudo install -d -m 0755 /usr/share/keyrings
+          curl -fsSL https://pkg.cloudflare.com/cloudflare-main.gpg | sudo tee /usr/share/keyrings/cloudflare-main.gpg >/dev/null
+          echo 'deb [signed-by=/usr/share/keyrings/cloudflare-main.gpg] https://pkg.cloudflare.com/cloudflared any main' \
+            | sudo tee /etc/apt/sources.list.d/cloudflared.list >/dev/null
+          sudo apt-get update -qq -o Dir::Etc::sourcelist=sources.list.d/cloudflared.list \
+            -o Dir::Etc::sourceparts=- -o APT::Get::List-Cleanup=0
+          sudo apt-get install -y -qq cloudflared
+
+      - name: Configure SSH through Cloudflare Access
+        env:
+          SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          SSH_HOST: ${{ vars.DEPLOY_SSH_HOST }}
+          HOST_KEY: ${{ vars.DEPLOY_SSH_HOST_KEY }}
+          ACCESS_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
+          ACCESS_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
+          QUITSIE_URL: ${{ vars.QUITSIE_URL }}
+        run: |
+          for name in SSH_KEY SSH_HOST HOST_KEY ACCESS_ID ACCESS_SECRET QUITSIE_URL; do
+            [ -n "${!name}" ] || { echo "::error::$name is empty: finish the setup in docs/despliegue.md"; exit 1; }
+          done
+          install -d -m 0700 ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
+          chmod 0600 ~/.ssh/deploy_key
+          # Pinned host key, so a wrong host cannot impersonate the VM.
+          printf '%s %s\n' "$SSH_HOST" "$HOST_KEY" > ~/.ssh/known_hosts
+          {
+            echo "Host quitsie"
+            echo "  HostName $SSH_HOST"
+            echo "  User deploy"
+            echo "  IdentityFile ~/.ssh/deploy_key"
+            echo "  IdentitiesOnly yes"
+            echo "  BatchMode yes"
+            echo "  StrictHostKeyChecking yes"
+            echo "  UserKnownHostsFile ~/.ssh/known_hosts"
+            echo "  ServerAliveInterval 15"
+            echo "  ProxyCommand cloudflared access ssh --hostname %h"
+          } > ~/.ssh/config
+
+      # The key can only run quitsie-deploy on the VM, which reads the binary
+      # from stdin, installs it, restarts the service and rolls back if the
+      # new one is not healthy. Exit 255 is an SSH/tunnel failure (retried);
+      # any other failure comes from the VM and is final.
+      - name: Install the binary and restart the service
+        env:
+          TUNNEL_SERVICE_TOKEN_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
+          TUNNEL_SERVICE_TOKEN_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
+        run: |
+          sha256sum bin/quitsie
+          for attempt in 1 2 3; do
+            rc=0
+            ssh quitsie quitsie-deploy < bin/quitsie || rc=$?
+            if [ "$rc" -ne 255 ]; then exit "$rc"; fi
+            echo "::warning::SSH through the tunnel failed (attempt $attempt of 3)"
+            sleep 10
+          done
+          echo "::error::Could not reach the VM through Cloudflare Access"
+          exit 1
+
+      - name: Check that the site serves this commit
+        env:
+          QUITSIE_URL: ${{ vars.QUITSIE_URL }}
+          SHA: ${{ needs.select.outputs.sha }}
+        run: |
+          for _ in $(seq 1 12); do
+            body=$(curl -fsS --max-time 10 "$QUITSIE_URL/api/v1/health" || true)
+            if [ "$(jq -r '.status' <<<"$body" 2>/dev/null)" = ok ] && [ "$(jq -r '.version' <<<"$body" 2>/dev/null)" = "$SHA" ]; then
+              echo "$body"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "::error::$QUITSIE_URL/api/v1/health did not report version $SHA (last answer: ${body:-none})"
+          exit 1
