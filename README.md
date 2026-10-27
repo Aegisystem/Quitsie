@@ -18,7 +18,7 @@ cd api && go run ./cmd/server            # http://127.0.0.1:8080
 
 Para trabajar en la interfaz con recarga en caliente, deja el servidor Go corriendo y en otra terminal ejecuta `cd web && npm run dev`. Vite reenvía `/api` al puerto 8080.
 
-Pruebas: `cd api && go test ./...` y `cd web && npm run typecheck`.
+Pruebas: `cd api && go test ./...`, `cd web && npm test` y `cd web && npm run typecheck`.
 
 ## Código generado
 
