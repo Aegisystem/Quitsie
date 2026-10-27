@@ -4,6 +4,9 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
+	"slices"
+	"sync"
 	"testing"
 
 	"github.com/Aegisystem/Quitsie/api/internal/store"
@@ -58,5 +61,33 @@ func TestWriteWritesNothingWhenFnFails(t *testing.T) {
 	}
 	if next != 1 {
 		t.Errorf("version after a failed Write = %d, want 1 (the failed one is not spent)", next)
+	}
+}
+
+func TestConcurrentWritesGetDistinctConsecutiveVersions(t *testing.T) {
+	ctx := context.Background()
+	db := openMigrated(t)
+	const writers = 20
+
+	versions := make([]int64, writers)
+	var wg sync.WaitGroup
+	for i := range writers {
+		wg.Go(func() {
+			v, err := store.Write(ctx, db, func(q *store.Queries, version int64) error {
+				return q.CreateLedger(ctx, newGroup(fmt.Sprintf("ledger-%d", i), version))
+			})
+			if err != nil {
+				t.Error(err)
+			}
+			versions[i] = v
+		})
+	}
+	wg.Wait()
+
+	slices.Sort(versions)
+	for i, v := range versions {
+		if v != int64(i+1) {
+			t.Fatalf("versions = %v, want 1 to %d with no repeats", versions, writers)
+		}
 	}
 }
