@@ -49,7 +49,7 @@ Enlace revocable con el que una persona entra a través de otra. El de un Grupo 
 _En código_: `InviteLink`
 
 **Participante**:
-Persona que, en un Gasto concreto, pagó algo, debe algo, o ambas cosas. En un Gasto de un Grupo es un Miembro; en un Gasto sin grupo, el Usuario o su Amigo.
+Persona que, en un Gasto concreto, pagó algo, entra en el reparto, o ambas cosas; su Cuota puede quedar en cero por redondeo. En un Gasto de un Grupo es un Miembro; en un Gasto sin grupo, el Usuario o su Amigo.
 _En código_: `Participant`
 
 ## Gastos
@@ -92,7 +92,7 @@ Método de reparto a partes iguales en el que a algunos Participantes se les sum
 _En código_: `adjustment`
 
 **Categoría**:
-Clasificación de un Gasto según en qué se gastó (comida, transporte, alojamiento…).
+Clasificación de un Gasto según en qué se gastó: comida, supermercado, transporte, alojamiento, vivienda, servicios, ocio, compras, salud, regalos u otros.
 _En código_: `Category`
 
 ## Saldos

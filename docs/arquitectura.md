@@ -72,6 +72,7 @@ flowchart LR
 - Los libros, Gastos y Liquidaciones no se borran físicamente: borrarlos les pone fecha de borrado y una versión nueva, y así el pull se entera. Un Miembro que sale de un Grupo pasa a `former`, también con versión nueva. Los Aportes y las Cuotas viajan con su Gasto y no tienen versión propia.
 - Con el cursor en 0 se descarga todo; así ocurre el primer inicio de sesión en un dispositivo.
 - Al unirse a un Grupo, el siguiente pull incluye ese Grupo completo aunque sus cambios sean anteriores al cursor.
+- Cada pull incluye la lista de libros que el Usuario puede ver. El cliente suelta de su réplica cualquier otro, por ejemplo cuando sale de un Grupo o cuando alguien deshace su Reclamación.
 - La respuesta incluye las Deudas ya simplificadas de cada Grupo que cambió, para poder mostrarlas sin conexión.
 
 ### Enviar Registros sin sincronizar
@@ -113,7 +114,7 @@ Un **libro** (`Ledger`) es el contenedor de Gastos y Liquidaciones. Cada Grupo t
 | `users` | email, nombre, Moneda preferida, identificador de Google, fecha de borrado |
 | `sessions` | hash del token, dispositivo, último uso |
 | `login_codes` | hash del código, caducidad, intentos |
-| `ledgers` | tipo (`group` o `friendship`), nombre, Moneda del grupo (vacía en Amistades), Simplificación de deudas, hash del Enlace de invitación, versión, fecha de borrado |
+| `ledgers` | tipo (`group` o `friendship`), nombre, Moneda del grupo (vacía en Amistades), Simplificación de deudas, contador de generación del Enlace de invitación, versión, fecha de borrado |
 | `members` | libro, Usuario vinculado (vacío si está pendiente), nombre, email, estado (`active` o `former`), versión |
 | `expenses` | identificador del cliente, libro, descripción, fecha, moneda, total, Categoría, Método de reparto (para reeditar), autor, versión, fecha de borrado |
 | `paid_shares` | gasto, miembro, importe (Aportes) |
@@ -129,7 +130,7 @@ Los Saldos no se guardan: se calculan sumando, lo cual es rápido a esta escala.
 - Toda consulta se limita a los libros en los que el Usuario tiene un Miembro activo.
 - Cookie `HttpOnly`, `Secure` y `SameSite=Lax`. Además, las peticiones que modifican datos deben traer un encabezado `Origin` del propio dominio (protección CSRF).
 - Los códigos de acceso caducan a los 10 minutos y admiten 5 intentos como máximo. También se limitan los envíos por email y por IP.
-- Los Enlaces de invitación y los tokens de sesión son aleatorios, y en la base solo se guarda su hash.
+- Los tokens de sesión son aleatorios y en la base solo se guarda su hash. Los Enlaces de invitación se derivan con un HMAC de una clave del servidor, así que no se guardan ([ADR 0010](adr/0010-enlaces-de-invitacion-derivados.md)).
 - Hay un límite de peticiones por IP en Go, además del de Cloudflare.
 
 ## Repositorio
