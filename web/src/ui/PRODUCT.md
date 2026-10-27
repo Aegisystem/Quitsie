@@ -47,7 +47,7 @@ Registrar gastos compartidos y saber en todo momento quién le debe cuánto a qu
 
 ## Brand Commitments
 
-- El nombre, Quitsie, es lo único fijo. El icono, el color turquesa y el lema del esqueleto son provisionales.
+- El nombre, Quitsie, es lo único fijo. El icono turquesa y el lema del esqueleto eran provisionales; la v1 los reemplaza por la marca de dos barras iguales sobre el verde de «a mano» y el lema «Cuentas claras, amistades largas.» (ver [DESIGN.md](DESIGN.md)).
 - Debe transmitir confianza con el dinero sin ponerse serio.
 
 ## Evidence on Hand

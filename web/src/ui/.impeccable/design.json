@@ -1,0 +1,189 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-27T12:00:00Z",
+  "title": "Design System: Quitsie",
+  "extensions": {
+    "colorMeta": {
+      "ink": { "role": "primary", "displayName": "Tinta de imprenta", "canonical": "#1f2328", "tonalRamp": ["#101214", "#27292c", "#3f4347", "#5f6469", "#82878c", "#a7abb0", "#ced1d5", "#edeff1"] },
+      "bar": { "role": "primary", "displayName": "Barra de tinta", "canonical": "#1f2328" },
+      "favor": { "role": "secondary", "displayName": "Azul a favor", "canonical": "#2f5da8", "tonalRamp": ["#041129", "#11284d", "#224174", "#3862a7", "#5b86cc", "#89ace5", "#b8d3fd", "#dcf0ff"] },
+      "against": { "role": "secondary", "displayName": "Rojo en contra (solo «debes»)", "canonical": "#c03a25", "tonalRamp": ["#2a0100", "#4f0c04", "#771d0f", "#ac3320", "#d35c47", "#ed8d7a", "#ffbcad", "#ffe0d5"] },
+      "even": { "role": "tertiary", "displayName": "Verde a mano", "canonical": "#2e7a4b", "tonalRamp": ["#011708", "#0b311a", "#1b4e2e", "#2f7348", "#56976b", "#87b995", "#b7dcc1", "#dcf6e3"] },
+      "pending": { "role": "tertiary", "displayName": "Ocre de espera", "canonical": "#e2a72e", "tonalRamp": ["#1f0d00", "#3d2200", "#5f3a00", "#8a5800", "#ae7c00", "#cca45d", "#eacc9b", "#ffecc8"] },
+      "pending-ink": { "role": "tertiary", "displayName": "Ocre de texto", "canonical": "#8a5d00", "tonalRamp": ["#1c0e00", "#3a2400", "#5a3c02", "#835a0f", "#a77e3e", "#c6a575", "#e6cdaa", "#feecd2"] },
+      "paper": { "role": "neutral", "displayName": "Papel", "canonical": "#f4f5f2", "tonalRamp": ["#111211", "#292928", "#424341", "#636361", "#868684", "#aaaba9", "#d1d1d0", "#eeeeed"] },
+      "surface": { "role": "neutral", "displayName": "Superficie", "canonical": "#ffffff" },
+      "sunken": { "role": "neutral", "displayName": "Hundido", "canonical": "#e9ebe6" },
+      "ink-2": { "role": "neutral", "displayName": "Tinta 2", "canonical": "#5b616b" },
+      "ink-3": { "role": "neutral", "displayName": "Tinta 3 (salió o borrado)", "canonical": "#8a9098" },
+      "rule": { "role": "neutral", "displayName": "Regla", "canonical": "#dcdfd8" },
+      "rule-strong": { "role": "neutral", "displayName": "Regla fuerte", "canonical": "#bcc0b8" },
+      "on-bar": { "role": "neutral", "displayName": "Texto sobre barra", "canonical": "#f4f5f2" },
+      "on-bar-2": { "role": "neutral", "displayName": "Texto secundario sobre barra", "canonical": "#b6bbc2" },
+      "on-color": { "role": "neutral", "displayName": "Blanco sobre banda", "canonical": "#ffffff" },
+      "paper-dark": { "role": "neutral", "displayName": "Papel (oscuro)", "canonical": "#121417" },
+      "surface-dark": { "role": "neutral", "displayName": "Superficie (oscuro)", "canonical": "#1b1e22" },
+      "sunken-dark": { "role": "neutral", "displayName": "Hundido (oscuro)", "canonical": "#24282d" },
+      "ink-dark": { "role": "neutral", "displayName": "Tinta (oscuro)", "canonical": "#ecedea" },
+      "ink-2-dark": { "role": "neutral", "displayName": "Tinta 2 (oscuro)", "canonical": "#a2a7ae" },
+      "ink-3-dark": { "role": "neutral", "displayName": "Tinta 3 (oscuro)", "canonical": "#737981" },
+      "rule-dark": { "role": "neutral", "displayName": "Regla (oscuro)", "canonical": "#2b2f35" },
+      "rule-strong-dark": { "role": "neutral", "displayName": "Regla fuerte (oscuro)", "canonical": "#41464e" },
+      "favor-text-dark": { "role": "secondary", "displayName": "Azul a favor, texto (oscuro)", "canonical": "#86a8ea" },
+      "against-text-dark": { "role": "secondary", "displayName": "Rojo en contra, texto (oscuro)", "canonical": "#f08a73" },
+      "even-text-dark": { "role": "tertiary", "displayName": "Verde a mano, texto (oscuro)", "canonical": "#6fc08d" },
+      "pending-ink-dark": { "role": "tertiary", "displayName": "Ocre de texto (oscuro)", "canonical": "#e9b44c" },
+      "bar-dark": { "role": "primary", "displayName": "Barra (oscuro)", "canonical": "#0a0b0d" }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Display", "purpose": "Importe de una banda de Saldo con una sola moneda." },
+      "display-compact": { "displayName": "Display compacto", "purpose": "Importes de banda con varias monedas y el título de a mano." },
+      "amount-entry": { "displayName": "Entrada de importe", "purpose": "Campo del importe al apuntar un Gasto." },
+      "headline": { "displayName": "Headline", "purpose": "Títulos de página." },
+      "title": { "displayName": "Title", "purpose": "Título en la barra superior." },
+      "row-title": { "displayName": "Título de fila", "purpose": "Nombre de Grupo, amigo o Gasto e importe al final de la fila." },
+      "body": { "displayName": "Body", "purpose": "Texto corrido." },
+      "small": { "displayName": "Small", "purpose": "Subtítulos de fila, pistas y notas del dock." },
+      "field-label": { "displayName": "Etiqueta de campo", "purpose": "Etiquetas de formulario, en ink-2." },
+      "section-label": { "displayName": "Etiqueta de sección", "purpose": "Nombre de sección real, en mayúsculas espaciadas. Solo secciones." },
+      "legend": { "displayName": "Leyenda", "purpose": "«cada ● = importe» y metadatos." }
+    },
+    "shadows": [
+      { "name": "none", "value": "none", "purpose": "El sistema es plano: no hay sombras de elevación." },
+      { "name": "ring-ink", "value": "inset 0 0 0 1px var(--ink)", "purpose": "Borde doble de la tarjeta de Reclamar elegida y de la celda actual del código." },
+      { "name": "ring-unsynced", "value": "inset 0 0 0 2px var(--pending-ink)", "purpose": "Anillo de registro sin sincronizar." },
+      { "name": "ring-status", "value": "inset 0 0 0 1px rgb(255 255 255 / 0.22)", "purpose": "Contorno del chip de estado de conexión sobre la barra." },
+      { "name": "focus", "value": "outline: 2px solid var(--focus); outline-offset: 2px", "purpose": "Foco visible; en campos el offset es 1px y en el código 4px." }
+    ],
+    "motion": [
+      { "name": "ease-out", "value": "cubic-bezier(0.16, 1, 0.3, 1)", "purpose": "Única curva del sistema." },
+      { "name": "token-in", "value": "scale(0.3)→1, opacity 0→1, 0.5s ease-out, 40ms de escalonado por ficha", "purpose": "La fila de fichas se llena." },
+      { "name": "toast-rise", "value": "translateY(12px)→0, opacity 0→1, 0.45s ease-out", "purpose": "Entrada del toast." },
+      { "name": "switch", "value": "transform 0.3s ease-out; background-color 0.2s", "purpose": "Interruptor." },
+      { "name": "button", "value": "background-color 0.15s; transform 0.1s (active: translateY(1px))", "purpose": "Respuesta de botones." },
+      { "name": "split-focus", "value": "opacity 0.2s (0.45 en filas sin foco)", "purpose": "Un foco a la vez en el reparto." },
+      { "name": "reduced-motion", "value": "prefers-reduced-motion: reduce", "purpose": "Apaga fichas, toast, interruptor y reparto." }
+    ],
+    "breakpoints": [
+      { "name": "wide", "value": "900px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Botón primario",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Acción principal en tinta; también el botón de peligro.",
+      "html": "<button class=\"ds-btn ds-btn-primary\"><svg width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\"><path d=\"M12 5v14M5 12h14\"/></svg>Añadir gasto</button>",
+      "css": ".ds-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 48px; padding: 0 20px; border: 1px solid transparent; border-radius: 6px; font-family: 'Jost Variable', Futura, 'Century Gothic', 'Avenir Next', system-ui, sans-serif; font-size: 1rem; font-weight: 600; cursor: pointer; transition: background-color 0.15s, transform 0.1s; } .ds-btn:active { transform: translateY(1px); } .ds-btn:focus-visible { outline: 2px solid var(--focus, #2f5da8); outline-offset: 2px; } .ds-btn-primary { background: var(--ink, #1f2328); color: var(--paper, #f4f5f2); } .ds-btn-primary:hover { background: color-mix(in srgb, var(--ink, #1f2328) 86%, var(--favor, #2f5da8)); }"
+    },
+    {
+      "name": "Botón secundario",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Contorno de tinta sobre superficie; acompaña al primario en el dock.",
+      "html": "<button class=\"ds-btn2\">Liquidar</button>",
+      "css": ".ds-btn2 { display: inline-flex; align-items: center; height: 48px; padding: 0 20px; border: 1px solid var(--ink, #1f2328); border-radius: 6px; background: var(--surface, #fff); color: var(--ink, #1f2328); font-family: 'Jost Variable', Futura, system-ui, sans-serif; font-size: 1rem; font-weight: 600; cursor: pointer; transition: background-color 0.15s, transform 0.1s; } .ds-btn2:hover { background: var(--sunken, #e9ebe6); } .ds-btn2:active { transform: translateY(1px); } .ds-btn2:focus-visible { outline: 2px solid var(--focus, #2f5da8); outline-offset: 2px; }"
+    },
+    {
+      "name": "Botón discreto",
+      "kind": "button",
+      "refersTo": "button-quiet",
+      "description": "Acción de sección, subrayada y sin fondo.",
+      "html": "<button class=\"ds-btn-quiet\"><svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\"><path d=\"M12 5v14M5 12h14\"/></svg>Nuevo grupo</button>",
+      "css": ".ds-btn-quiet { display: inline-flex; align-items: center; gap: 8px; height: 36px; padding: 0 10px; border: 0; border-radius: 6px; background: none; color: var(--ink, #1f2328); font-family: 'Jost Variable', Futura, system-ui, sans-serif; font-size: 0.875rem; font-weight: 500; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; } .ds-btn-quiet:hover { background: var(--sunken, #e9ebe6); } .ds-btn-quiet:focus-visible { outline: 2px solid var(--focus, #2f5da8); outline-offset: 2px; }"
+    },
+    {
+      "name": "Campo",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Campo de 48px con etiqueta encima; error en tinta con la marca tachada.",
+      "html": "<label class=\"ds-field\"><span class=\"ds-label\">Descripción</span><input class=\"ds-input\" placeholder=\"Cena del sábado\"></label>",
+      "css": ".ds-field { display: flex; flex-direction: column; gap: 8px; font-family: 'Jost Variable', Futura, system-ui, sans-serif; } .ds-label { font-size: 0.875rem; font-weight: 600; color: var(--ink-2, #5b616b); } .ds-input { height: 48px; padding: 0 12px; border: 1px solid var(--rule-strong, #bcc0b8); border-radius: 6px; background: var(--surface, #fff); color: var(--ink, #1f2328); font: inherit; font-size: 1rem; } .ds-input::placeholder { color: var(--ink-2, #5b616b); } .ds-input:hover { border-color: var(--ink-2, #5b616b); } .ds-input:focus { border-color: var(--ink, #1f2328); outline: 2px solid var(--focus, #2f5da8); outline-offset: 1px; }"
+    },
+    {
+      "name": "Chip",
+      "kind": "chip",
+      "refersTo": "chip",
+      "description": "Píldora de 40px; seleccionada en tinta llena.",
+      "html": "<div class=\"ds-chips\"><label class=\"ds-chip\"><input type=\"radio\" name=\"m\" checked>A partes iguales</label><label class=\"ds-chip\"><input type=\"radio\" name=\"m\">Importes</label><label class=\"ds-chip\"><input type=\"radio\" name=\"m\">Porcentajes</label></div>",
+      "css": ".ds-chips { display: flex; flex-wrap: wrap; gap: 8px; font-family: 'Jost Variable', Futura, system-ui, sans-serif; } .ds-chip { position: relative; display: inline-flex; align-items: center; height: 40px; padding: 0 14px; border: 1px solid var(--rule-strong, #bcc0b8); border-radius: 999px; background: var(--surface, #fff); color: var(--ink, #1f2328); font-weight: 500; cursor: pointer; } .ds-chip input { position: absolute; inset: 0; margin: 0; opacity: 0; cursor: pointer; } .ds-chip:hover { border-color: var(--ink-2, #5b616b); } .ds-chip:has(input:checked) { background: var(--ink, #1f2328); border-color: var(--ink, #1f2328); color: var(--paper, #f4f5f2); } .ds-chip:has(input:focus-visible) { outline: 2px solid var(--focus, #2f5da8); outline-offset: 2px; }"
+    },
+    {
+      "name": "Navegación superior",
+      "kind": "nav",
+      "refersTo": "topbar",
+      "description": "Barra de tinta con marca, wordmark y estado de conexión como nube.",
+      "html": "<header class=\"ds-topbar\"><a class=\"ds-wordmark\" href=\"#\"><svg width=\"28\" height=\"28\" viewBox=\"0 0 32 32\"><rect width=\"32\" height=\"32\" rx=\"7\" fill=\"#2e7a4b\"/><rect x=\"7\" y=\"10\" width=\"18\" height=\"4.5\" rx=\"2.25\" fill=\"#fff\"/><rect x=\"7\" y=\"17.5\" width=\"18\" height=\"4.5\" rx=\"2.25\" fill=\"#fff\"/></svg>Quitsie</a><span class=\"ds-status\"><svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M7 20h10a4.5 4.5 0 0 0 .7-8.95A6 6 0 0 0 6.2 12 4 4 0 0 0 7 20zM9.5 15.5l2 2 3.5-4\"/></svg>En línea</span></header>",
+      "css": ".ds-topbar { display: flex; align-items: center; justify-content: space-between; height: 56px; padding: 0 16px; background: var(--bar, #1f2328); color: var(--on-bar, #f4f5f2); font-family: 'Jost Variable', Futura, system-ui, sans-serif; } .ds-wordmark { display: flex; align-items: center; gap: 10px; color: inherit; font-size: 1.3125rem; font-weight: 600; letter-spacing: -0.01em; text-decoration: none; } .ds-wordmark:focus-visible { outline: 2px solid var(--focus, #2f5da8); outline-offset: 2px; } .ds-status { display: inline-flex; align-items: center; gap: 7px; height: 28px; padding: 0 11px 0 9px; border-radius: 999px; color: var(--on-bar-2, #b6bbc2); box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.22); font-size: 0.8125rem; font-weight: 500; }"
+    },
+    {
+      "name": "Banda de Saldo",
+      "kind": "custom",
+      "refersTo": "band-favor",
+      "description": "Campo de color pleno por moneda con importe en Display y fichas Isotype con leyenda; la fracción se corta.",
+      "html": "<div class=\"ds-band\"><p class=\"ds-band-label\">Te deben</p><p class=\"ds-band-amount\">47,50 €</p><div class=\"ds-band-tally\"><span class=\"ds-tally\"><i class=\"ds-token\" style=\"--i:0\"></i><i class=\"ds-token\" style=\"--i:1\"></i><i class=\"ds-token\" style=\"--i:2\"></i><i class=\"ds-token\" style=\"--i:3\"></i><i class=\"ds-token-part\" style=\"--i:4;--f:0.75\"><i class=\"ds-token\"></i></i></span><span class=\"ds-legend\">cada <i class=\"ds-token ds-token-legend\"></i> = 10 €</span></div></div>",
+      "css": ".ds-band { --token: 16px; padding: 20px 16px 22px; background: var(--favor, #2f5da8); color: #fff; font-family: 'Jost Variable', Futura, system-ui, sans-serif; } .ds-band-label { margin: 0; font-size: 1.0625rem; font-weight: 500; color: rgb(255 255 255 / 0.88); } .ds-band-amount { margin: 2px 0 14px; font-size: clamp(2.75rem, 13vw, 4rem); font-weight: 500; line-height: 1; letter-spacing: -0.025em; font-variant-numeric: tabular-nums lining-nums; } .ds-band-tally { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; } .ds-tally { display: flex; align-items: center; gap: 4px; } .ds-token { display: block; flex: none; width: var(--token); height: var(--token); border-radius: 50%; background: currentColor; animation: ds-token-in 0.5s cubic-bezier(0.16, 1, 0.3, 1) both; animation-delay: calc(var(--i, 0) * 40ms); } .ds-token-part { display: flex; flex: none; width: calc(var(--token) * var(--f)); height: var(--token); overflow: hidden; animation: ds-token-in 0.5s cubic-bezier(0.16, 1, 0.3, 1) both; animation-delay: calc(var(--i, 0) * 40ms); } .ds-token-part > .ds-token { animation: none; } .ds-legend { font-size: 0.8125rem; color: rgb(255 255 255 / 0.85); white-space: nowrap; } .ds-token-legend { display: inline-block; width: 0.7em; height: 0.7em; animation: none; } @keyframes ds-token-in { from { transform: scale(0.3); opacity: 0; } } @media (prefers-reduced-motion: reduce) { .ds-token, .ds-token-part { animation: none; } }"
+    },
+    {
+      "name": "Figuras de persona",
+      "kind": "custom",
+      "refersTo": "figure",
+      "description": "Silueta Isotype: llena vinculada, hueca pendiente, ink-3 antiguo miembro.",
+      "html": "<div class=\"ds-figures\"><svg width=\"28\" height=\"28\" viewBox=\"0 0 24 24\" fill=\"currentColor\"><circle cx=\"12\" cy=\"6.25\" r=\"4.25\"/><path d=\"M5 23v-6.6c0-3.1 2.2-5.1 5.2-5.1h3.6c3 0 5.2 2 5.2 5.1V23z\"/></svg><svg width=\"28\" height=\"28\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\"><circle cx=\"12\" cy=\"6.25\" r=\"3.4\"/><path d=\"M6 22.1v-5.6c0-2.6 1.9-4.4 4.4-4.4h3.2c2.5 0 4.4 1.8 4.4 4.4v5.6z\"/></svg><svg class=\"ds-former\" width=\"28\" height=\"28\" viewBox=\"0 0 24 24\" fill=\"currentColor\"><circle cx=\"12\" cy=\"6.25\" r=\"4.25\"/><path d=\"M5 23v-6.6c0-3.1 2.2-5.1 5.2-5.1h3.6c3 0 5.2 2 5.2 5.1V23z\"/></svg></div>",
+      "css": ".ds-figures { display: flex; gap: 12px; color: var(--ink, #1f2328); } .ds-former { color: var(--ink-3, #8a9098); }"
+    },
+    {
+      "name": "Problema (marca tachada)",
+      "kind": "custom",
+      "refersTo": "field-error",
+      "description": "Un problema se marca en tinta con el círculo tachado; nunca en rojo.",
+      "html": "<p class=\"ds-problem\">Faltan 3,20 € por repartir</p>",
+      "css": ".ds-problem { margin: 0; color: var(--ink, #1f2328); font-family: 'Jost Variable', Futura, system-ui, sans-serif; font-size: 0.875rem; font-weight: 600; } .ds-problem::before { content: ''; display: inline-block; width: 12px; height: 12px; margin-right: 7px; vertical-align: -1px; background: currentColor; -webkit-mask: url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Ccircle cx='6' cy='6' r='4.6' fill='none' stroke='%23000' stroke-width='1.8'/%3E%3Cpath d='M1.6 10.4l8.8-8.8' stroke='%23000' stroke-width='1.8'/%3E%3C/svg%3E\") center / contain no-repeat; mask: url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Ccircle cx='6' cy='6' r='4.6' fill='none' stroke='%23000' stroke-width='1.8'/%3E%3Cpath d='M1.6 10.4l8.8-8.8' stroke='%23000' stroke-width='1.8'/%3E%3C/svg%3E\") center / contain no-repeat; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "La cuenta en fichas",
+    "overview": "Quitsie no se lee, se cuenta. Cada Saldo es una banda de color pleno con su importe a tamaño titular y, debajo, una fila de fichas iguales con su leyenda, como en los gráficos Isotype de Neurath y Arntz: cada ficha vale lo mismo, la fracción se corta y nunca se encoge, y quedar a mano es ver la fila vaciarse. El resto de la pantalla es tinta sobre un fondo neutro, impresa en plano: sin sombras, sin degradados que mezclen color, sin avatares de iniciales ni botón flotante.\n\nEl color nunca decora; es un dato. Azul es lo que te deben, rojo es solo «debes», verde es «a mano», ocre es lo pendiente o sin sincronizar. Un problema (registro rechazado, campo inválido, reparto que no cierra) no se pinta de rojo: se marca en tinta con la celda tachada. Las personas son figuras de silueta y su estado se lee en la propia figura (llena, hueca, apagada); las categorías son pictogramas de silueta llena de la misma familia.\n\nLa densidad es la de una herramienta de bolsillo: filas de 64px, botones de 48px, una sola columna de 42rem, la acción principal abajo al alcance del pulgar. La jerarquía sale de la escala y del peso, no de cajas ni elevación. El tono es cercano con un guiño («Así da gusto.», «El primero siempre es el café.») y preciso con el dinero.",
+    "keyCharacteristics": [
+      "Bandas de color pleno, una por moneda; los Saldos de monedas distintas nunca se suman.",
+      "Fichas Isotype iguales con leyenda «cada ● = importe»; la última se corta.",
+      "Tinta #1F2328 como único color de acción y de problema.",
+      "Jost con cifras tabulares y alineadas en todo importe.",
+      "Dos familias de iconos que no se mezclan: trazo de 2px para controles, silueta llena para contenido.",
+      "Plano: profundidad por superficie (paper, surface, sunken) y por reglas de tinta, nunca por sombra."
+    ],
+    "rules": [
+      { "name": "The Rojo-Solo-Debes Rule", "body": "El rojo significa únicamente «debes». Errores, rechazos, acciones destructivas y repartos que no cierran van en tinta con la marca tachada; el botón de peligro es tinta, igual que el primario.", "section": "colors" },
+      { "name": "The Color-Es-Dato Rule", "body": "Si un color no responde a «¿a favor, en contra, a mano o pendiente?», es tinta o neutro. Ninguna superficie lleva color de marca por decoración.", "section": "colors" },
+      { "name": "The Ocre-Con-Tinta Rule", "body": "El ocre pleno nunca lleva texto blanco ni texto ocre encima; sobre ocre se escribe en tinta, y el ocre como texto es siempre pending-ink.", "section": "colors" },
+      { "name": "The Cifra-Tabular Rule", "body": "Todo importe, contador, fecha de campo y celda de código lleva font-variant-numeric: tabular-nums lining-nums. Un importe nunca se parte en dos líneas.", "section": "typography" },
+      { "name": "The Mayúsculas-Solo-Para-Secciones Rule", "body": "Las mayúsculas espaciadas nombran una sección que existe y nada más; no se usan para antetítulos, categorías ni adornos sobre un título.", "section": "typography" },
+      { "name": "The Jerarquía-Por-Escala Rule", "body": "La jerarquía se marca con tamaño y peso (400, 500, 600). No se usan cajas, fondos ni color para subir el rango de un texto.", "section": "typography" },
+      { "name": "The Imprenta-Plana Rule", "body": "Nada flota. Si algo necesita separarse, cambia de superficie o recibe una regla de tinta; nunca una sombra difusa ni un degradado que mezcle dos colores.", "section": "elevation" },
+      { "name": "The Corte-Duro Rule", "body": "Los únicos linear-gradient permitidos son de corte duro: el relleno del medidor del reparto, el rayado de exceso y la flecha de los selectores. Ninguno mezcla tonos.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do muestra cada Saldo como banda de color pleno por moneda con importe en Display y fila de fichas con leyenda «cada ● = importe».",
+      "Do corta la última ficha para representar una fracción; todas las fichas de un gráfico miden lo mismo.",
+      "Do pon una leyenda en cada gráfico de fichas, visible y también para lectores de pantalla.",
+      "Do marca cualquier problema en tinta con la marca de círculo tachado (12px) delante del texto.",
+      "Do dibuja a las personas con la figura de silueta: llena vinculada, hueca pendiente, ink-3 antigua.",
+      "Do usa trazo de 2px en rejilla de 24 para controles y silueta llena para personas, grupos y categorías.",
+      "Do escribe todo importe con cifras tabulares y alineadas, sin saltos de línea.",
+      "Do separa con superficies y reglas de tinta (1px, 2px, 3px), nunca con sombra.",
+      "Do deja la acción principal en el dock inferior en móvil y respeta el área segura.",
+      "Do escribe texto en tinta sobre el ocre pleno."
+    ],
+    "donts": [
+      "Don't uses rojo para errores, rechazos, borrar o validar; el rojo es solo «debes».",
+      "Don't escales una ficha para mostrar una fracción ni mezcles tamaños de ficha dentro de un mismo gráfico.",
+      "Don't sumes ni conviertas Saldos de monedas distintas en una sola banda o cifra.",
+      "Don't uses avatares de iniciales, fotos de perfil ni botón flotante.",
+      "Don't añadas sombras de elevación, degradados que mezclen color ni fondos de color decorativo.",
+      "Don't mezcles las dos familias de iconos: ni controles rellenos ni pictogramas de trazo.",
+      "Don't pongas antetítulos ni etiquetas en mayúsculas espaciadas fuera de los nombres de sección.",
+      "Don't uses un punto de color para el estado de conexión; el estado es un icono de nube para que no se confunda con una ficha."
+    ]
+  }
+}
