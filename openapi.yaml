@@ -803,7 +803,9 @@ paths:
             The Expense changed since `expectedVersion` (`version_conflict`;
             sync to see the new version), the currency is not the Group
             currency (`currency_mismatch`), or a Participant is not an active
-            Member (`invalid_participants`).
+            Member (`invalid_participants`). A former member may stay in the
+            Expense, but their PaidShare and OwedShare cannot change, also
+            `invalid_participants`.
           content:
             application/problem+json:
               schema:
@@ -856,44 +858,12 @@ paths:
   /settlements/{settlementId}:
     parameters:
       - $ref: "#/components/parameters/SettlementId"
-    patch:
-      operationId: updateSettlement
-      summary: Edits a Settlement if nobody changed it since the client read it.
-      tags: [records]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/SettlementUpdate"
-      responses:
-        "200":
-          description: The Settlement with its new version.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Settlement"
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "404":
-          $ref: "#/components/responses/NotFound"
-        "409":
-          description: >
-            The Settlement changed since `expectedVersion`
-            (`version_conflict`), the currency is not the Group currency
-            (`currency_mismatch`), or a person is not an active Member
-            (`invalid_participants`).
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/Problem"
-        default:
-          $ref: "#/components/responses/Problem"
     delete:
       operationId: deleteSettlement
       summary: Deletes a Settlement; it stops counting in Balances but can be restored.
+      description: >
+        Settlements are never edited: to correct one, delete it and record
+        another.
       tags: [records]
       responses:
         "204":
@@ -1164,7 +1134,11 @@ components:
       type: integer
       format: int64
       minimum: 1
-      description: Positive amount in the minor unit of its currency (ISO 4217), for example 1050 = 10.50 USD.
+      maximum: 1000000000000000
+      description: >
+        Positive amount of a record in the minor unit of its currency (ISO
+        4217), for example 1050 = 10.50 USD. At most 10^15, so adding up
+        Balances never overflows.
       example: 1050
 
     Version:
@@ -1514,7 +1488,15 @@ components:
           type: string
           format: uuid
         amount:
-          $ref: "#/components/schemas/Amount"
+          type: integer
+          format: int64
+          minimum: 0
+          maximum: 1000000000000000
+          description: >
+            Like an Amount, but it may be zero when the split rounds it down
+            (1 cent split in two); it is kept so the split survives
+            re-editing.
+          example: 525
         splitValue:
           type: integer
           format: int64
@@ -1754,27 +1736,6 @@ components:
           type: string
           format: date
 
-    SettlementUpdate:
-      type: object
-      description: The whole editable content of a Settlement.
-      required: [expectedVersion, fromMemberId, toMemberId, amount, currency, date]
-      properties:
-        expectedVersion:
-          $ref: "#/components/schemas/Version"
-        fromMemberId:
-          type: string
-          format: uuid
-        toMemberId:
-          type: string
-          format: uuid
-        amount:
-          $ref: "#/components/schemas/Amount"
-        currency:
-          $ref: "#/components/schemas/Currency"
-        date:
-          type: string
-          format: date
-
     RecordBatch:
       type: object
       required: [expenses, settlements]
@@ -1818,8 +1779,8 @@ components:
             Only when rejected. `ledger_unavailable`: the ledger was deleted
             or the User is no longer an active Member. `currency_mismatch`:
             the Group currency changed. `invalid_participants`: someone is
-            not an active Member. `invalid_amounts`: the shares do not add up
-            to the total. `id_conflict`: the id belongs to another record.
+            not an active Member. `invalid_amounts`: an amount is out of range
+            or the shares do not add up to the total. `id_conflict`: the id belongs to another record.
             `invalid_record`: any other rule of the contract.
           enum:
             - ledger_unavailable
@@ -1871,7 +1832,6 @@ components:
             - expense_deleted
             - expense_restored
             - settlement_created
-            - settlement_updated
             - settlement_deleted
             - settlement_restored
         details:
@@ -1900,7 +1860,13 @@ components:
           format: uuid
           description: Who is owed.
         amount:
-          $ref: "#/components/schemas/Amount"
+          type: integer
+          format: int64
+          minimum: 1
+          description: >
+            Positive amount in the minor unit of its currency. It adds up
+            many records, so unlike an Amount it may be over 10^15.
+          example: 1050
         currency:
           $ref: "#/components/schemas/Currency"
 
@@ -1956,6 +1922,7 @@ components:
         - activities
         - debts
         - droppedLedgers
+        - visibleLedgerIds
       properties:
         cursor:
           type: integer
@@ -2000,3 +1967,13 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/DroppedLedger"
+        visibleLedgerIds:
+          type: array
+          description: >
+            Every Group and Friendship the User can see now, changed or not.
+            The client drops from its replica any other ledger, even one
+            without a `droppedLedgers` entry, for example when someone undid
+            the User's Claim.
+          items:
+            type: string
+            format: uuid

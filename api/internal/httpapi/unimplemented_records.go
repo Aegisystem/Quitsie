@@ -25,10 +25,6 @@ func (s *Server) RestoreExpense(context.Context, RestoreExpenseRequestObject) (R
 	return nil, errNotImplemented
 }
 
-func (s *Server) UpdateSettlement(context.Context, UpdateSettlementRequestObject) (UpdateSettlementResponseObject, error) {
-	return nil, errNotImplemented
-}
-
 func (s *Server) DeleteSettlement(context.Context, DeleteSettlementRequestObject) (DeleteSettlementResponseObject, error) {
 	return nil, errNotImplemented
 }

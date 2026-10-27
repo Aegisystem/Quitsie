@@ -64,7 +64,6 @@ var unimplementedRecords = []operationRequest{
 	{"UpdateExpense", http.MethodPatch, "/api/v1/expenses/" + someID, "{}"},
 	{"DeleteExpense", http.MethodDelete, "/api/v1/expenses/" + someID, ""},
 	{"RestoreExpense", http.MethodPost, "/api/v1/expenses/" + someID + "/restore", ""},
-	{"UpdateSettlement", http.MethodPatch, "/api/v1/settlements/" + someID, "{}"},
 	{"DeleteSettlement", http.MethodDelete, "/api/v1/settlements/" + someID, ""},
 	{"RestoreSettlement", http.MethodPost, "/api/v1/settlements/" + someID + "/restore", ""},
 	{"PullChanges", http.MethodGet, "/api/v1/sync?since=0", ""},
