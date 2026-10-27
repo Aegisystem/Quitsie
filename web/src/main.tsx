@@ -1,4 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import '@fontsource-variable/jost'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './i18n'
