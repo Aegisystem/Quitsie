@@ -11,12 +11,19 @@ import (
 // and the compiled PWA everywhere else, so there is no CORS to configure.
 func NewHandler(s *Server, pwa fs.FS) http.Handler {
 	mux := http.NewServeMux()
-	HandlerWithOptions(NewStrictHandler(s, nil), StdHTTPServerOptions{
-		BaseURL:    "/api/v1",
-		BaseRouter: mux,
+	api := NewStrictHandlerWithOptions(s, nil, StrictHTTPServerOptions{
+		RequestErrorHandlerFunc:  badRequest,
+		ResponseErrorHandlerFunc: handlerError,
+	})
+	HandlerWithOptions(api, StdHTTPServerOptions{
+		BaseURL:          "/api/v1",
+		BaseRouter:       mux,
+		ErrorHandlerFunc: badRequest,
 	})
 	// Unknown API paths must answer 404 instead of falling through to the PWA.
-	mux.Handle("/api/", http.NotFoundHandler())
+	mux.HandleFunc("/api/", func(w http.ResponseWriter, _ *http.Request) {
+		writeProblem(w, http.StatusNotFound, ProblemCodeNotFound, "There is no such API endpoint.", "")
+	})
 	mux.Handle("/", pwaHandler(pwa))
 	return mux
 }

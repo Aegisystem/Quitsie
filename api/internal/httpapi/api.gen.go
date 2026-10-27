@@ -9,9 +9,152 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
+	"time"
+
+	"github.com/oapi-codegen/runtime"
+	openapi_types "github.com/oapi-codegen/runtime/types"
 )
+
+// Defines values for ActivityKind.
+const (
+	ClaimUndone               ActivityKind = "claim_undone"
+	DebtSimplificationChanged ActivityKind = "debt_simplification_changed"
+	ExpenseCreated            ActivityKind = "expense_created"
+	ExpenseDeleted            ActivityKind = "expense_deleted"
+	ExpenseRestored           ActivityKind = "expense_restored"
+	ExpenseUpdated            ActivityKind = "expense_updated"
+	FriendshipCreated         ActivityKind = "friendship_created"
+	GroupCreated              ActivityKind = "group_created"
+	GroupCurrencyChanged      ActivityKind = "group_currency_changed"
+	GroupRenamed              ActivityKind = "group_renamed"
+	MemberAdded               ActivityKind = "member_added"
+	MemberClaimed             ActivityKind = "member_claimed"
+	MemberJoined              ActivityKind = "member_joined"
+	MemberLeft                ActivityKind = "member_left"
+	MemberRemoved             ActivityKind = "member_removed"
+	SettlementCreated         ActivityKind = "settlement_created"
+	SettlementDeleted         ActivityKind = "settlement_deleted"
+	SettlementRestored        ActivityKind = "settlement_restored"
+	SettlementUpdated         ActivityKind = "settlement_updated"
+)
+
+// Valid indicates whether the value is a known member of the ActivityKind enum.
+func (e ActivityKind) Valid() bool {
+	switch e {
+	case ClaimUndone:
+		return true
+	case DebtSimplificationChanged:
+		return true
+	case ExpenseCreated:
+		return true
+	case ExpenseDeleted:
+		return true
+	case ExpenseRestored:
+		return true
+	case ExpenseUpdated:
+		return true
+	case FriendshipCreated:
+		return true
+	case GroupCreated:
+		return true
+	case GroupCurrencyChanged:
+		return true
+	case GroupRenamed:
+		return true
+	case MemberAdded:
+		return true
+	case MemberClaimed:
+		return true
+	case MemberJoined:
+		return true
+	case MemberLeft:
+		return true
+	case MemberRemoved:
+		return true
+	case SettlementCreated:
+		return true
+	case SettlementDeleted:
+		return true
+	case SettlementRestored:
+		return true
+	case SettlementUpdated:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for Category.
+const (
+	CategoryEntertainment Category = "entertainment"
+	CategoryFood          Category = "food"
+	CategoryGifts         Category = "gifts"
+	CategoryGroceries     Category = "groceries"
+	CategoryHealth        Category = "health"
+	CategoryHousing       Category = "housing"
+	CategoryLodging       Category = "lodging"
+	CategoryOther         Category = "other"
+	CategoryShopping      Category = "shopping"
+	CategoryTransport     Category = "transport"
+	CategoryUtilities     Category = "utilities"
+)
+
+// Valid indicates whether the value is a known member of the Category enum.
+func (e Category) Valid() bool {
+	switch e {
+	case CategoryEntertainment:
+		return true
+	case CategoryFood:
+		return true
+	case CategoryGifts:
+		return true
+	case CategoryGroceries:
+		return true
+	case CategoryHealth:
+		return true
+	case CategoryHousing:
+		return true
+	case CategoryLodging:
+		return true
+	case CategoryOther:
+		return true
+	case CategoryShopping:
+		return true
+	case CategoryTransport:
+		return true
+	case CategoryUtilities:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DroppedLedgerReason.
+const (
+	Deleted   DroppedLedgerReason = "deleted"
+	Left      DroppedLedgerReason = "left"
+	Removed   DroppedLedgerReason = "removed"
+	Unclaimed DroppedLedgerReason = "unclaimed"
+)
+
+// Valid indicates whether the value is a known member of the DroppedLedgerReason enum.
+func (e DroppedLedgerReason) Valid() bool {
+	switch e {
+	case Deleted:
+		return true
+	case Left:
+		return true
+	case Removed:
+		return true
+	case Unclaimed:
+		return true
+	default:
+		return false
+	}
+}
 
 // Defines values for HealthDatabase.
 const (
@@ -49,6 +192,464 @@ func (e HealthStatus) Valid() bool {
 	}
 }
 
+// Defines values for InviteKind.
+const (
+	InviteKindFriendship InviteKind = "friendship"
+	InviteKindGroup      InviteKind = "group"
+)
+
+// Valid indicates whether the value is a known member of the InviteKind enum.
+func (e InviteKind) Valid() bool {
+	switch e {
+	case InviteKindFriendship:
+		return true
+	case InviteKindGroup:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for JoinedLedgerKind.
+const (
+	JoinedLedgerKindFriendship JoinedLedgerKind = "friendship"
+	JoinedLedgerKindGroup      JoinedLedgerKind = "group"
+)
+
+// Valid indicates whether the value is a known member of the JoinedLedgerKind enum.
+func (e JoinedLedgerKind) Valid() bool {
+	switch e {
+	case JoinedLedgerKindFriendship:
+		return true
+	case JoinedLedgerKindGroup:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for MemberStatus.
+const (
+	Active MemberStatus = "active"
+	Former MemberStatus = "former"
+)
+
+// Valid indicates whether the value is a known member of the MemberStatus enum.
+func (e MemberStatus) Valid() bool {
+	switch e {
+	case Active:
+		return true
+	case Former:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ProblemCode.
+const (
+	ProblemCodeAlreadyMember         ProblemCode = "already_member"
+	ProblemCodeCurrencyMismatch      ProblemCode = "currency_mismatch"
+	ProblemCodeCurrencyPrecisionLoss ProblemCode = "currency_precision_loss"
+	ProblemCodeCursorInvalid         ProblemCode = "cursor_invalid"
+	ProblemCodeFriendshipExists      ProblemCode = "friendship_exists"
+	ProblemCodeInternalError         ProblemCode = "internal_error"
+	ProblemCodeInvalidAmounts        ProblemCode = "invalid_amounts"
+	ProblemCodeInvalidParticipants   ProblemCode = "invalid_participants"
+	ProblemCodeInviteLinkInvalid     ProblemCode = "invite_link_invalid"
+	ProblemCodeLoginCodeExpired      ProblemCode = "login_code_expired"
+	ProblemCodeLoginCodeInvalid      ProblemCode = "login_code_invalid"
+	ProblemCodeMemberNotClaimed      ProblemCode = "member_not_claimed"
+	ProblemCodeMemberNotPending      ProblemCode = "member_not_pending"
+	ProblemCodeNonzeroBalance        ProblemCode = "nonzero_balance"
+	ProblemCodeNotFound              ProblemCode = "not_found"
+	ProblemCodeNotImplemented        ProblemCode = "not_implemented"
+	ProblemCodeOriginMismatch        ProblemCode = "origin_mismatch"
+	ProblemCodeRateLimited           ProblemCode = "rate_limited"
+	ProblemCodeTooManyAttempts       ProblemCode = "too_many_attempts"
+	ProblemCodeUnauthenticated       ProblemCode = "unauthenticated"
+	ProblemCodeValidationFailed      ProblemCode = "validation_failed"
+	ProblemCodeVersionConflict       ProblemCode = "version_conflict"
+)
+
+// Valid indicates whether the value is a known member of the ProblemCode enum.
+func (e ProblemCode) Valid() bool {
+	switch e {
+	case ProblemCodeAlreadyMember:
+		return true
+	case ProblemCodeCurrencyMismatch:
+		return true
+	case ProblemCodeCurrencyPrecisionLoss:
+		return true
+	case ProblemCodeCursorInvalid:
+		return true
+	case ProblemCodeFriendshipExists:
+		return true
+	case ProblemCodeInternalError:
+		return true
+	case ProblemCodeInvalidAmounts:
+		return true
+	case ProblemCodeInvalidParticipants:
+		return true
+	case ProblemCodeInviteLinkInvalid:
+		return true
+	case ProblemCodeLoginCodeExpired:
+		return true
+	case ProblemCodeLoginCodeInvalid:
+		return true
+	case ProblemCodeMemberNotClaimed:
+		return true
+	case ProblemCodeMemberNotPending:
+		return true
+	case ProblemCodeNonzeroBalance:
+		return true
+	case ProblemCodeNotFound:
+		return true
+	case ProblemCodeNotImplemented:
+		return true
+	case ProblemCodeOriginMismatch:
+		return true
+	case ProblemCodeRateLimited:
+		return true
+	case ProblemCodeTooManyAttempts:
+		return true
+	case ProblemCodeUnauthenticated:
+		return true
+	case ProblemCodeValidationFailed:
+		return true
+	case ProblemCodeVersionConflict:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for RecordResultKind.
+const (
+	RecordResultKindExpense    RecordResultKind = "expense"
+	RecordResultKindSettlement RecordResultKind = "settlement"
+)
+
+// Valid indicates whether the value is a known member of the RecordResultKind enum.
+func (e RecordResultKind) Valid() bool {
+	switch e {
+	case RecordResultKindExpense:
+		return true
+	case RecordResultKindSettlement:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for RecordResultReason.
+const (
+	RecordResultReasonCurrencyMismatch    RecordResultReason = "currency_mismatch"
+	RecordResultReasonIdConflict          RecordResultReason = "id_conflict"
+	RecordResultReasonInvalidAmounts      RecordResultReason = "invalid_amounts"
+	RecordResultReasonInvalidParticipants RecordResultReason = "invalid_participants"
+	RecordResultReasonInvalidRecord       RecordResultReason = "invalid_record"
+	RecordResultReasonLedgerUnavailable   RecordResultReason = "ledger_unavailable"
+)
+
+// Valid indicates whether the value is a known member of the RecordResultReason enum.
+func (e RecordResultReason) Valid() bool {
+	switch e {
+	case RecordResultReasonCurrencyMismatch:
+		return true
+	case RecordResultReasonIdConflict:
+		return true
+	case RecordResultReasonInvalidAmounts:
+		return true
+	case RecordResultReasonInvalidParticipants:
+		return true
+	case RecordResultReasonInvalidRecord:
+		return true
+	case RecordResultReasonLedgerUnavailable:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for RecordResultStatus.
+const (
+	Accepted RecordResultStatus = "accepted"
+	Rejected RecordResultStatus = "rejected"
+)
+
+// Valid indicates whether the value is a known member of the RecordResultStatus enum.
+func (e RecordResultStatus) Valid() bool {
+	switch e {
+	case Accepted:
+		return true
+	case Rejected:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SplitMethod.
+const (
+	Adjustment SplitMethod = "adjustment"
+	Equal      SplitMethod = "equal"
+	Exact      SplitMethod = "exact"
+	Percentage SplitMethod = "percentage"
+	Weights    SplitMethod = "weights"
+)
+
+// Valid indicates whether the value is a known member of the SplitMethod enum.
+func (e SplitMethod) Valid() bool {
+	switch e {
+	case Adjustment:
+		return true
+	case Equal:
+		return true
+	case Exact:
+		return true
+	case Percentage:
+		return true
+	case Weights:
+		return true
+	default:
+		return false
+	}
+}
+
+// Activity Who changed what, and when, in a Group or between Friends.
+type Activity struct {
+	CreatedAt time.Time `json:"createdAt"`
+
+	// Details Data that depends on `kind`, such as the ids involved and the values before and after.
+	Details map[string]interface{} `json:"details"`
+	Id      openapi_types.UUID     `json:"id"`
+
+	// Kind What changed. New kinds may be added; clients skip the ones they do not know.
+	Kind     ActivityKind       `json:"kind"`
+	LedgerId openapi_types.UUID `json:"ledgerId"`
+
+	// UserId The User who made the change.
+	UserId openapi_types.UUID `json:"userId"`
+
+	// Version Value of the global version counter when the row last changed.
+	//
+	// Example: 42
+	Version Version `json:"version"`
+}
+
+// ActivityKind What changed. New kinds may be added; clients skip the ones they do not know.
+type ActivityKind string
+
+// Amount Positive amount in the minor unit of its currency (ISO 4217), for example 1050 = 10.50 USD.
+//
+// Example: 1050
+type Amount = int64
+
+// Category What an Expense was spent on. The client translates each value.
+type Category string
+
+// Changes Everything with a version greater than the cursor sent. Every list is always present, possibly empty. Rows replace the replica's copy with the same id.
+type Changes struct {
+	Activities []Activity `json:"activities"`
+
+	// Cursor Send it as `since` in the next pull.
+	Cursor int64 `json:"cursor"`
+
+	// Debts The Debts of every ledger that changed.
+	Debts          []LedgerDebts   `json:"debts"`
+	DroppedLedgers []DroppedLedger `json:"droppedLedgers"`
+
+	// Expenses Includes deleted Expenses, with `deletedAt`.
+	Expenses    []Expense    `json:"expenses"`
+	Friendships []Friendship `json:"friendships"`
+	Groups      []Group      `json:"groups"`
+
+	// HasMore True when the server cut the response short; pull again right away with `cursor`.
+	HasMore bool `json:"hasMore"`
+
+	// Members Includes Members who became former members; the User's own former Members come as `droppedLedgers` instead.
+	Members []Member `json:"members"`
+
+	// Settlements Includes deleted Settlements, with `deletedAt`.
+	Settlements []Settlement `json:"settlements"`
+}
+
+// ClaimRequest defines model for ClaimRequest.
+type ClaimRequest struct {
+	// MemberId The pending Member (or pending Friend) to claim.
+	MemberId openapi_types.UUID `json:"memberId"`
+}
+
+// Currency ISO 4217 currency code.
+//
+// Example: USD
+type Currency = string
+
+// CurrencyPrecisionProblem The `currency_precision_loss` problem, with the records the User must fix first.
+type CurrencyPrecisionProblem struct {
+	// Code Stable machine-readable error code. New codes may be added; clients treat an unknown code as a generic error for its status.
+	Code ProblemCode `json:"code"`
+
+	// Detail Explanation of this occurrence, for logs and debugging.
+	Detail        *string              `json:"detail,omitempty"`
+	ExpenseIds    []openapi_types.UUID `json:"expenseIds"`
+	SettlementIds []openapi_types.UUID `json:"settlementIds"`
+
+	// Status The HTTP status code.
+	//
+	// Example: 409
+	Status int `json:"status"`
+
+	// Title Short English summary for logs. The UI shows its own text for each `code`.
+	//
+	// Example: The expense changed since you read it.
+	Title string `json:"title"`
+
+	// Type URI that identifies the problem type; absent means `about:blank`.
+	Type *string `json:"type,omitempty"`
+}
+
+// Debt How much one person owes another specific person.
+type Debt struct {
+	// Amount Positive amount in the minor unit of its currency (ISO 4217), for example 1050 = 10.50 USD.
+	//
+	// Example: 1050
+	Amount Amount `json:"amount"`
+
+	// Currency ISO 4217 currency code.
+	//
+	// Example: USD
+	Currency Currency `json:"currency"`
+
+	// FromMemberId Who owes.
+	FromMemberId openapi_types.UUID `json:"fromMemberId"`
+
+	// ToMemberId Who is owed.
+	ToMemberId openapi_types.UUID `json:"toMemberId"`
+}
+
+// DroppedLedger A ledger the User can no longer see. The client deletes it from the replica with everything in it.
+type DroppedLedger struct {
+	LedgerId openapi_types.UUID `json:"ledgerId"`
+
+	// Reason `deleted`: the Group was deleted. `left`: the User left it. `removed`: another Member removed the User. `unclaimed`: someone undid the User's Claim.
+	Reason DroppedLedgerReason `json:"reason"`
+}
+
+// DroppedLedgerReason `deleted`: the Group was deleted. `left`: the User left it. `removed`: another Member removed the User. `unclaimed`: someone undid the User's Claim.
+type DroppedLedgerReason string
+
+// Expense defines model for Expense.
+type Expense struct {
+	// Category What an Expense was spent on. The client translates each value.
+	Category  *Category `json:"category,omitempty"`
+	CreatedAt time.Time `json:"createdAt"`
+
+	// CreatedBy The User who created it.
+	CreatedBy openapi_types.UUID `json:"createdBy"`
+
+	// Currency ISO 4217 currency code.
+	//
+	// Example: USD
+	Currency Currency           `json:"currency"`
+	Date     openapi_types.Date `json:"date"`
+
+	// DeletedAt Set on a deleted Expense, which no longer counts in Balances but can be restored.
+	DeletedAt   *time.Time         `json:"deletedAt,omitempty"`
+	Description string             `json:"description"`
+	Id          openapi_types.UUID `json:"id"`
+	LedgerId    openapi_types.UUID `json:"ledgerId"`
+	OwedShares  []OwedShare        `json:"owedShares"`
+	PaidShares  []PaidShare        `json:"paidShares"`
+
+	// SplitMethod How the client computed the OwedShares (ADR 0003). The server stores it only to re-edit the Expense and never recomputes the shares.
+	SplitMethod SplitMethod `json:"splitMethod"`
+
+	// Total Positive amount in the minor unit of its currency (ISO 4217), for example 1050 = 10.50 USD.
+	//
+	// Example: 1050
+	Total Amount `json:"total"`
+
+	// Version Value of the global version counter when the row last changed.
+	//
+	// Example: 42
+	Version Version `json:"version"`
+}
+
+// ExpenseUpdate The whole editable content of an Expense. Omitting `category` clears it. The same currency rule as in NewExpense applies.
+type ExpenseUpdate struct {
+	// Category What an Expense was spent on. The client translates each value.
+	Category *Category `json:"category,omitempty"`
+
+	// Currency ISO 4217 currency code.
+	//
+	// Example: USD
+	Currency    Currency           `json:"currency"`
+	Date        openapi_types.Date `json:"date"`
+	Description string             `json:"description"`
+
+	// ExpectedVersion Value of the global version counter when the row last changed.
+	//
+	// Example: 42
+	ExpectedVersion Version     `json:"expectedVersion"`
+	OwedShares      []OwedShare `json:"owedShares"`
+	PaidShares      []PaidShare `json:"paidShares"`
+
+	// SplitMethod How the client computed the OwedShares (ADR 0003). The server stores it only to re-edit the Expense and never recomputes the shares.
+	SplitMethod SplitMethod `json:"splitMethod"`
+
+	// Total Positive amount in the minor unit of its currency (ISO 4217), for example 1050 = 10.50 USD.
+	//
+	// Example: 1050
+	Total Amount `json:"total"`
+}
+
+// Friendship A Friendship's ledger. Its two Members (the User and the Friend) arrive in `Changes.members`.
+type Friendship struct {
+	CreatedAt time.Time `json:"createdAt"`
+
+	// Id The Friendship's ledger id.
+	Id openapi_types.UUID `json:"id"`
+
+	// Version Value of the global version counter when the row last changed.
+	//
+	// Example: 42
+	Version Version `json:"version"`
+}
+
+// Group defines model for Group.
+type Group struct {
+	CreatedAt time.Time `json:"createdAt"`
+
+	// Currency ISO 4217 currency code.
+	//
+	// Example: USD
+	Currency Currency `json:"currency"`
+
+	// Id The Group's ledger id.
+	Id   openapi_types.UUID `json:"id"`
+	Name string             `json:"name"`
+
+	// SimplifyDebts Whether Debt simplification is on.
+	SimplifyDebts bool `json:"simplifyDebts"`
+
+	// Version Value of the global version counter when the row last changed.
+	//
+	// Example: 42
+	Version Version `json:"version"`
+}
+
+// GroupUpdate Only the fields sent change.
+type GroupUpdate struct {
+	// Currency ISO 4217 currency code.
+	//
+	// Example: USD
+	Currency      *Currency `json:"currency,omitempty"`
+	Name          *string   `json:"name,omitempty"`
+	SimplifyDebts *bool     `json:"simplifyDebts,omitempty"`
+}
+
 // Health defines model for Health.
 type Health struct {
 	Database HealthDatabase `json:"database"`
@@ -66,11 +667,554 @@ type HealthDatabase string
 // HealthStatus defines model for Health.Status.
 type HealthStatus string
 
+// Invite defines model for Invite.
+type Invite struct {
+	// GroupName Only for `group`.
+	GroupName *string `json:"groupName,omitempty"`
+
+	// InvitedBy Only for `friendship`, the name of the User who added the pending Friend.
+	InvitedBy *string `json:"invitedBy,omitempty"`
+
+	// JoinedMemberId With a session, the User's Member when they already belong to this ledger.
+	JoinedMemberId *openapi_types.UUID `json:"joinedMemberId,omitempty"`
+
+	// Kind `group` links allow claiming or joining; `friendship` links only allow claiming the pending Friend.
+	Kind     InviteKind         `json:"kind"`
+	LedgerId openapi_types.UUID `json:"ledgerId"`
+
+	// PendingMembers The pending Members that can be claimed; for `friendship`, just the pending Friend.
+	PendingMembers []InviteMember `json:"pendingMembers"`
+
+	// SuggestedMemberId With a session, the pending Member whose email matches the User's.
+	SuggestedMemberId *openapi_types.UUID `json:"suggestedMemberId,omitempty"`
+}
+
+// InviteKind `group` links allow claiming or joining; `friendship` links only allow claiming the pending Friend.
+type InviteKind string
+
+// InviteLink defines model for InviteLink.
+type InviteLink struct {
+	// Token Secret to put in the app's invite URL. Only its hash is stored.
+	Token string `json:"token"`
+}
+
+// InviteMember defines model for InviteMember.
+type InviteMember struct {
+	Id   openapi_types.UUID `json:"id"`
+	Name string             `json:"name"`
+}
+
+// JoinedLedger defines model for JoinedLedger.
+type JoinedLedger struct {
+	Kind     JoinedLedgerKind   `json:"kind"`
+	LedgerId openapi_types.UUID `json:"ledgerId"`
+
+	// MemberId The User's Member in that ledger.
+	MemberId openapi_types.UUID `json:"memberId"`
+}
+
+// JoinedLedgerKind defines model for JoinedLedger.Kind.
+type JoinedLedgerKind string
+
+// LedgerDebts The current Debts of a ledger, computed by the server. In a Group with Debt simplification they are already simplified; in a Friendship there is at most one per currency.
+type LedgerDebts struct {
+	// Debts Replaces the ledger's previous Debts; empty when everyone is settled.
+	Debts    []Debt             `json:"debts"`
+	LedgerId openapi_types.UUID `json:"ledgerId"`
+}
+
+// LoginCodeRequest defines model for LoginCodeRequest.
+type LoginCodeRequest struct {
+	Email openapi_types.Email `json:"email"`
+}
+
+// LoginCodeVerification defines model for LoginCodeVerification.
+type LoginCodeVerification struct {
+	// Code Example: 042917
+	Code  string              `json:"code"`
+	Email openapi_types.Email `json:"email"`
+}
+
+// LoginResult defines model for LoginResult.
+type LoginResult struct {
+	// NewUser True when this sign-in created the account.
+	NewUser bool `json:"newUser"`
+	User    User `json:"user"`
+}
+
+// Member A person's place in a Group, or one of the two sides of a Friendship (the Friend is a Member too). Without `userId` it is a pending Member or a pending Friend.
+type Member struct {
+	// Email Only for pending Members, the email given when adding them.
+	Email    *openapi_types.Email `json:"email,omitempty"`
+	Id       openapi_types.UUID   `json:"id"`
+	LedgerId openapi_types.UUID   `json:"ledgerId"`
+	Name     string               `json:"name"`
+
+	// Status `former` is a former member: still named on past Expenses, out of new ones.
+	Status MemberStatus `json:"status"`
+
+	// UserId The linked User; absent while pending.
+	UserId *openapi_types.UUID `json:"userId,omitempty"`
+
+	// Version Value of the global version counter when the row last changed.
+	//
+	// Example: 42
+	Version Version `json:"version"`
+}
+
+// MemberStatus `former` is a former member: still named on past Expenses, out of new ones.
+type MemberStatus string
+
+// NewExpense An Expense created on the device. In a Group, `currency` is the Group currency the client knew; if it no longer matches, the record is rejected with `currency_mismatch`. In a Friendship it is the Expense's own currency.
+type NewExpense struct {
+	// Category What an Expense was spent on. The client translates each value.
+	Category *Category `json:"category,omitempty"`
+
+	// Currency ISO 4217 currency code.
+	//
+	// Example: USD
+	Currency    Currency           `json:"currency"`
+	Date        openapi_types.Date `json:"date"`
+	Description string             `json:"description"`
+
+	// Id UUIDv7 generated by the client.
+	Id openapi_types.UUID `json:"id"`
+
+	// LedgerId The Group or Friendship.
+	LedgerId openapi_types.UUID `json:"ledgerId"`
+
+	// OwedShares Add up to `total`.
+	OwedShares []OwedShare `json:"owedShares"`
+
+	// PaidShares Add up to `total`.
+	PaidShares []PaidShare `json:"paidShares"`
+
+	// SplitMethod How the client computed the OwedShares (ADR 0003). The server stores it only to re-edit the Expense and never recomputes the shares.
+	SplitMethod SplitMethod `json:"splitMethod"`
+
+	// Total Positive amount in the minor unit of its currency (ISO 4217), for example 1050 = 10.50 USD.
+	//
+	// Example: 1050
+	Total Amount `json:"total"`
+}
+
+// NewFriendship Either `userId`, or `name` with an optional `email`.
+type NewFriendship struct {
+	// Email Email of the pending Friend, used only to suggest the Claim.
+	Email *openapi_types.Email `json:"email,omitempty"`
+
+	// Name Name of the pending Friend.
+	Name *string `json:"name,omitempty"`
+
+	// UserId An existing User who shares a Group with the caller.
+	UserId *openapi_types.UUID `json:"userId,omitempty"`
+}
+
+// NewGroup defines model for NewGroup.
+type NewGroup struct {
+	// Currency ISO 4217 currency code.
+	//
+	// Example: USD
+	Currency Currency `json:"currency"`
+	Name     string   `json:"name"`
+
+	// PendingMembers Pending Members to add along with the User.
+	PendingMembers *[]NewPendingMember `json:"pendingMembers,omitempty"`
+	SimplifyDebts  *bool               `json:"simplifyDebts,omitempty"`
+}
+
+// NewPendingMember defines model for NewPendingMember.
+type NewPendingMember struct {
+	// Email Used only to suggest this Member when someone with that email opens the Invite link.
+	Email *openapi_types.Email `json:"email,omitempty"`
+	Name  string               `json:"name"`
+}
+
+// NewSettlement A Settlement created on the device. `currency` follows the same rule as in NewExpense.
+type NewSettlement struct {
+	// Amount Positive amount in the minor unit of its currency (ISO 4217), for example 1050 = 10.50 USD.
+	//
+	// Example: 1050
+	Amount Amount `json:"amount"`
+
+	// Currency ISO 4217 currency code.
+	//
+	// Example: USD
+	Currency     Currency           `json:"currency"`
+	Date         openapi_types.Date `json:"date"`
+	FromMemberId openapi_types.UUID `json:"fromMemberId"`
+
+	// Id UUIDv7 generated by the client.
+	Id         openapi_types.UUID `json:"id"`
+	LedgerId   openapi_types.UUID `json:"ledgerId"`
+	ToMemberId openapi_types.UUID `json:"toMemberId"`
+}
+
+// OwedShare What a Participant owes of an Expense, already computed by the client.
+type OwedShare struct {
+	// Amount Positive amount in the minor unit of its currency (ISO 4217), for example 1050 = 10.50 USD.
+	//
+	// Example: 1050
+	Amount   Amount             `json:"amount"`
+	MemberId openapi_types.UUID `json:"memberId"`
+
+	// SplitValue The Participant's input to the Split method, kept to re-edit the Expense: percentage in hundredths (10000 = 100 %), weight, or adjustment in minor units (may be negative). Absent for `equal` and `exact`.
+	SplitValue *int64 `json:"splitValue,omitempty"`
+}
+
+// PaidShare What a Participant paid of an Expense.
+type PaidShare struct {
+	// Amount Positive amount in the minor unit of its currency (ISO 4217), for example 1050 = 10.50 USD.
+	//
+	// Example: 1050
+	Amount   Amount             `json:"amount"`
+	MemberId openapi_types.UUID `json:"memberId"`
+}
+
+// Problem Error body (RFC 9457, `application/problem+json`).
+type Problem struct {
+	// Code Stable machine-readable error code. New codes may be added; clients treat an unknown code as a generic error for its status.
+	Code ProblemCode `json:"code"`
+
+	// Detail Explanation of this occurrence, for logs and debugging.
+	Detail *string `json:"detail,omitempty"`
+
+	// Status The HTTP status code.
+	//
+	// Example: 409
+	Status int `json:"status"`
+
+	// Title Short English summary for logs. The UI shows its own text for each `code`.
+	//
+	// Example: The expense changed since you read it.
+	Title string `json:"title"`
+
+	// Type URI that identifies the problem type; absent means `about:blank`.
+	Type *string `json:"type,omitempty"`
+}
+
+// ProblemCode Stable machine-readable error code. New codes may be added; clients treat an unknown code as a generic error for its status.
+type ProblemCode string
+
+// RecordBatch defines model for RecordBatch.
+type RecordBatch struct {
+	Expenses    []NewExpense    `json:"expenses"`
+	Settlements []NewSettlement `json:"settlements"`
+}
+
+// RecordResult defines model for RecordResult.
+type RecordResult struct {
+	// Detail Explanation of the rejection, for logs and debugging.
+	Detail *string            `json:"detail,omitempty"`
+	Id     openapi_types.UUID `json:"id"`
+	Kind   RecordResultKind   `json:"kind"`
+
+	// Reason Only when rejected. `ledger_unavailable`: the ledger was deleted or the User is no longer an active Member. `currency_mismatch`: the Group currency changed. `invalid_participants`: someone is not an active Member. `invalid_amounts`: the shares do not add up to the total. `id_conflict`: the id belongs to another record. `invalid_record`: any other rule of the contract.
+	Reason *RecordResultReason `json:"reason,omitempty"`
+	Status RecordResultStatus  `json:"status"`
+
+	// Version Value of the global version counter when the row last changed.
+	//
+	// Example: 42
+	Version *Version `json:"version,omitempty"`
+}
+
+// RecordResultKind defines model for RecordResult.Kind.
+type RecordResultKind string
+
+// RecordResultReason Only when rejected. `ledger_unavailable`: the ledger was deleted or the User is no longer an active Member. `currency_mismatch`: the Group currency changed. `invalid_participants`: someone is not an active Member. `invalid_amounts`: the shares do not add up to the total. `id_conflict`: the id belongs to another record. `invalid_record`: any other rule of the contract.
+type RecordResultReason string
+
+// RecordResultStatus defines model for RecordResult.Status.
+type RecordResultStatus string
+
+// RecordResults defines model for RecordResults.
+type RecordResults struct {
+	Results []RecordResult `json:"results"`
+}
+
+// Session defines model for Session.
+type Session struct {
+	CreatedAt time.Time `json:"createdAt"`
+
+	// Current True for the session making this request.
+	Current bool `json:"current"`
+
+	// Device Description of the device, derived from its User-Agent at sign-in.
+	//
+	// Example: Safari en iPhone
+	Device     string             `json:"device"`
+	Id         openapi_types.UUID `json:"id"`
+	LastUsedAt time.Time          `json:"lastUsedAt"`
+}
+
+// Settlement A record that one person paid another back. No real money moves.
+type Settlement struct {
+	// Amount Positive amount in the minor unit of its currency (ISO 4217), for example 1050 = 10.50 USD.
+	//
+	// Example: 1050
+	Amount    Amount    `json:"amount"`
+	CreatedAt time.Time `json:"createdAt"`
+
+	// CreatedBy The User who recorded it.
+	CreatedBy openapi_types.UUID `json:"createdBy"`
+
+	// Currency ISO 4217 currency code.
+	//
+	// Example: USD
+	Currency Currency           `json:"currency"`
+	Date     openapi_types.Date `json:"date"`
+
+	// DeletedAt Set on a deleted Settlement, which no longer counts in Balances but can be restored.
+	DeletedAt *time.Time `json:"deletedAt,omitempty"`
+
+	// FromMemberId Who paid back.
+	FromMemberId openapi_types.UUID `json:"fromMemberId"`
+	Id           openapi_types.UUID `json:"id"`
+	LedgerId     openapi_types.UUID `json:"ledgerId"`
+
+	// ToMemberId Who received it.
+	ToMemberId openapi_types.UUID `json:"toMemberId"`
+
+	// Version Value of the global version counter when the row last changed.
+	//
+	// Example: 42
+	Version Version `json:"version"`
+}
+
+// SettlementUpdate The whole editable content of a Settlement.
+type SettlementUpdate struct {
+	// Amount Positive amount in the minor unit of its currency (ISO 4217), for example 1050 = 10.50 USD.
+	//
+	// Example: 1050
+	Amount Amount `json:"amount"`
+
+	// Currency ISO 4217 currency code.
+	//
+	// Example: USD
+	Currency Currency           `json:"currency"`
+	Date     openapi_types.Date `json:"date"`
+
+	// ExpectedVersion Value of the global version counter when the row last changed.
+	//
+	// Example: 42
+	ExpectedVersion Version            `json:"expectedVersion"`
+	FromMemberId    openapi_types.UUID `json:"fromMemberId"`
+	ToMemberId      openapi_types.UUID `json:"toMemberId"`
+}
+
+// SplitMethod How the client computed the OwedShares (ADR 0003). The server stores it only to re-edit the Expense and never recomputes the shares.
+type SplitMethod string
+
+// User defines model for User.
+type User struct {
+	Email openapi_types.Email `json:"email"`
+	Id    openapi_types.UUID  `json:"id"`
+	Name  string              `json:"name"`
+
+	// PreferredCurrency ISO 4217 currency code.
+	//
+	// Example: USD
+	PreferredCurrency Currency `json:"preferredCurrency"`
+}
+
+// UserUpdate Only the fields sent change.
+type UserUpdate struct {
+	Name *string `json:"name,omitempty"`
+
+	// PreferredCurrency ISO 4217 currency code.
+	//
+	// Example: USD
+	PreferredCurrency *Currency `json:"preferredCurrency,omitempty"`
+}
+
+// Version Value of the global version counter when the row last changed.
+//
+// Example: 42
+type Version = int64
+
+// ExpenseId defines model for ExpenseId.
+type ExpenseId = openapi_types.UUID
+
+// FriendshipId defines model for FriendshipId.
+type FriendshipId = openapi_types.UUID
+
+// GroupId defines model for GroupId.
+type GroupId = openapi_types.UUID
+
+// InviteToken defines model for InviteToken.
+type InviteToken = string
+
+// MemberId defines model for MemberId.
+type MemberId = openapi_types.UUID
+
+// SessionId defines model for SessionId.
+type SessionId = openapi_types.UUID
+
+// SettlementId defines model for SettlementId.
+type SettlementId = openapi_types.UUID
+
+// BadRequest Error body (RFC 9457, `application/problem+json`).
+type BadRequest = Problem
+
+// NotFound Error body (RFC 9457, `application/problem+json`).
+type NotFound = Problem
+
+// Unauthorized Error body (RFC 9457, `application/problem+json`).
+type Unauthorized = Problem
+
+// StartGoogleLoginParams defines parameters for StartGoogleLogin.
+type StartGoogleLoginParams struct {
+	// ReturnTo Path inside the app to go back to afterwards, for example an invite. Must start with `/`.
+	ReturnTo *string `form:"returnTo,omitempty" json:"returnTo,omitempty"`
+}
+
+// FinishGoogleLoginParams defines parameters for FinishGoogleLogin.
+type FinishGoogleLoginParams struct {
+	Code  *string `form:"code,omitempty" json:"code,omitempty"`
+	State *string `form:"state,omitempty" json:"state,omitempty"`
+
+	// Error Set by Google when the person cancelled or the request failed.
+	Error *string `form:"error,omitempty" json:"error,omitempty"`
+}
+
+// PullChangesParams defines parameters for PullChanges.
+type PullChangesParams struct {
+	// Since The `cursor` of the previous pull, or 0.
+	Since int64 `form:"since" json:"since"`
+}
+
+// RequestLoginCodeJSONRequestBody defines body for RequestLoginCode for application/json ContentType.
+type RequestLoginCodeJSONRequestBody = LoginCodeRequest
+
+// VerifyLoginCodeJSONRequestBody defines body for VerifyLoginCode for application/json ContentType.
+type VerifyLoginCodeJSONRequestBody = LoginCodeVerification
+
+// UpdateExpenseJSONRequestBody defines body for UpdateExpense for application/json ContentType.
+type UpdateExpenseJSONRequestBody = ExpenseUpdate
+
+// CreateFriendshipJSONRequestBody defines body for CreateFriendship for application/json ContentType.
+type CreateFriendshipJSONRequestBody = NewFriendship
+
+// CreateGroupJSONRequestBody defines body for CreateGroup for application/json ContentType.
+type CreateGroupJSONRequestBody = NewGroup
+
+// UpdateGroupJSONRequestBody defines body for UpdateGroup for application/json ContentType.
+type UpdateGroupJSONRequestBody = GroupUpdate
+
+// AddPendingMemberJSONRequestBody defines body for AddPendingMember for application/json ContentType.
+type AddPendingMemberJSONRequestBody = NewPendingMember
+
+// ClaimMemberJSONRequestBody defines body for ClaimMember for application/json ContentType.
+type ClaimMemberJSONRequestBody = ClaimRequest
+
+// UpdateMeJSONRequestBody defines body for UpdateMe for application/json ContentType.
+type UpdateMeJSONRequestBody = UserUpdate
+
+// PushRecordsJSONRequestBody defines body for PushRecords for application/json ContentType.
+type PushRecordsJSONRequestBody = RecordBatch
+
+// UpdateSettlementJSONRequestBody defines body for UpdateSettlement for application/json ContentType.
+type UpdateSettlementJSONRequestBody = SettlementUpdate
+
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
+	// StartGoogleLogin Redirects to Google to sign in with OpenID Connect.
+	// (GET /auth/google)
+	StartGoogleLogin(w http.ResponseWriter, r *http.Request, params StartGoogleLoginParams)
+	// FinishGoogleLogin Google redirects back here; signs in and returns to the app.
+	// (GET /auth/google/callback)
+	FinishGoogleLogin(w http.ResponseWriter, r *http.Request, params FinishGoogleLoginParams)
+	// RequestLoginCode Emails a 6-digit sign-in code.
+	// (POST /auth/login-code)
+	RequestLoginCode(w http.ResponseWriter, r *http.Request)
+	// VerifyLoginCode Exchanges a sign-in code for a session.
+	// (POST /auth/login-code/verify)
+	VerifyLoginCode(w http.ResponseWriter, r *http.Request)
+	// Logout Closes the current session.
+	// (POST /auth/logout)
+	Logout(w http.ResponseWriter, r *http.Request)
+	// ListSessions Lists the User's open sessions, one per device.
+	// (GET /auth/sessions)
+	ListSessions(w http.ResponseWriter, r *http.Request)
+	// RevokeSession Closes a session on one device.
+	// (DELETE /auth/sessions/{sessionId})
+	RevokeSession(w http.ResponseWriter, r *http.Request, sessionId SessionId)
+	// DeleteExpense Deletes an Expense; it stops counting in Balances but can be restored.
+	// (DELETE /expenses/{expenseId})
+	DeleteExpense(w http.ResponseWriter, r *http.Request, expenseId ExpenseId)
+	// UpdateExpense Edits an Expense if nobody changed it since the client read it.
+	// (PATCH /expenses/{expenseId})
+	UpdateExpense(w http.ResponseWriter, r *http.Request, expenseId ExpenseId)
+	// RestoreExpense Restores a deleted Expense, with no time limit.
+	// (POST /expenses/{expenseId}/restore)
+	RestoreExpense(w http.ResponseWriter, r *http.Request, expenseId ExpenseId)
+	// CreateFriendship Creates a Friendship with a pending Friend or with an existing User.
+	// (POST /friendships)
+	CreateFriendship(w http.ResponseWriter, r *http.Request)
+	// RegenerateFriendInviteLink Creates a new Invite link for a pending Friend and revokes the previous one.
+	// (POST /friendships/{friendshipId}/invite-link)
+	RegenerateFriendInviteLink(w http.ResponseWriter, r *http.Request, friendshipId FriendshipId)
+	// CreateGroup Creates a Group with the User as its first Member.
+	// (POST /groups)
+	CreateGroup(w http.ResponseWriter, r *http.Request)
+	// DeleteGroup Deletes a Group whose Balances are all zero.
+	// (DELETE /groups/{groupId})
+	DeleteGroup(w http.ResponseWriter, r *http.Request, groupId GroupId)
+	// UpdateGroup Renames a Group, turns Debt simplification on or off, or changes the Group currency.
+	// (PATCH /groups/{groupId})
+	UpdateGroup(w http.ResponseWriter, r *http.Request, groupId GroupId)
+	// RegenerateGroupInviteLink Creates a new Invite link for a Group and revokes the previous one.
+	// (POST /groups/{groupId}/invite-link)
+	RegenerateGroupInviteLink(w http.ResponseWriter, r *http.Request, groupId GroupId)
+	// LeaveGroup The User leaves a Group where their Balance is zero.
+	// (POST /groups/{groupId}/leave)
+	LeaveGroup(w http.ResponseWriter, r *http.Request, groupId GroupId)
+	// AddPendingMember Adds a pending Member to a Group.
+	// (POST /groups/{groupId}/members)
+	AddPendingMember(w http.ResponseWriter, r *http.Request, groupId GroupId)
+	// RemoveMember Removes a Member whose Balance is zero from a Group.
+	// (DELETE /groups/{groupId}/members/{memberId})
+	RemoveMember(w http.ResponseWriter, r *http.Request, groupId GroupId, memberId MemberId)
+	// UndoClaim Undoes a Claim made by mistake.
+	// (DELETE /groups/{groupId}/members/{memberId}/claim)
+	UndoClaim(w http.ResponseWriter, r *http.Request, groupId GroupId, memberId MemberId)
 	// GetHealth Reports whether the server and its database are up.
 	// (GET /health)
 	GetHealth(w http.ResponseWriter, r *http.Request)
+	// GetInvite Shows what an Invite link leads to.
+	// (GET /invites/{token})
+	GetInvite(w http.ResponseWriter, r *http.Request, token InviteToken)
+	// ClaimMember Claims a pending Member of a Group, or the pending Friend of a Friendship.
+	// (POST /invites/{token}/claim)
+	ClaimMember(w http.ResponseWriter, r *http.Request, token InviteToken)
+	// JoinGroup Joins a Group as a new Member, named after the User.
+	// (POST /invites/{token}/join)
+	JoinGroup(w http.ResponseWriter, r *http.Request, token InviteToken)
+	// DeleteMe Deletes the User's account.
+	// (DELETE /me)
+	DeleteMe(w http.ResponseWriter, r *http.Request)
+	// GetMe Returns the signed-in User.
+	// (GET /me)
+	GetMe(w http.ResponseWriter, r *http.Request)
+	// UpdateMe Changes the User's name or Preferred currency.
+	// (PATCH /me)
+	UpdateMe(w http.ResponseWriter, r *http.Request)
+	// PushRecords Sends a batch of Unsynced records (new Expenses and Settlements).
+	// (POST /records)
+	PushRecords(w http.ResponseWriter, r *http.Request)
+	// DeleteSettlement Deletes a Settlement; it stops counting in Balances but can be restored.
+	// (DELETE /settlements/{settlementId})
+	DeleteSettlement(w http.ResponseWriter, r *http.Request, settlementId SettlementId)
+	// UpdateSettlement Edits a Settlement if nobody changed it since the client read it.
+	// (PATCH /settlements/{settlementId})
+	UpdateSettlement(w http.ResponseWriter, r *http.Request, settlementId SettlementId)
+	// RestoreSettlement Restores a deleted Settlement.
+	// (POST /settlements/{settlementId}/restore)
+	RestoreSettlement(w http.ResponseWriter, r *http.Request, settlementId SettlementId)
+	// PullChanges Returns everything that changed since a cursor in the User's Groups and Friendships.
+	// (GET /sync)
+	PullChanges(w http.ResponseWriter, r *http.Request, params PullChangesParams)
 }
 
 // ServerInterfaceWrapper converts contexts to parameters.
@@ -82,11 +1226,762 @@ type ServerInterfaceWrapper struct {
 
 type MiddlewareFunc func(http.Handler) http.Handler
 
+// StartGoogleLogin operation middleware
+func (siw *ServerInterfaceWrapper) StartGoogleLogin(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params StartGoogleLoginParams
+
+	// ------------- Optional query parameter "returnTo" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "returnTo", r.URL.Query(), &params.ReturnTo, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "returnTo"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "returnTo", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.StartGoogleLogin(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// FinishGoogleLogin operation middleware
+func (siw *ServerInterfaceWrapper) FinishGoogleLogin(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params FinishGoogleLoginParams
+
+	// ------------- Optional query parameter "code" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "code", r.URL.Query(), &params.Code, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "code"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "code", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "state" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "state", r.URL.Query(), &params.State, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "state"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "state", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "error" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "error", r.URL.Query(), &params.Error, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "error"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "error", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.FinishGoogleLogin(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RequestLoginCode operation middleware
+func (siw *ServerInterfaceWrapper) RequestLoginCode(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RequestLoginCode(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// VerifyLoginCode operation middleware
+func (siw *ServerInterfaceWrapper) VerifyLoginCode(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.VerifyLoginCode(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// Logout operation middleware
+func (siw *ServerInterfaceWrapper) Logout(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.Logout(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListSessions operation middleware
+func (siw *ServerInterfaceWrapper) ListSessions(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListSessions(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RevokeSession operation middleware
+func (siw *ServerInterfaceWrapper) RevokeSession(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "sessionId" -------------
+	var sessionId SessionId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "sessionId", r.PathValue("sessionId"), &sessionId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "sessionId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RevokeSession(w, r, sessionId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteExpense operation middleware
+func (siw *ServerInterfaceWrapper) DeleteExpense(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "expenseId" -------------
+	var expenseId ExpenseId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "expenseId", r.PathValue("expenseId"), &expenseId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "expenseId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteExpense(w, r, expenseId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateExpense operation middleware
+func (siw *ServerInterfaceWrapper) UpdateExpense(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "expenseId" -------------
+	var expenseId ExpenseId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "expenseId", r.PathValue("expenseId"), &expenseId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "expenseId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateExpense(w, r, expenseId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RestoreExpense operation middleware
+func (siw *ServerInterfaceWrapper) RestoreExpense(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "expenseId" -------------
+	var expenseId ExpenseId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "expenseId", r.PathValue("expenseId"), &expenseId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "expenseId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RestoreExpense(w, r, expenseId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateFriendship operation middleware
+func (siw *ServerInterfaceWrapper) CreateFriendship(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateFriendship(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RegenerateFriendInviteLink operation middleware
+func (siw *ServerInterfaceWrapper) RegenerateFriendInviteLink(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "friendshipId" -------------
+	var friendshipId FriendshipId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "friendshipId", r.PathValue("friendshipId"), &friendshipId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "friendshipId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RegenerateFriendInviteLink(w, r, friendshipId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateGroup operation middleware
+func (siw *ServerInterfaceWrapper) CreateGroup(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateGroup(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteGroup operation middleware
+func (siw *ServerInterfaceWrapper) DeleteGroup(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "groupId" -------------
+	var groupId GroupId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "groupId", r.PathValue("groupId"), &groupId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "groupId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteGroup(w, r, groupId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateGroup operation middleware
+func (siw *ServerInterfaceWrapper) UpdateGroup(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "groupId" -------------
+	var groupId GroupId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "groupId", r.PathValue("groupId"), &groupId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "groupId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateGroup(w, r, groupId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RegenerateGroupInviteLink operation middleware
+func (siw *ServerInterfaceWrapper) RegenerateGroupInviteLink(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "groupId" -------------
+	var groupId GroupId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "groupId", r.PathValue("groupId"), &groupId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "groupId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RegenerateGroupInviteLink(w, r, groupId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// LeaveGroup operation middleware
+func (siw *ServerInterfaceWrapper) LeaveGroup(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "groupId" -------------
+	var groupId GroupId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "groupId", r.PathValue("groupId"), &groupId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "groupId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.LeaveGroup(w, r, groupId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AddPendingMember operation middleware
+func (siw *ServerInterfaceWrapper) AddPendingMember(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "groupId" -------------
+	var groupId GroupId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "groupId", r.PathValue("groupId"), &groupId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "groupId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AddPendingMember(w, r, groupId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RemoveMember operation middleware
+func (siw *ServerInterfaceWrapper) RemoveMember(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "groupId" -------------
+	var groupId GroupId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "groupId", r.PathValue("groupId"), &groupId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "groupId", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "memberId" -------------
+	var memberId MemberId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "memberId", r.PathValue("memberId"), &memberId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "memberId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RemoveMember(w, r, groupId, memberId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UndoClaim operation middleware
+func (siw *ServerInterfaceWrapper) UndoClaim(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "groupId" -------------
+	var groupId GroupId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "groupId", r.PathValue("groupId"), &groupId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "groupId", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "memberId" -------------
+	var memberId MemberId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "memberId", r.PathValue("memberId"), &memberId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "memberId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UndoClaim(w, r, groupId, memberId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetHealth operation middleware
 func (siw *ServerInterfaceWrapper) GetHealth(w http.ResponseWriter, r *http.Request) {
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetHealth(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetInvite operation middleware
+func (siw *ServerInterfaceWrapper) GetInvite(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "token" -------------
+	var token InviteToken
+
+	err = runtime.BindStyledParameterWithOptions("simple", "token", r.PathValue("token"), &token, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "token", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetInvite(w, r, token)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ClaimMember operation middleware
+func (siw *ServerInterfaceWrapper) ClaimMember(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "token" -------------
+	var token InviteToken
+
+	err = runtime.BindStyledParameterWithOptions("simple", "token", r.PathValue("token"), &token, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "token", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ClaimMember(w, r, token)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// JoinGroup operation middleware
+func (siw *ServerInterfaceWrapper) JoinGroup(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "token" -------------
+	var token InviteToken
+
+	err = runtime.BindStyledParameterWithOptions("simple", "token", r.PathValue("token"), &token, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "token", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.JoinGroup(w, r, token)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteMe operation middleware
+func (siw *ServerInterfaceWrapper) DeleteMe(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteMe(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetMe operation middleware
+func (siw *ServerInterfaceWrapper) GetMe(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetMe(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateMe operation middleware
+func (siw *ServerInterfaceWrapper) UpdateMe(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateMe(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PushRecords operation middleware
+func (siw *ServerInterfaceWrapper) PushRecords(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PushRecords(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteSettlement operation middleware
+func (siw *ServerInterfaceWrapper) DeleteSettlement(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "settlementId" -------------
+	var settlementId SettlementId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "settlementId", r.PathValue("settlementId"), &settlementId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "settlementId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteSettlement(w, r, settlementId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateSettlement operation middleware
+func (siw *ServerInterfaceWrapper) UpdateSettlement(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "settlementId" -------------
+	var settlementId SettlementId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "settlementId", r.PathValue("settlementId"), &settlementId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "settlementId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateSettlement(w, r, settlementId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RestoreSettlement operation middleware
+func (siw *ServerInterfaceWrapper) RestoreSettlement(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "settlementId" -------------
+	var settlementId SettlementId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "settlementId", r.PathValue("settlementId"), &settlementId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "settlementId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RestoreSettlement(w, r, settlementId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PullChanges operation middleware
+func (siw *ServerInterfaceWrapper) PullChanges(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params PullChangesParams
+
+	// ------------- Required query parameter "since" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "since", r.URL.Query(), &params.Since, runtime.BindQueryParameterOptions{Type: "integer", Format: "int64"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "since"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "since", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PullChanges(w, r, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -217,8 +2112,1546 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	}
 
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/health", wrapper.GetHealth)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/auth/login-code", wrapper.RequestLoginCode)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/auth/login-code/verify", wrapper.VerifyLoginCode)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/auth/google", wrapper.StartGoogleLogin)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/auth/google/callback", wrapper.FinishGoogleLogin)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/auth/logout", wrapper.Logout)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/auth/sessions", wrapper.ListSessions)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/auth/sessions/{sessionId}", wrapper.RevokeSession)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/me", wrapper.DeleteMe)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/me", wrapper.GetMe)
+	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/me", wrapper.UpdateMe)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/groups", wrapper.CreateGroup)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/groups/{groupId}", wrapper.DeleteGroup)
+	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/groups/{groupId}", wrapper.UpdateGroup)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/groups/{groupId}/members", wrapper.AddPendingMember)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/groups/{groupId}/members/{memberId}", wrapper.RemoveMember)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/groups/{groupId}/members/{memberId}/claim", wrapper.UndoClaim)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/groups/{groupId}/leave", wrapper.LeaveGroup)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/groups/{groupId}/invite-link", wrapper.RegenerateGroupInviteLink)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/invites/{token}", wrapper.GetInvite)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/invites/{token}/claim", wrapper.ClaimMember)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/invites/{token}/join", wrapper.JoinGroup)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/friendships", wrapper.CreateFriendship)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/friendships/{friendshipId}/invite-link", wrapper.RegenerateFriendInviteLink)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/records", wrapper.PushRecords)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/expenses/{expenseId}", wrapper.DeleteExpense)
+	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/expenses/{expenseId}", wrapper.UpdateExpense)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/expenses/{expenseId}/restore", wrapper.RestoreExpense)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/settlements/{settlementId}", wrapper.DeleteSettlement)
+	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/settlements/{settlementId}", wrapper.UpdateSettlement)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/settlements/{settlementId}/restore", wrapper.RestoreSettlement)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/sync", wrapper.PullChanges)
 
 	return m
+}
+
+type BadRequestApplicationProblemPlusJSONResponse Problem
+
+type NotFoundApplicationProblemPlusJSONResponse Problem
+
+type ProblemApplicationProblemPlusJSONResponse Problem
+
+type UnauthorizedApplicationProblemPlusJSONResponse Problem
+
+type StartGoogleLoginRequestObject struct {
+	Params StartGoogleLoginParams
+}
+
+type StartGoogleLoginResponseObject interface {
+	VisitStartGoogleLoginResponse(w http.ResponseWriter) error
+}
+
+type StartGoogleLogin302ResponseHeaders struct {
+	Location  *string
+	SetCookie *string
+}
+
+type StartGoogleLogin302Response struct {
+	Headers StartGoogleLogin302ResponseHeaders
+}
+
+func (response StartGoogleLogin302Response) VisitStartGoogleLoginResponse(w http.ResponseWriter) error {
+	if response.Headers.Location != nil {
+		w.Header().Set("Location", fmt.Sprint(*response.Headers.Location))
+	}
+	if response.Headers.SetCookie != nil {
+		w.Header().Set("Set-Cookie", fmt.Sprint(*response.Headers.SetCookie))
+	}
+	w.WriteHeader(302)
+	return nil
+}
+
+type StartGoogleLogindefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response StartGoogleLogindefaultApplicationProblemPlusJSONResponse) VisitStartGoogleLoginResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type FinishGoogleLoginRequestObject struct {
+	Params FinishGoogleLoginParams
+}
+
+type FinishGoogleLoginResponseObject interface {
+	VisitFinishGoogleLoginResponse(w http.ResponseWriter) error
+}
+
+type FinishGoogleLogin302ResponseHeaders struct {
+	Location  *string
+	SetCookie *string
+}
+
+type FinishGoogleLogin302Response struct {
+	Headers FinishGoogleLogin302ResponseHeaders
+}
+
+func (response FinishGoogleLogin302Response) VisitFinishGoogleLoginResponse(w http.ResponseWriter) error {
+	if response.Headers.Location != nil {
+		w.Header().Set("Location", fmt.Sprint(*response.Headers.Location))
+	}
+	if response.Headers.SetCookie != nil {
+		w.Header().Set("Set-Cookie", fmt.Sprint(*response.Headers.SetCookie))
+	}
+	w.WriteHeader(302)
+	return nil
+}
+
+type FinishGoogleLogindefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response FinishGoogleLogindefaultApplicationProblemPlusJSONResponse) VisitFinishGoogleLoginResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RequestLoginCodeRequestObject struct {
+	Body *RequestLoginCodeJSONRequestBody
+}
+
+type RequestLoginCodeResponseObject interface {
+	VisitRequestLoginCodeResponse(w http.ResponseWriter) error
+}
+
+type RequestLoginCode204Response struct {
+}
+
+func (response RequestLoginCode204Response) VisitRequestLoginCodeResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type RequestLoginCode400ApplicationProblemPlusJSONResponse struct {
+	BadRequestApplicationProblemPlusJSONResponse
+}
+
+func (response RequestLoginCode400ApplicationProblemPlusJSONResponse) VisitRequestLoginCodeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RequestLoginCode429ResponseHeaders struct {
+	RetryAfter *int
+}
+
+type RequestLoginCode429ApplicationProblemPlusJSONResponse struct {
+	Body    Problem
+	Headers RequestLoginCode429ResponseHeaders
+}
+
+func (response RequestLoginCode429ApplicationProblemPlusJSONResponse) VisitRequestLoginCodeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	if response.Headers.RetryAfter != nil {
+		w.Header().Set("Retry-After", fmt.Sprint(*response.Headers.RetryAfter))
+	}
+	w.WriteHeader(429)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RequestLoginCodedefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response RequestLoginCodedefaultApplicationProblemPlusJSONResponse) VisitRequestLoginCodeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type VerifyLoginCodeRequestObject struct {
+	Body *VerifyLoginCodeJSONRequestBody
+}
+
+type VerifyLoginCodeResponseObject interface {
+	VisitVerifyLoginCodeResponse(w http.ResponseWriter) error
+}
+
+type VerifyLoginCode200ResponseHeaders struct {
+	SetCookie *string
+}
+
+type VerifyLoginCode200JSONResponse struct {
+	Body    LoginResult
+	Headers VerifyLoginCode200ResponseHeaders
+}
+
+func (response VerifyLoginCode200JSONResponse) VisitVerifyLoginCodeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if response.Headers.SetCookie != nil {
+		w.Header().Set("Set-Cookie", fmt.Sprint(*response.Headers.SetCookie))
+	}
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type VerifyLoginCode400ApplicationProblemPlusJSONResponse Problem
+
+func (response VerifyLoginCode400ApplicationProblemPlusJSONResponse) VisitVerifyLoginCodeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type VerifyLoginCode429ApplicationProblemPlusJSONResponse Problem
+
+func (response VerifyLoginCode429ApplicationProblemPlusJSONResponse) VisitVerifyLoginCodeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(429)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type VerifyLoginCodedefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response VerifyLoginCodedefaultApplicationProblemPlusJSONResponse) VisitVerifyLoginCodeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type LogoutRequestObject struct {
+}
+
+type LogoutResponseObject interface {
+	VisitLogoutResponse(w http.ResponseWriter) error
+}
+
+type Logout204ResponseHeaders struct {
+	SetCookie *string
+}
+
+type Logout204Response struct {
+	Headers Logout204ResponseHeaders
+}
+
+func (response Logout204Response) VisitLogoutResponse(w http.ResponseWriter) error {
+	if response.Headers.SetCookie != nil {
+		w.Header().Set("Set-Cookie", fmt.Sprint(*response.Headers.SetCookie))
+	}
+	w.WriteHeader(204)
+	return nil
+}
+
+type Logout401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response Logout401ApplicationProblemPlusJSONResponse) VisitLogoutResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type LogoutdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response LogoutdefaultApplicationProblemPlusJSONResponse) VisitLogoutResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListSessionsRequestObject struct {
+}
+
+type ListSessionsResponseObject interface {
+	VisitListSessionsResponse(w http.ResponseWriter) error
+}
+
+type ListSessions200JSONResponse []Session
+
+func (response ListSessions200JSONResponse) VisitListSessionsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListSessions401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response ListSessions401ApplicationProblemPlusJSONResponse) VisitListSessionsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListSessionsdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response ListSessionsdefaultApplicationProblemPlusJSONResponse) VisitListSessionsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RevokeSessionRequestObject struct {
+	SessionId SessionId `json:"sessionId"`
+}
+
+type RevokeSessionResponseObject interface {
+	VisitRevokeSessionResponse(w http.ResponseWriter) error
+}
+
+type RevokeSession204Response struct {
+}
+
+func (response RevokeSession204Response) VisitRevokeSessionResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type RevokeSession401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response RevokeSession401ApplicationProblemPlusJSONResponse) VisitRevokeSessionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RevokeSession404ApplicationProblemPlusJSONResponse struct {
+	NotFoundApplicationProblemPlusJSONResponse
+}
+
+func (response RevokeSession404ApplicationProblemPlusJSONResponse) VisitRevokeSessionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RevokeSessiondefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response RevokeSessiondefaultApplicationProblemPlusJSONResponse) VisitRevokeSessionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteExpenseRequestObject struct {
+	ExpenseId ExpenseId `json:"expenseId"`
+}
+
+type DeleteExpenseResponseObject interface {
+	VisitDeleteExpenseResponse(w http.ResponseWriter) error
+}
+
+type DeleteExpense204Response struct {
+}
+
+func (response DeleteExpense204Response) VisitDeleteExpenseResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type DeleteExpense401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response DeleteExpense401ApplicationProblemPlusJSONResponse) VisitDeleteExpenseResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteExpense404ApplicationProblemPlusJSONResponse struct {
+	NotFoundApplicationProblemPlusJSONResponse
+}
+
+func (response DeleteExpense404ApplicationProblemPlusJSONResponse) VisitDeleteExpenseResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteExpensedefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response DeleteExpensedefaultApplicationProblemPlusJSONResponse) VisitDeleteExpenseResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateExpenseRequestObject struct {
+	ExpenseId ExpenseId `json:"expenseId"`
+	Body      *UpdateExpenseJSONRequestBody
+}
+
+type UpdateExpenseResponseObject interface {
+	VisitUpdateExpenseResponse(w http.ResponseWriter) error
+}
+
+type UpdateExpense200JSONResponse Expense
+
+func (response UpdateExpense200JSONResponse) VisitUpdateExpenseResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateExpense400ApplicationProblemPlusJSONResponse Problem
+
+func (response UpdateExpense400ApplicationProblemPlusJSONResponse) VisitUpdateExpenseResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateExpense401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response UpdateExpense401ApplicationProblemPlusJSONResponse) VisitUpdateExpenseResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateExpense404ApplicationProblemPlusJSONResponse struct {
+	NotFoundApplicationProblemPlusJSONResponse
+}
+
+func (response UpdateExpense404ApplicationProblemPlusJSONResponse) VisitUpdateExpenseResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateExpense409ApplicationProblemPlusJSONResponse Problem
+
+func (response UpdateExpense409ApplicationProblemPlusJSONResponse) VisitUpdateExpenseResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateExpensedefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response UpdateExpensedefaultApplicationProblemPlusJSONResponse) VisitUpdateExpenseResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RestoreExpenseRequestObject struct {
+	ExpenseId ExpenseId `json:"expenseId"`
+}
+
+type RestoreExpenseResponseObject interface {
+	VisitRestoreExpenseResponse(w http.ResponseWriter) error
+}
+
+type RestoreExpense200JSONResponse Expense
+
+func (response RestoreExpense200JSONResponse) VisitRestoreExpenseResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RestoreExpense401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response RestoreExpense401ApplicationProblemPlusJSONResponse) VisitRestoreExpenseResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RestoreExpense404ApplicationProblemPlusJSONResponse struct {
+	NotFoundApplicationProblemPlusJSONResponse
+}
+
+func (response RestoreExpense404ApplicationProblemPlusJSONResponse) VisitRestoreExpenseResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RestoreExpense409ApplicationProblemPlusJSONResponse Problem
+
+func (response RestoreExpense409ApplicationProblemPlusJSONResponse) VisitRestoreExpenseResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RestoreExpensedefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response RestoreExpensedefaultApplicationProblemPlusJSONResponse) VisitRestoreExpenseResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateFriendshipRequestObject struct {
+	Body *CreateFriendshipJSONRequestBody
+}
+
+type CreateFriendshipResponseObject interface {
+	VisitCreateFriendshipResponse(w http.ResponseWriter) error
+}
+
+type CreateFriendship201JSONResponse Friendship
+
+func (response CreateFriendship201JSONResponse) VisitCreateFriendshipResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateFriendship400ApplicationProblemPlusJSONResponse struct {
+	BadRequestApplicationProblemPlusJSONResponse
+}
+
+func (response CreateFriendship400ApplicationProblemPlusJSONResponse) VisitCreateFriendshipResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateFriendship401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response CreateFriendship401ApplicationProblemPlusJSONResponse) VisitCreateFriendshipResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateFriendship404ApplicationProblemPlusJSONResponse Problem
+
+func (response CreateFriendship404ApplicationProblemPlusJSONResponse) VisitCreateFriendshipResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateFriendship409ApplicationProblemPlusJSONResponse Problem
+
+func (response CreateFriendship409ApplicationProblemPlusJSONResponse) VisitCreateFriendshipResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateFriendshipdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response CreateFriendshipdefaultApplicationProblemPlusJSONResponse) VisitCreateFriendshipResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RegenerateFriendInviteLinkRequestObject struct {
+	FriendshipId FriendshipId `json:"friendshipId"`
+}
+
+type RegenerateFriendInviteLinkResponseObject interface {
+	VisitRegenerateFriendInviteLinkResponse(w http.ResponseWriter) error
+}
+
+type RegenerateFriendInviteLink200JSONResponse InviteLink
+
+func (response RegenerateFriendInviteLink200JSONResponse) VisitRegenerateFriendInviteLinkResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RegenerateFriendInviteLink401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response RegenerateFriendInviteLink401ApplicationProblemPlusJSONResponse) VisitRegenerateFriendInviteLinkResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RegenerateFriendInviteLink404ApplicationProblemPlusJSONResponse struct {
+	NotFoundApplicationProblemPlusJSONResponse
+}
+
+func (response RegenerateFriendInviteLink404ApplicationProblemPlusJSONResponse) VisitRegenerateFriendInviteLinkResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RegenerateFriendInviteLink409ApplicationProblemPlusJSONResponse Problem
+
+func (response RegenerateFriendInviteLink409ApplicationProblemPlusJSONResponse) VisitRegenerateFriendInviteLinkResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RegenerateFriendInviteLinkdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response RegenerateFriendInviteLinkdefaultApplicationProblemPlusJSONResponse) VisitRegenerateFriendInviteLinkResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateGroupRequestObject struct {
+	Body *CreateGroupJSONRequestBody
+}
+
+type CreateGroupResponseObject interface {
+	VisitCreateGroupResponse(w http.ResponseWriter) error
+}
+
+type CreateGroup201JSONResponse Group
+
+func (response CreateGroup201JSONResponse) VisitCreateGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateGroup400ApplicationProblemPlusJSONResponse struct {
+	BadRequestApplicationProblemPlusJSONResponse
+}
+
+func (response CreateGroup400ApplicationProblemPlusJSONResponse) VisitCreateGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateGroup401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response CreateGroup401ApplicationProblemPlusJSONResponse) VisitCreateGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateGroupdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response CreateGroupdefaultApplicationProblemPlusJSONResponse) VisitCreateGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteGroupRequestObject struct {
+	GroupId GroupId `json:"groupId"`
+}
+
+type DeleteGroupResponseObject interface {
+	VisitDeleteGroupResponse(w http.ResponseWriter) error
+}
+
+type DeleteGroup204Response struct {
+}
+
+func (response DeleteGroup204Response) VisitDeleteGroupResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type DeleteGroup401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response DeleteGroup401ApplicationProblemPlusJSONResponse) VisitDeleteGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteGroup404ApplicationProblemPlusJSONResponse struct {
+	NotFoundApplicationProblemPlusJSONResponse
+}
+
+func (response DeleteGroup404ApplicationProblemPlusJSONResponse) VisitDeleteGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteGroup409ApplicationProblemPlusJSONResponse Problem
+
+func (response DeleteGroup409ApplicationProblemPlusJSONResponse) VisitDeleteGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteGroupdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response DeleteGroupdefaultApplicationProblemPlusJSONResponse) VisitDeleteGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateGroupRequestObject struct {
+	GroupId GroupId `json:"groupId"`
+	Body    *UpdateGroupJSONRequestBody
+}
+
+type UpdateGroupResponseObject interface {
+	VisitUpdateGroupResponse(w http.ResponseWriter) error
+}
+
+type UpdateGroup200JSONResponse Group
+
+func (response UpdateGroup200JSONResponse) VisitUpdateGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateGroup400ApplicationProblemPlusJSONResponse struct {
+	BadRequestApplicationProblemPlusJSONResponse
+}
+
+func (response UpdateGroup400ApplicationProblemPlusJSONResponse) VisitUpdateGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateGroup401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response UpdateGroup401ApplicationProblemPlusJSONResponse) VisitUpdateGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateGroup404ApplicationProblemPlusJSONResponse struct {
+	NotFoundApplicationProblemPlusJSONResponse
+}
+
+func (response UpdateGroup404ApplicationProblemPlusJSONResponse) VisitUpdateGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateGroup409ApplicationProblemPlusJSONResponse CurrencyPrecisionProblem
+
+func (response UpdateGroup409ApplicationProblemPlusJSONResponse) VisitUpdateGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateGroupdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response UpdateGroupdefaultApplicationProblemPlusJSONResponse) VisitUpdateGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RegenerateGroupInviteLinkRequestObject struct {
+	GroupId GroupId `json:"groupId"`
+}
+
+type RegenerateGroupInviteLinkResponseObject interface {
+	VisitRegenerateGroupInviteLinkResponse(w http.ResponseWriter) error
+}
+
+type RegenerateGroupInviteLink200JSONResponse InviteLink
+
+func (response RegenerateGroupInviteLink200JSONResponse) VisitRegenerateGroupInviteLinkResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RegenerateGroupInviteLink401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response RegenerateGroupInviteLink401ApplicationProblemPlusJSONResponse) VisitRegenerateGroupInviteLinkResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RegenerateGroupInviteLink404ApplicationProblemPlusJSONResponse struct {
+	NotFoundApplicationProblemPlusJSONResponse
+}
+
+func (response RegenerateGroupInviteLink404ApplicationProblemPlusJSONResponse) VisitRegenerateGroupInviteLinkResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RegenerateGroupInviteLinkdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response RegenerateGroupInviteLinkdefaultApplicationProblemPlusJSONResponse) VisitRegenerateGroupInviteLinkResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type LeaveGroupRequestObject struct {
+	GroupId GroupId `json:"groupId"`
+}
+
+type LeaveGroupResponseObject interface {
+	VisitLeaveGroupResponse(w http.ResponseWriter) error
+}
+
+type LeaveGroup204Response struct {
+}
+
+func (response LeaveGroup204Response) VisitLeaveGroupResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type LeaveGroup401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response LeaveGroup401ApplicationProblemPlusJSONResponse) VisitLeaveGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type LeaveGroup404ApplicationProblemPlusJSONResponse struct {
+	NotFoundApplicationProblemPlusJSONResponse
+}
+
+func (response LeaveGroup404ApplicationProblemPlusJSONResponse) VisitLeaveGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type LeaveGroup409ApplicationProblemPlusJSONResponse Problem
+
+func (response LeaveGroup409ApplicationProblemPlusJSONResponse) VisitLeaveGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type LeaveGroupdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response LeaveGroupdefaultApplicationProblemPlusJSONResponse) VisitLeaveGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AddPendingMemberRequestObject struct {
+	GroupId GroupId `json:"groupId"`
+	Body    *AddPendingMemberJSONRequestBody
+}
+
+type AddPendingMemberResponseObject interface {
+	VisitAddPendingMemberResponse(w http.ResponseWriter) error
+}
+
+type AddPendingMember201JSONResponse Member
+
+func (response AddPendingMember201JSONResponse) VisitAddPendingMemberResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AddPendingMember400ApplicationProblemPlusJSONResponse struct {
+	BadRequestApplicationProblemPlusJSONResponse
+}
+
+func (response AddPendingMember400ApplicationProblemPlusJSONResponse) VisitAddPendingMemberResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AddPendingMember401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response AddPendingMember401ApplicationProblemPlusJSONResponse) VisitAddPendingMemberResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AddPendingMember404ApplicationProblemPlusJSONResponse struct {
+	NotFoundApplicationProblemPlusJSONResponse
+}
+
+func (response AddPendingMember404ApplicationProblemPlusJSONResponse) VisitAddPendingMemberResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AddPendingMemberdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response AddPendingMemberdefaultApplicationProblemPlusJSONResponse) VisitAddPendingMemberResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RemoveMemberRequestObject struct {
+	GroupId  GroupId  `json:"groupId"`
+	MemberId MemberId `json:"memberId"`
+}
+
+type RemoveMemberResponseObject interface {
+	VisitRemoveMemberResponse(w http.ResponseWriter) error
+}
+
+type RemoveMember204Response struct {
+}
+
+func (response RemoveMember204Response) VisitRemoveMemberResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type RemoveMember401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response RemoveMember401ApplicationProblemPlusJSONResponse) VisitRemoveMemberResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RemoveMember404ApplicationProblemPlusJSONResponse struct {
+	NotFoundApplicationProblemPlusJSONResponse
+}
+
+func (response RemoveMember404ApplicationProblemPlusJSONResponse) VisitRemoveMemberResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RemoveMember409ApplicationProblemPlusJSONResponse Problem
+
+func (response RemoveMember409ApplicationProblemPlusJSONResponse) VisitRemoveMemberResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RemoveMemberdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response RemoveMemberdefaultApplicationProblemPlusJSONResponse) VisitRemoveMemberResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UndoClaimRequestObject struct {
+	GroupId  GroupId  `json:"groupId"`
+	MemberId MemberId `json:"memberId"`
+}
+
+type UndoClaimResponseObject interface {
+	VisitUndoClaimResponse(w http.ResponseWriter) error
+}
+
+type UndoClaim204Response struct {
+}
+
+func (response UndoClaim204Response) VisitUndoClaimResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type UndoClaim401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response UndoClaim401ApplicationProblemPlusJSONResponse) VisitUndoClaimResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UndoClaim404ApplicationProblemPlusJSONResponse struct {
+	NotFoundApplicationProblemPlusJSONResponse
+}
+
+func (response UndoClaim404ApplicationProblemPlusJSONResponse) VisitUndoClaimResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UndoClaim409ApplicationProblemPlusJSONResponse Problem
+
+func (response UndoClaim409ApplicationProblemPlusJSONResponse) VisitUndoClaimResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UndoClaimdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response UndoClaimdefaultApplicationProblemPlusJSONResponse) VisitUndoClaimResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
 }
 
 type GetHealthRequestObject struct {
@@ -256,11 +3689,945 @@ func (response GetHealth503JSONResponse) VisitGetHealthResponse(w http.ResponseW
 	return err
 }
 
+type GetInviteRequestObject struct {
+	Token InviteToken `json:"token"`
+}
+
+type GetInviteResponseObject interface {
+	VisitGetInviteResponse(w http.ResponseWriter) error
+}
+
+type GetInvite200JSONResponse Invite
+
+func (response GetInvite200JSONResponse) VisitGetInviteResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetInvite404ApplicationProblemPlusJSONResponse Problem
+
+func (response GetInvite404ApplicationProblemPlusJSONResponse) VisitGetInviteResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetInvitedefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response GetInvitedefaultApplicationProblemPlusJSONResponse) VisitGetInviteResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ClaimMemberRequestObject struct {
+	Token InviteToken `json:"token"`
+	Body  *ClaimMemberJSONRequestBody
+}
+
+type ClaimMemberResponseObject interface {
+	VisitClaimMemberResponse(w http.ResponseWriter) error
+}
+
+type ClaimMember200JSONResponse JoinedLedger
+
+func (response ClaimMember200JSONResponse) VisitClaimMemberResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ClaimMember400ApplicationProblemPlusJSONResponse struct {
+	BadRequestApplicationProblemPlusJSONResponse
+}
+
+func (response ClaimMember400ApplicationProblemPlusJSONResponse) VisitClaimMemberResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ClaimMember401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response ClaimMember401ApplicationProblemPlusJSONResponse) VisitClaimMemberResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ClaimMember404ApplicationProblemPlusJSONResponse Problem
+
+func (response ClaimMember404ApplicationProblemPlusJSONResponse) VisitClaimMemberResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ClaimMember409ApplicationProblemPlusJSONResponse Problem
+
+func (response ClaimMember409ApplicationProblemPlusJSONResponse) VisitClaimMemberResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ClaimMemberdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response ClaimMemberdefaultApplicationProblemPlusJSONResponse) VisitClaimMemberResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type JoinGroupRequestObject struct {
+	Token InviteToken `json:"token"`
+}
+
+type JoinGroupResponseObject interface {
+	VisitJoinGroupResponse(w http.ResponseWriter) error
+}
+
+type JoinGroup201JSONResponse JoinedLedger
+
+func (response JoinGroup201JSONResponse) VisitJoinGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type JoinGroup400ApplicationProblemPlusJSONResponse struct {
+	BadRequestApplicationProblemPlusJSONResponse
+}
+
+func (response JoinGroup400ApplicationProblemPlusJSONResponse) VisitJoinGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type JoinGroup401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response JoinGroup401ApplicationProblemPlusJSONResponse) VisitJoinGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type JoinGroup404ApplicationProblemPlusJSONResponse Problem
+
+func (response JoinGroup404ApplicationProblemPlusJSONResponse) VisitJoinGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type JoinGroup409ApplicationProblemPlusJSONResponse Problem
+
+func (response JoinGroup409ApplicationProblemPlusJSONResponse) VisitJoinGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type JoinGroupdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response JoinGroupdefaultApplicationProblemPlusJSONResponse) VisitJoinGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteMeRequestObject struct {
+}
+
+type DeleteMeResponseObject interface {
+	VisitDeleteMeResponse(w http.ResponseWriter) error
+}
+
+type DeleteMe204ResponseHeaders struct {
+	SetCookie *string
+}
+
+type DeleteMe204Response struct {
+	Headers DeleteMe204ResponseHeaders
+}
+
+func (response DeleteMe204Response) VisitDeleteMeResponse(w http.ResponseWriter) error {
+	if response.Headers.SetCookie != nil {
+		w.Header().Set("Set-Cookie", fmt.Sprint(*response.Headers.SetCookie))
+	}
+	w.WriteHeader(204)
+	return nil
+}
+
+type DeleteMe401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response DeleteMe401ApplicationProblemPlusJSONResponse) VisitDeleteMeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteMedefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response DeleteMedefaultApplicationProblemPlusJSONResponse) VisitDeleteMeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetMeRequestObject struct {
+}
+
+type GetMeResponseObject interface {
+	VisitGetMeResponse(w http.ResponseWriter) error
+}
+
+type GetMe200JSONResponse User
+
+func (response GetMe200JSONResponse) VisitGetMeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetMe401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response GetMe401ApplicationProblemPlusJSONResponse) VisitGetMeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetMedefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response GetMedefaultApplicationProblemPlusJSONResponse) VisitGetMeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateMeRequestObject struct {
+	Body *UpdateMeJSONRequestBody
+}
+
+type UpdateMeResponseObject interface {
+	VisitUpdateMeResponse(w http.ResponseWriter) error
+}
+
+type UpdateMe200JSONResponse User
+
+func (response UpdateMe200JSONResponse) VisitUpdateMeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateMe400ApplicationProblemPlusJSONResponse struct {
+	BadRequestApplicationProblemPlusJSONResponse
+}
+
+func (response UpdateMe400ApplicationProblemPlusJSONResponse) VisitUpdateMeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateMe401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response UpdateMe401ApplicationProblemPlusJSONResponse) VisitUpdateMeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateMedefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response UpdateMedefaultApplicationProblemPlusJSONResponse) VisitUpdateMeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PushRecordsRequestObject struct {
+	Body *PushRecordsJSONRequestBody
+}
+
+type PushRecordsResponseObject interface {
+	VisitPushRecordsResponse(w http.ResponseWriter) error
+}
+
+type PushRecords200JSONResponse RecordResults
+
+func (response PushRecords200JSONResponse) VisitPushRecordsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PushRecords400ApplicationProblemPlusJSONResponse struct {
+	BadRequestApplicationProblemPlusJSONResponse
+}
+
+func (response PushRecords400ApplicationProblemPlusJSONResponse) VisitPushRecordsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PushRecords401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response PushRecords401ApplicationProblemPlusJSONResponse) VisitPushRecordsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PushRecordsdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response PushRecordsdefaultApplicationProblemPlusJSONResponse) VisitPushRecordsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteSettlementRequestObject struct {
+	SettlementId SettlementId `json:"settlementId"`
+}
+
+type DeleteSettlementResponseObject interface {
+	VisitDeleteSettlementResponse(w http.ResponseWriter) error
+}
+
+type DeleteSettlement204Response struct {
+}
+
+func (response DeleteSettlement204Response) VisitDeleteSettlementResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type DeleteSettlement401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response DeleteSettlement401ApplicationProblemPlusJSONResponse) VisitDeleteSettlementResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteSettlement404ApplicationProblemPlusJSONResponse struct {
+	NotFoundApplicationProblemPlusJSONResponse
+}
+
+func (response DeleteSettlement404ApplicationProblemPlusJSONResponse) VisitDeleteSettlementResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteSettlementdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response DeleteSettlementdefaultApplicationProblemPlusJSONResponse) VisitDeleteSettlementResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateSettlementRequestObject struct {
+	SettlementId SettlementId `json:"settlementId"`
+	Body         *UpdateSettlementJSONRequestBody
+}
+
+type UpdateSettlementResponseObject interface {
+	VisitUpdateSettlementResponse(w http.ResponseWriter) error
+}
+
+type UpdateSettlement200JSONResponse Settlement
+
+func (response UpdateSettlement200JSONResponse) VisitUpdateSettlementResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateSettlement400ApplicationProblemPlusJSONResponse struct {
+	BadRequestApplicationProblemPlusJSONResponse
+}
+
+func (response UpdateSettlement400ApplicationProblemPlusJSONResponse) VisitUpdateSettlementResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateSettlement401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response UpdateSettlement401ApplicationProblemPlusJSONResponse) VisitUpdateSettlementResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateSettlement404ApplicationProblemPlusJSONResponse struct {
+	NotFoundApplicationProblemPlusJSONResponse
+}
+
+func (response UpdateSettlement404ApplicationProblemPlusJSONResponse) VisitUpdateSettlementResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateSettlement409ApplicationProblemPlusJSONResponse Problem
+
+func (response UpdateSettlement409ApplicationProblemPlusJSONResponse) VisitUpdateSettlementResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateSettlementdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response UpdateSettlementdefaultApplicationProblemPlusJSONResponse) VisitUpdateSettlementResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RestoreSettlementRequestObject struct {
+	SettlementId SettlementId `json:"settlementId"`
+}
+
+type RestoreSettlementResponseObject interface {
+	VisitRestoreSettlementResponse(w http.ResponseWriter) error
+}
+
+type RestoreSettlement200JSONResponse Settlement
+
+func (response RestoreSettlement200JSONResponse) VisitRestoreSettlementResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RestoreSettlement401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response RestoreSettlement401ApplicationProblemPlusJSONResponse) VisitRestoreSettlementResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RestoreSettlement404ApplicationProblemPlusJSONResponse struct {
+	NotFoundApplicationProblemPlusJSONResponse
+}
+
+func (response RestoreSettlement404ApplicationProblemPlusJSONResponse) VisitRestoreSettlementResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RestoreSettlement409ApplicationProblemPlusJSONResponse Problem
+
+func (response RestoreSettlement409ApplicationProblemPlusJSONResponse) VisitRestoreSettlementResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RestoreSettlementdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response RestoreSettlementdefaultApplicationProblemPlusJSONResponse) VisitRestoreSettlementResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PullChangesRequestObject struct {
+	Params PullChangesParams
+}
+
+type PullChangesResponseObject interface {
+	VisitPullChangesResponse(w http.ResponseWriter) error
+}
+
+type PullChanges200JSONResponse Changes
+
+func (response PullChanges200JSONResponse) VisitPullChangesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PullChanges400ApplicationProblemPlusJSONResponse struct {
+	BadRequestApplicationProblemPlusJSONResponse
+}
+
+func (response PullChanges400ApplicationProblemPlusJSONResponse) VisitPullChangesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PullChanges401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response PullChanges401ApplicationProblemPlusJSONResponse) VisitPullChangesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PullChanges410ApplicationProblemPlusJSONResponse Problem
+
+func (response PullChanges410ApplicationProblemPlusJSONResponse) VisitPullChangesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(410)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PullChangesdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response PullChangesdefaultApplicationProblemPlusJSONResponse) VisitPullChangesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 // StrictServerInterface represents all server handlers.
 type StrictServerInterface interface {
+	// StartGoogleLogin Redirects to Google to sign in with OpenID Connect.
+	// (GET /auth/google)
+	StartGoogleLogin(ctx context.Context, request StartGoogleLoginRequestObject) (StartGoogleLoginResponseObject, error)
+	// FinishGoogleLogin Google redirects back here; signs in and returns to the app.
+	// (GET /auth/google/callback)
+	FinishGoogleLogin(ctx context.Context, request FinishGoogleLoginRequestObject) (FinishGoogleLoginResponseObject, error)
+	// RequestLoginCode Emails a 6-digit sign-in code.
+	// (POST /auth/login-code)
+	RequestLoginCode(ctx context.Context, request RequestLoginCodeRequestObject) (RequestLoginCodeResponseObject, error)
+	// VerifyLoginCode Exchanges a sign-in code for a session.
+	// (POST /auth/login-code/verify)
+	VerifyLoginCode(ctx context.Context, request VerifyLoginCodeRequestObject) (VerifyLoginCodeResponseObject, error)
+	// Logout Closes the current session.
+	// (POST /auth/logout)
+	Logout(ctx context.Context, request LogoutRequestObject) (LogoutResponseObject, error)
+	// ListSessions Lists the User's open sessions, one per device.
+	// (GET /auth/sessions)
+	ListSessions(ctx context.Context, request ListSessionsRequestObject) (ListSessionsResponseObject, error)
+	// RevokeSession Closes a session on one device.
+	// (DELETE /auth/sessions/{sessionId})
+	RevokeSession(ctx context.Context, request RevokeSessionRequestObject) (RevokeSessionResponseObject, error)
+	// DeleteExpense Deletes an Expense; it stops counting in Balances but can be restored.
+	// (DELETE /expenses/{expenseId})
+	DeleteExpense(ctx context.Context, request DeleteExpenseRequestObject) (DeleteExpenseResponseObject, error)
+	// UpdateExpense Edits an Expense if nobody changed it since the client read it.
+	// (PATCH /expenses/{expenseId})
+	UpdateExpense(ctx context.Context, request UpdateExpenseRequestObject) (UpdateExpenseResponseObject, error)
+	// RestoreExpense Restores a deleted Expense, with no time limit.
+	// (POST /expenses/{expenseId}/restore)
+	RestoreExpense(ctx context.Context, request RestoreExpenseRequestObject) (RestoreExpenseResponseObject, error)
+	// CreateFriendship Creates a Friendship with a pending Friend or with an existing User.
+	// (POST /friendships)
+	CreateFriendship(ctx context.Context, request CreateFriendshipRequestObject) (CreateFriendshipResponseObject, error)
+	// RegenerateFriendInviteLink Creates a new Invite link for a pending Friend and revokes the previous one.
+	// (POST /friendships/{friendshipId}/invite-link)
+	RegenerateFriendInviteLink(ctx context.Context, request RegenerateFriendInviteLinkRequestObject) (RegenerateFriendInviteLinkResponseObject, error)
+	// CreateGroup Creates a Group with the User as its first Member.
+	// (POST /groups)
+	CreateGroup(ctx context.Context, request CreateGroupRequestObject) (CreateGroupResponseObject, error)
+	// DeleteGroup Deletes a Group whose Balances are all zero.
+	// (DELETE /groups/{groupId})
+	DeleteGroup(ctx context.Context, request DeleteGroupRequestObject) (DeleteGroupResponseObject, error)
+	// UpdateGroup Renames a Group, turns Debt simplification on or off, or changes the Group currency.
+	// (PATCH /groups/{groupId})
+	UpdateGroup(ctx context.Context, request UpdateGroupRequestObject) (UpdateGroupResponseObject, error)
+	// RegenerateGroupInviteLink Creates a new Invite link for a Group and revokes the previous one.
+	// (POST /groups/{groupId}/invite-link)
+	RegenerateGroupInviteLink(ctx context.Context, request RegenerateGroupInviteLinkRequestObject) (RegenerateGroupInviteLinkResponseObject, error)
+	// LeaveGroup The User leaves a Group where their Balance is zero.
+	// (POST /groups/{groupId}/leave)
+	LeaveGroup(ctx context.Context, request LeaveGroupRequestObject) (LeaveGroupResponseObject, error)
+	// AddPendingMember Adds a pending Member to a Group.
+	// (POST /groups/{groupId}/members)
+	AddPendingMember(ctx context.Context, request AddPendingMemberRequestObject) (AddPendingMemberResponseObject, error)
+	// RemoveMember Removes a Member whose Balance is zero from a Group.
+	// (DELETE /groups/{groupId}/members/{memberId})
+	RemoveMember(ctx context.Context, request RemoveMemberRequestObject) (RemoveMemberResponseObject, error)
+	// UndoClaim Undoes a Claim made by mistake.
+	// (DELETE /groups/{groupId}/members/{memberId}/claim)
+	UndoClaim(ctx context.Context, request UndoClaimRequestObject) (UndoClaimResponseObject, error)
 	// GetHealth Reports whether the server and its database are up.
 	// (GET /health)
 	GetHealth(ctx context.Context, request GetHealthRequestObject) (GetHealthResponseObject, error)
+	// GetInvite Shows what an Invite link leads to.
+	// (GET /invites/{token})
+	GetInvite(ctx context.Context, request GetInviteRequestObject) (GetInviteResponseObject, error)
+	// ClaimMember Claims a pending Member of a Group, or the pending Friend of a Friendship.
+	// (POST /invites/{token}/claim)
+	ClaimMember(ctx context.Context, request ClaimMemberRequestObject) (ClaimMemberResponseObject, error)
+	// JoinGroup Joins a Group as a new Member, named after the User.
+	// (POST /invites/{token}/join)
+	JoinGroup(ctx context.Context, request JoinGroupRequestObject) (JoinGroupResponseObject, error)
+	// DeleteMe Deletes the User's account.
+	// (DELETE /me)
+	DeleteMe(ctx context.Context, request DeleteMeRequestObject) (DeleteMeResponseObject, error)
+	// GetMe Returns the signed-in User.
+	// (GET /me)
+	GetMe(ctx context.Context, request GetMeRequestObject) (GetMeResponseObject, error)
+	// UpdateMe Changes the User's name or Preferred currency.
+	// (PATCH /me)
+	UpdateMe(ctx context.Context, request UpdateMeRequestObject) (UpdateMeResponseObject, error)
+	// PushRecords Sends a batch of Unsynced records (new Expenses and Settlements).
+	// (POST /records)
+	PushRecords(ctx context.Context, request PushRecordsRequestObject) (PushRecordsResponseObject, error)
+	// DeleteSettlement Deletes a Settlement; it stops counting in Balances but can be restored.
+	// (DELETE /settlements/{settlementId})
+	DeleteSettlement(ctx context.Context, request DeleteSettlementRequestObject) (DeleteSettlementResponseObject, error)
+	// UpdateSettlement Edits a Settlement if nobody changed it since the client read it.
+	// (PATCH /settlements/{settlementId})
+	UpdateSettlement(ctx context.Context, request UpdateSettlementRequestObject) (UpdateSettlementResponseObject, error)
+	// RestoreSettlement Restores a deleted Settlement.
+	// (POST /settlements/{settlementId}/restore)
+	RestoreSettlement(ctx context.Context, request RestoreSettlementRequestObject) (RestoreSettlementResponseObject, error)
+	// PullChanges Returns everything that changed since a cursor in the User's Groups and Friendships.
+	// (GET /sync)
+	PullChanges(ctx context.Context, request PullChangesRequestObject) (PullChangesResponseObject, error)
 }
 
 type StrictHandlerFunc func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error)
@@ -302,6 +4669,565 @@ type strictHandler struct {
 	options     StrictHTTPServerOptions
 }
 
+// StartGoogleLogin operation middleware
+func (sh *strictHandler) StartGoogleLogin(w http.ResponseWriter, r *http.Request, params StartGoogleLoginParams) {
+	var request StartGoogleLoginRequestObject
+
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.StartGoogleLogin(ctx, request.(StartGoogleLoginRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "StartGoogleLogin")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(StartGoogleLoginResponseObject); ok {
+		if err := validResponse.VisitStartGoogleLoginResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// FinishGoogleLogin operation middleware
+func (sh *strictHandler) FinishGoogleLogin(w http.ResponseWriter, r *http.Request, params FinishGoogleLoginParams) {
+	var request FinishGoogleLoginRequestObject
+
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.FinishGoogleLogin(ctx, request.(FinishGoogleLoginRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "FinishGoogleLogin")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(FinishGoogleLoginResponseObject); ok {
+		if err := validResponse.VisitFinishGoogleLoginResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// RequestLoginCode operation middleware
+func (sh *strictHandler) RequestLoginCode(w http.ResponseWriter, r *http.Request) {
+	var request RequestLoginCodeRequestObject
+
+	var body RequestLoginCodeJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.RequestLoginCode(ctx, request.(RequestLoginCodeRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RequestLoginCode")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(RequestLoginCodeResponseObject); ok {
+		if err := validResponse.VisitRequestLoginCodeResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// VerifyLoginCode operation middleware
+func (sh *strictHandler) VerifyLoginCode(w http.ResponseWriter, r *http.Request) {
+	var request VerifyLoginCodeRequestObject
+
+	var body VerifyLoginCodeJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.VerifyLoginCode(ctx, request.(VerifyLoginCodeRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "VerifyLoginCode")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(VerifyLoginCodeResponseObject); ok {
+		if err := validResponse.VisitVerifyLoginCodeResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// Logout operation middleware
+func (sh *strictHandler) Logout(w http.ResponseWriter, r *http.Request) {
+	var request LogoutRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.Logout(ctx, request.(LogoutRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "Logout")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(LogoutResponseObject); ok {
+		if err := validResponse.VisitLogoutResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListSessions operation middleware
+func (sh *strictHandler) ListSessions(w http.ResponseWriter, r *http.Request) {
+	var request ListSessionsRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListSessions(ctx, request.(ListSessionsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListSessions")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListSessionsResponseObject); ok {
+		if err := validResponse.VisitListSessionsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// RevokeSession operation middleware
+func (sh *strictHandler) RevokeSession(w http.ResponseWriter, r *http.Request, sessionId SessionId) {
+	var request RevokeSessionRequestObject
+
+	request.SessionId = sessionId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.RevokeSession(ctx, request.(RevokeSessionRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RevokeSession")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(RevokeSessionResponseObject); ok {
+		if err := validResponse.VisitRevokeSessionResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DeleteExpense operation middleware
+func (sh *strictHandler) DeleteExpense(w http.ResponseWriter, r *http.Request, expenseId ExpenseId) {
+	var request DeleteExpenseRequestObject
+
+	request.ExpenseId = expenseId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DeleteExpense(ctx, request.(DeleteExpenseRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DeleteExpense")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DeleteExpenseResponseObject); ok {
+		if err := validResponse.VisitDeleteExpenseResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// UpdateExpense operation middleware
+func (sh *strictHandler) UpdateExpense(w http.ResponseWriter, r *http.Request, expenseId ExpenseId) {
+	var request UpdateExpenseRequestObject
+
+	request.ExpenseId = expenseId
+
+	var body UpdateExpenseJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.UpdateExpense(ctx, request.(UpdateExpenseRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "UpdateExpense")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(UpdateExpenseResponseObject); ok {
+		if err := validResponse.VisitUpdateExpenseResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// RestoreExpense operation middleware
+func (sh *strictHandler) RestoreExpense(w http.ResponseWriter, r *http.Request, expenseId ExpenseId) {
+	var request RestoreExpenseRequestObject
+
+	request.ExpenseId = expenseId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.RestoreExpense(ctx, request.(RestoreExpenseRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RestoreExpense")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(RestoreExpenseResponseObject); ok {
+		if err := validResponse.VisitRestoreExpenseResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreateFriendship operation middleware
+func (sh *strictHandler) CreateFriendship(w http.ResponseWriter, r *http.Request) {
+	var request CreateFriendshipRequestObject
+
+	var body CreateFriendshipJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CreateFriendship(ctx, request.(CreateFriendshipRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateFriendship")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CreateFriendshipResponseObject); ok {
+		if err := validResponse.VisitCreateFriendshipResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// RegenerateFriendInviteLink operation middleware
+func (sh *strictHandler) RegenerateFriendInviteLink(w http.ResponseWriter, r *http.Request, friendshipId FriendshipId) {
+	var request RegenerateFriendInviteLinkRequestObject
+
+	request.FriendshipId = friendshipId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.RegenerateFriendInviteLink(ctx, request.(RegenerateFriendInviteLinkRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RegenerateFriendInviteLink")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(RegenerateFriendInviteLinkResponseObject); ok {
+		if err := validResponse.VisitRegenerateFriendInviteLinkResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreateGroup operation middleware
+func (sh *strictHandler) CreateGroup(w http.ResponseWriter, r *http.Request) {
+	var request CreateGroupRequestObject
+
+	var body CreateGroupJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CreateGroup(ctx, request.(CreateGroupRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateGroup")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CreateGroupResponseObject); ok {
+		if err := validResponse.VisitCreateGroupResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DeleteGroup operation middleware
+func (sh *strictHandler) DeleteGroup(w http.ResponseWriter, r *http.Request, groupId GroupId) {
+	var request DeleteGroupRequestObject
+
+	request.GroupId = groupId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DeleteGroup(ctx, request.(DeleteGroupRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DeleteGroup")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DeleteGroupResponseObject); ok {
+		if err := validResponse.VisitDeleteGroupResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// UpdateGroup operation middleware
+func (sh *strictHandler) UpdateGroup(w http.ResponseWriter, r *http.Request, groupId GroupId) {
+	var request UpdateGroupRequestObject
+
+	request.GroupId = groupId
+
+	var body UpdateGroupJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.UpdateGroup(ctx, request.(UpdateGroupRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "UpdateGroup")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(UpdateGroupResponseObject); ok {
+		if err := validResponse.VisitUpdateGroupResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// RegenerateGroupInviteLink operation middleware
+func (sh *strictHandler) RegenerateGroupInviteLink(w http.ResponseWriter, r *http.Request, groupId GroupId) {
+	var request RegenerateGroupInviteLinkRequestObject
+
+	request.GroupId = groupId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.RegenerateGroupInviteLink(ctx, request.(RegenerateGroupInviteLinkRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RegenerateGroupInviteLink")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(RegenerateGroupInviteLinkResponseObject); ok {
+		if err := validResponse.VisitRegenerateGroupInviteLinkResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// LeaveGroup operation middleware
+func (sh *strictHandler) LeaveGroup(w http.ResponseWriter, r *http.Request, groupId GroupId) {
+	var request LeaveGroupRequestObject
+
+	request.GroupId = groupId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.LeaveGroup(ctx, request.(LeaveGroupRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "LeaveGroup")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(LeaveGroupResponseObject); ok {
+		if err := validResponse.VisitLeaveGroupResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// AddPendingMember operation middleware
+func (sh *strictHandler) AddPendingMember(w http.ResponseWriter, r *http.Request, groupId GroupId) {
+	var request AddPendingMemberRequestObject
+
+	request.GroupId = groupId
+
+	var body AddPendingMemberJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.AddPendingMember(ctx, request.(AddPendingMemberRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "AddPendingMember")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(AddPendingMemberResponseObject); ok {
+		if err := validResponse.VisitAddPendingMemberResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// RemoveMember operation middleware
+func (sh *strictHandler) RemoveMember(w http.ResponseWriter, r *http.Request, groupId GroupId, memberId MemberId) {
+	var request RemoveMemberRequestObject
+
+	request.GroupId = groupId
+	request.MemberId = memberId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.RemoveMember(ctx, request.(RemoveMemberRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RemoveMember")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(RemoveMemberResponseObject); ok {
+		if err := validResponse.VisitRemoveMemberResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// UndoClaim operation middleware
+func (sh *strictHandler) UndoClaim(w http.ResponseWriter, r *http.Request, groupId GroupId, memberId MemberId) {
+	var request UndoClaimRequestObject
+
+	request.GroupId = groupId
+	request.MemberId = memberId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.UndoClaim(ctx, request.(UndoClaimRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "UndoClaim")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(UndoClaimResponseObject); ok {
+		if err := validResponse.VisitUndoClaimResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // GetHealth operation middleware
 func (sh *strictHandler) GetHealth(w http.ResponseWriter, r *http.Request) {
 	var request GetHealthRequestObject
@@ -319,6 +5245,312 @@ func (sh *strictHandler) GetHealth(w http.ResponseWriter, r *http.Request) {
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(GetHealthResponseObject); ok {
 		if err := validResponse.VisitGetHealthResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetInvite operation middleware
+func (sh *strictHandler) GetInvite(w http.ResponseWriter, r *http.Request, token InviteToken) {
+	var request GetInviteRequestObject
+
+	request.Token = token
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetInvite(ctx, request.(GetInviteRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetInvite")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetInviteResponseObject); ok {
+		if err := validResponse.VisitGetInviteResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ClaimMember operation middleware
+func (sh *strictHandler) ClaimMember(w http.ResponseWriter, r *http.Request, token InviteToken) {
+	var request ClaimMemberRequestObject
+
+	request.Token = token
+
+	var body ClaimMemberJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ClaimMember(ctx, request.(ClaimMemberRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ClaimMember")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ClaimMemberResponseObject); ok {
+		if err := validResponse.VisitClaimMemberResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// JoinGroup operation middleware
+func (sh *strictHandler) JoinGroup(w http.ResponseWriter, r *http.Request, token InviteToken) {
+	var request JoinGroupRequestObject
+
+	request.Token = token
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.JoinGroup(ctx, request.(JoinGroupRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "JoinGroup")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(JoinGroupResponseObject); ok {
+		if err := validResponse.VisitJoinGroupResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DeleteMe operation middleware
+func (sh *strictHandler) DeleteMe(w http.ResponseWriter, r *http.Request) {
+	var request DeleteMeRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DeleteMe(ctx, request.(DeleteMeRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DeleteMe")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DeleteMeResponseObject); ok {
+		if err := validResponse.VisitDeleteMeResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetMe operation middleware
+func (sh *strictHandler) GetMe(w http.ResponseWriter, r *http.Request) {
+	var request GetMeRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetMe(ctx, request.(GetMeRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetMe")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetMeResponseObject); ok {
+		if err := validResponse.VisitGetMeResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// UpdateMe operation middleware
+func (sh *strictHandler) UpdateMe(w http.ResponseWriter, r *http.Request) {
+	var request UpdateMeRequestObject
+
+	var body UpdateMeJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.UpdateMe(ctx, request.(UpdateMeRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "UpdateMe")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(UpdateMeResponseObject); ok {
+		if err := validResponse.VisitUpdateMeResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// PushRecords operation middleware
+func (sh *strictHandler) PushRecords(w http.ResponseWriter, r *http.Request) {
+	var request PushRecordsRequestObject
+
+	var body PushRecordsJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.PushRecords(ctx, request.(PushRecordsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "PushRecords")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(PushRecordsResponseObject); ok {
+		if err := validResponse.VisitPushRecordsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DeleteSettlement operation middleware
+func (sh *strictHandler) DeleteSettlement(w http.ResponseWriter, r *http.Request, settlementId SettlementId) {
+	var request DeleteSettlementRequestObject
+
+	request.SettlementId = settlementId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DeleteSettlement(ctx, request.(DeleteSettlementRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DeleteSettlement")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DeleteSettlementResponseObject); ok {
+		if err := validResponse.VisitDeleteSettlementResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// UpdateSettlement operation middleware
+func (sh *strictHandler) UpdateSettlement(w http.ResponseWriter, r *http.Request, settlementId SettlementId) {
+	var request UpdateSettlementRequestObject
+
+	request.SettlementId = settlementId
+
+	var body UpdateSettlementJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.UpdateSettlement(ctx, request.(UpdateSettlementRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "UpdateSettlement")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(UpdateSettlementResponseObject); ok {
+		if err := validResponse.VisitUpdateSettlementResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// RestoreSettlement operation middleware
+func (sh *strictHandler) RestoreSettlement(w http.ResponseWriter, r *http.Request, settlementId SettlementId) {
+	var request RestoreSettlementRequestObject
+
+	request.SettlementId = settlementId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.RestoreSettlement(ctx, request.(RestoreSettlementRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RestoreSettlement")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(RestoreSettlementResponseObject); ok {
+		if err := validResponse.VisitRestoreSettlementResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// PullChanges operation middleware
+func (sh *strictHandler) PullChanges(w http.ResponseWriter, r *http.Request, params PullChangesParams) {
+	var request PullChangesRequestObject
+
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.PullChanges(ctx, request.(PullChangesRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "PullChanges")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(PullChangesResponseObject); ok {
+		if err := validResponse.VisitPullChangesResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
