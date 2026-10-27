@@ -136,7 +136,8 @@ func TestEveryOperationIsListed(t *testing.T) {
 }
 
 func TestRequestsThatBreakTheContract(t *testing.T) {
-	h := httpapi.NewHandler(httpapi.NewServer(fakeDB{}, "test"), builtPWA)
+	// Signed in and from the app's origin, so only the contract is at fault.
+	ana, _ := newTestAPI(t).signedIn(t, "ana@example.com")
 
 	tests := []struct {
 		name   string
@@ -155,9 +156,9 @@ func TestRequestsThatBreakTheContract(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			rec := send(t, h, tt.method, tt.target, tt.body)
+			resp := ana.do(tt.method, tt.target, tt.body)
 
-			decodeProblem(t, rec, tt.status, tt.code)
+			wantProblem(t, resp, tt.status, tt.code)
 		})
 	}
 }

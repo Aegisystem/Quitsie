@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"reflect"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/Aegisystem/Quitsie/api/internal/auth"
@@ -104,4 +105,34 @@ func TestEveryOperationIsInTheSessionCheck(t *testing.T) {
 			t.Errorf("operation %s has no request in everyOperation", name)
 		}
 	}
+}
+
+func TestChangesMustComeFromTheAppsOwnOrigin(t *testing.T) {
+	api := newTestAPI(t)
+	ana, _ := api.signedIn(t, "ana@example.com")
+
+	for _, origin := range []string{"", "null", "https://evil.example"} {
+		t.Run("from "+origin, func(t *testing.T) {
+			ana.origin = origin
+
+			wantProblem(t, ana.do(http.MethodPatch, "/api/v1/me", `{"name":"Mallory"}`), http.StatusForbidden, httpapi.ProblemCodeOriginMismatch)
+			// Public operations too: another site must not be able to sign
+			// the browser in, nor flood someone's inbox through it.
+			wantProblem(t, ana.do(http.MethodPost, "/api/v1/auth/login-code", `{"email":"beto@example.com"}`), http.StatusForbidden, httpapi.ProblemCodeOriginMismatch)
+		})
+	}
+	if strings.Contains(api.mail.buf.String(), "beto@example.com") {
+		t.Error("a request from another origin sent a login code")
+	}
+
+	ana.origin = ""
+	decode[httpapi.User](t, ana.do(http.MethodGet, "/api/v1/me", ""), http.StatusOK)
+}
+
+func TestAFailingSessionLookupIsAnInternalError(t *testing.T) {
+	api := newTestAPI(t)
+	ana, _ := api.signedIn(t, "ana@example.com")
+	api.db.Close()
+
+	wantProblem(t, ana.do(http.MethodGet, "/api/v1/me", ""), http.StatusInternalServerError, httpapi.ProblemCodeInternalError)
 }

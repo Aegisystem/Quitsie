@@ -5,6 +5,8 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+
+	"github.com/Aegisystem/Quitsie/api/internal/auth"
 )
 
 // errNotImplemented is returned by the handlers of operations that are not
@@ -31,11 +33,16 @@ func badRequest(w http.ResponseWriter, _ *http.Request, err error) {
 	writeProblem(w, http.StatusBadRequest, ProblemCodeValidationFailed, "The request does not match the API contract.", err.Error())
 }
 
-// handlerError answers the errors a handler returns instead of a response.
-// Their text may hold internal details, so it goes to the log, not the client.
+// handlerError answers the errors a handler or a middleware returns instead
+// of a response. Their text may hold internal details, so it goes to the
+// log, not the client.
 func handlerError(w http.ResponseWriter, r *http.Request, err error) {
 	if errors.Is(err, errNotImplemented) {
 		writeProblem(w, http.StatusNotImplemented, ProblemCodeNotImplemented, "This operation is not implemented yet.", "")
+		return
+	}
+	if errors.Is(err, auth.ErrForeignOrigin) {
+		writeProblem(w, http.StatusForbidden, ProblemCodeOriginMismatch, "Changes must come from the app's own origin.", "")
 		return
 	}
 	if errors.Is(err, errUnauthenticated) {

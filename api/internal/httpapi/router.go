@@ -29,17 +29,18 @@ func NewHandler(s *Server, pwa fs.FS) http.Handler {
 	})
 
 	mux := http.NewServeMux()
-	mux.Handle("/api/", s.authenticate(api))
+	mux.Handle("/api/", s.guard(api))
 	mux.Handle("/", pwaHandler(pwa))
 	return mux
 }
 
-// authenticate finds the User of every API request from its session cookie.
-func (s *Server) authenticate(next http.Handler) http.Handler {
-	if s.deps.Auth == nil {
-		return next
+// guard refuses API requests that change data from another origin (CSRF),
+// and then finds the User of the rest from their session cookie.
+func (s *Server) guard(next http.Handler) http.Handler {
+	if s.deps.Auth != nil {
+		next = s.deps.Auth.Authenticate(handlerError)(next)
 	}
-	return s.deps.Auth.Authenticate(next)
+	return auth.RequireSameOrigin(handlerError, s.deps.Origins...)(next)
 }
 
 // publicOperations answer without a session; every other operation needs

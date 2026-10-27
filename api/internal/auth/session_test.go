@@ -15,14 +15,20 @@ import (
 )
 
 // whoAmI runs a request with token's session cookie (none if token is
-// empty) through Authenticate and RequireUser, and returns the response and
-// the User the handler saw.
+// empty) through Authenticate to a handler that, like the API's operations
+// that need a session, answers 401 when there is no User. It returns the
+// response and the User the handler saw.
 func (f *fixture) whoAmI(t *testing.T, token string) (*http.Response, store.User) {
 	t.Helper()
 	var seen store.User
-	h := f.svc.Authenticate(auth.RequireUser(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		seen, _ = auth.CurrentUser(r.Context())
-	})))
+	h := f.svc.Authenticate(failTest(t))(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		user, ok := auth.CurrentUser(r.Context())
+		if !ok {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		seen = user
+	}))
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/me", nil)
 	if token != "" {
 		req.AddCookie(auth.SessionCookie(token))
@@ -135,6 +141,14 @@ func TestADeletedUsersSessionsStopWorking(t *testing.T) {
 	}
 }
 
+// failTest is an ErrorHandler for middlewares that should not fail.
+func failTest(t *testing.T) auth.ErrorHandler {
+	return func(w http.ResponseWriter, r *http.Request, err error) {
+		t.Errorf("%s %s: %v", r.Method, r.URL.Path, err)
+		w.WriteHeader(http.StatusInternalServerError)
+	}
+}
+
 // signInOn signs email in from device and returns the session token.
 func (f *fixture) signInOn(t *testing.T, email, device string) auth.SignIn {
 	t.Helper()
@@ -242,7 +256,7 @@ func TestHandlersKnowTheCurrentSession(t *testing.T) {
 	phone := f.signInOn(t, anaEmail, "Safari on iPhone")
 
 	var current auth.Session
-	h := f.svc.Authenticate(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	h := f.svc.Authenticate(failTest(t))(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		current, _ = auth.CurrentSession(r.Context())
 	}))
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/sessions", nil)
