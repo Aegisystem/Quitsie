@@ -3,6 +3,10 @@ import { fail, ok, type Result } from './result'
 
 // Amounts are integers in the currency's minor unit (docs/arquitectura.md):
 // 1050 is 10.50 USD and 1050 JPY. They never go through floating point.
+// No amount goes over 10^15 minor units, so that adding up Balances never
+// leaves the safe integers (docs/reglas-de-negocio.md).
+export const maxAmount = 10 ** 15
+
 export function assertAmount(amount: number): void {
   if (!Number.isSafeInteger(amount)) {
     throw new Error(`${amount} is not an integer amount in minor units`)
@@ -51,10 +55,15 @@ function parseDecimal(input: string, locale: string, digits: number): Result<num
   if (text === '') return fail('empty')
   // fr-FR groups with a narrow no-break space, which nobody can type.
   if (/^\s$/.test(group)) text = text.replace(/\s/g, group)
+  // Phones and habit put a point in amounts everywhere, so a lone point is the
+  // decimal separator unless exactly three digits follow it: '10.50' is 10,50 in
+  // es-CO, where '.' groups thousands, but '1.500' is still 1500.
+  const point = /^[-−]?\d*\.(\d*)$/.exec(text)
+  if (decimal !== '.' && point && point[1]?.length !== 3) text = text.replace('.', decimal)
 
-  // Thousands separators must sit every three digits. Otherwise '10.50' in es-CO,
-  // where '.' groups thousands, would silently become 1050 pesos. The sign may be
-  // a hyphen or the minus sign (U+2212) that Intl writes in some locales.
+  // Otherwise thousands separators must sit every three digits, so that a typo
+  // never silently multiplies an amount. The sign may be a hyphen or the minus
+  // sign (U+2212) that Intl writes in some locales.
   const g = escapeRegExp(group)
   const d = escapeRegExp(decimal)
   const match = new RegExp(`^([-−]?)(\\d{1,3}(?:${g}\\d{3})+|\\d*)(?:${d}(\\d*))?$`).exec(text)
@@ -64,7 +73,7 @@ function parseDecimal(input: string, locale: string, digits: number): Result<num
   if (fraction.length > digits) return fail('too-many-decimals')
 
   const units = BigInt(whole || '0') * 10n ** BigInt(digits) + BigInt(fraction.padEnd(digits, '0') || '0')
-  if (units > BigInt(Number.MAX_SAFE_INTEGER)) return fail('too-large')
+  if (units > BigInt(maxAmount)) return fail('too-large')
   const value = Number(units)
   return ok(match[1] && value !== 0 ? -value : value)
 }

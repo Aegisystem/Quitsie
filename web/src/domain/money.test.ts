@@ -46,10 +46,21 @@ describe('parseAmount', () => {
     expect(parseAmount('1 234,56', 'EUR', 'fr-FR')).toEqual({ ok: true, value: 123456 })
   })
 
-  it('rejects the other locale’s decimal separator instead of guessing', () => {
-    expect(parseAmount('10.50', 'COP', 'es-CO')).toEqual({ ok: false, error: 'invalid' })
+  it('reads a point as decimal unless exactly three digits follow it, even where it groups thousands', () => {
+    expect(parseAmount('10.50', 'COP', 'es-CO')).toEqual({ ok: true, value: 1050 })
+    expect(parseAmount('10.5', 'COP', 'es-CO')).toEqual({ ok: true, value: 1050 })
+    expect(parseAmount('10.', 'COP', 'es-CO')).toEqual({ ok: true, value: 1000 })
+    expect(parseAmount('-2.75', 'COP', 'es-CO')).toEqual({ ok: true, value: -275 })
+    expect(parseAmount('10.50', 'EUR', 'fr-FR')).toEqual({ ok: true, value: 1050 })
+    expect(parseAmount('1.500', 'COP', 'es-CO')).toEqual({ ok: true, value: 150000 })
+    expect(parseAmount('1.2345', 'COP', 'es-CO')).toEqual({ ok: false, error: 'too-many-decimals' })
+  })
+
+  it('does not guess with a comma, nor with a point next to the locale’s decimal separator', () => {
     expect(parseAmount('10,50', 'USD', 'en-US')).toEqual({ ok: false, error: 'invalid' })
-    expect(parseAmount('1.2345', 'COP', 'es-CO')).toEqual({ ok: false, error: 'invalid' })
+    expect(parseAmount('10,50', 'MXN', 'es-MX')).toEqual({ ok: false, error: 'invalid' })
+    expect(parseAmount('1.23,5', 'COP', 'es-CO')).toEqual({ ok: false, error: 'invalid' })
+    expect(parseAmount('1.234.56', 'COP', 'es-CO')).toEqual({ ok: false, error: 'invalid' })
   })
 
   it('rejects more decimals than the currency has', () => {
@@ -76,9 +87,12 @@ describe('parseAmount', () => {
     }
   })
 
-  it('rejects amounts too large to keep exactly', () => {
-    expect(parseAmount('90071992547409.91', 'USD', 'en-US')).toEqual({ ok: true, value: 9007199254740991 })
-    expect(parseAmount('90071992547409.92', 'USD', 'en-US')).toEqual({ ok: false, error: 'too-large' })
+  it('rejects more than 10^15 minor units, so that sums of Balances never overflow', () => {
+    expect(parseAmount('10000000000000.00', 'USD', 'en-US')).toEqual({ ok: true, value: 10 ** 15 })
+    expect(parseAmount('10000000000000.01', 'USD', 'en-US')).toEqual({ ok: false, error: 'too-large' })
+    expect(parseAmount('-10000000000000.01', 'USD', 'en-US')).toEqual({ ok: false, error: 'too-large' })
+    expect(parseAmount('1000000000000001', 'JPY', 'ja-JP')).toEqual({ ok: false, error: 'too-large' })
+    expect(parseAmount('99999999999999999999999', 'USD', 'en-US')).toEqual({ ok: false, error: 'too-large' })
   })
 })
 
