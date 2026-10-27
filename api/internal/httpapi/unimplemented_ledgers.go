@@ -9,10 +9,6 @@ import "context"
 
 // --- groups ---
 
-func (s *Server) UpdateGroup(context.Context, UpdateGroupRequestObject) (UpdateGroupResponseObject, error) {
-	return nil, errNotImplemented
-}
-
 func (s *Server) DeleteGroup(context.Context, DeleteGroupRequestObject) (DeleteGroupResponseObject, error) {
 	return nil, errNotImplemented
 }

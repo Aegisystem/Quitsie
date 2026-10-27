@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -11,6 +13,9 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
+
+	"github.com/google/uuid"
 
 	"github.com/Aegisystem/Quitsie/api/internal/auth"
 	"github.com/Aegisystem/Quitsie/api/internal/httpapi"
@@ -259,5 +264,191 @@ func TestCreateGroupRejectsWhatBreaksTheContract(t *testing.T) {
 				t.Errorf("a Group was created anyway: %+v", got)
 			}
 		})
+	}
+}
+
+func TestUpdateGroupRenamesItAndTurnsDebtSimplificationOff(t *testing.T) {
+	w := newWorld(t)
+	ana := w.signIn("Ana")
+	groupID := ana.createGroup(`{"name":"Casa","currency":"COP"}`)
+
+	rec := ana.send(http.MethodPatch, "/api/v1/groups/"+groupID, `{"name":"Casa 2026","simplifyDebts":false}`)
+
+	group := decode[httpapi.Group](t, rec, http.StatusOK)
+	if group.Name != "Casa 2026" || group.SimplifyDebts {
+		t.Errorf("group = %+v, want renamed with Debt simplification off", group)
+	}
+	want := "group_created,group_renamed,debt_simplification_changed"
+	if kinds := strings.Join(activityKinds(ana.pull(), groupID), ","); kinds != want {
+		t.Errorf("activities = %s, want %s", kinds, want)
+	}
+}
+
+func TestUpdateGroupRecordsOnlyWhatChanged(t *testing.T) {
+	w := newWorld(t)
+	ana := w.signIn("Ana")
+	groupID := ana.createGroup(`{"name":"Casa","currency":"COP"}`)
+
+	rec := ana.send(http.MethodPatch, "/api/v1/groups/"+groupID, `{"name":"Casa","simplifyDebts":false}`)
+
+	decode[httpapi.Group](t, rec, http.StatusOK)
+	want := "group_created,debt_simplification_changed"
+	if kinds := strings.Join(activityKinds(ana.pull(), groupID), ","); kinds != want {
+		t.Errorf("activities = %s, want %s", kinds, want)
+	}
+}
+
+func TestUpdateGroupNeedsSomethingToChange(t *testing.T) {
+	w := newWorld(t)
+	ana := w.signIn("Ana")
+	groupID := ana.createGroup(`{"name":"Casa","currency":"COP"}`)
+
+	rec := ana.send(http.MethodPatch, "/api/v1/groups/"+groupID, `{}`)
+
+	decodeProblem(t, rec, http.StatusBadRequest, httpapi.ProblemCodeValidationFailed)
+}
+
+func TestAGroupIsNotFoundForWhoeverIsNotInIt(t *testing.T) {
+	w := newWorld(t)
+	ana := w.signIn("Ana")
+	beto := w.signIn("Beto")
+	groupID := ana.createGroup(`{"name":"Casa","currency":"COP"}`)
+
+	for name, target := range map[string]string{
+		"someone else's Group":        "/api/v1/groups/" + groupID,
+		"a Group that does not exist": "/api/v1/groups/" + someID,
+	} {
+		t.Run(name, func(t *testing.T) {
+			rec := beto.send(http.MethodPatch, target, `{"name":"Mía"}`)
+
+			decodeProblem(t, rec, http.StatusNotFound, httpapi.ProblemCodeNotFound)
+		})
+	}
+}
+
+// memberID is the id of the Member called name in ledgerID, as p sees it.
+func (p *person) memberID(ledgerID, name string) string {
+	p.w.t.Helper()
+	for _, m := range membersOf(p.pull(), ledgerID) {
+		if m.Name == name {
+			return m.ID
+		}
+	}
+	p.w.t.Fatalf("no Member called %s in %s", name, ledgerID)
+	return ""
+}
+
+// expense stores an Expense that payer paid in full and owed splits, straight
+// in the store: pushing records is an endpoint of another area. It returns
+// the Expense's id.
+func (p *person) expense(ledgerID, currency, payer string, owed map[string]int64) string {
+	p.w.t.Helper()
+	ctx := context.Background()
+	id := uuid.Must(uuid.NewV7()).String()
+	e := store.ExpenseWithShares{Expense: store.Expense{
+		ID:          id,
+		LedgerID:    ledgerID,
+		Description: "Mercado",
+		Date:        time.Date(2026, 10, 25, 0, 0, 0, 0, time.UTC),
+		Currency:    currency,
+		SplitMethod: "exact",
+		CreatedBy:   p.id,
+		CreatedAt:   time.Now().UTC(),
+	}}
+	for member, amount := range owed {
+		e.Total += amount
+		e.OwedShares = append(e.OwedShares, store.OwedShare{MemberID: member, Amount: amount})
+	}
+	e.PaidShares = []store.PaidShare{{MemberID: payer, Amount: e.Total}}
+	_, err := store.Write(ctx, p.w.db, func(q *store.Queries, version int64) error {
+		e.Version = version
+		_, _, err := q.CreateExpense(ctx, e)
+		return err
+	})
+	if err != nil {
+		p.w.t.Fatal(err)
+	}
+	return id
+}
+
+// deleteExpense deletes an Expense straight in the store; see expense.
+func (w *world) deleteExpense(id string) {
+	w.t.Helper()
+	ctx := context.Background()
+	now := time.Now().UTC()
+	_, err := store.Write(ctx, w.db, func(q *store.Queries, version int64) error {
+		_, err := q.DeleteExpense(ctx, store.DeleteExpenseParams{ID: id, DeletedAt: &now, Version: version})
+		return err
+	})
+	if err != nil {
+		w.t.Fatal(err)
+	}
+}
+
+// totals lists "id currency total" for every Expense in c.
+func totals(c store.Changes) map[string]string {
+	out := map[string]string{}
+	for _, e := range c.Expenses {
+		out[e.ID] = fmt.Sprintf("%s %d", e.Currency, e.Total)
+	}
+	return out
+}
+
+func TestChangingTheGroupCurrencyRelabelsEveryRecordKeepingItsNumbers(t *testing.T) {
+	w := newWorld(t)
+	ana := w.signIn("Ana")
+	groupID := ana.createGroup(`{"name":"Viaje","currency":"COP","pendingMembers":[{"name":"Beto"}]}`)
+	anaID, betoID := ana.memberID(groupID, "Ana"), ana.memberID(groupID, "Beto")
+	live := ana.expense(groupID, "COP", anaID, map[string]int64{anaID: 4500, betoID: 4500})
+	deleted := ana.expense(groupID, "COP", anaID, map[string]int64{betoID: 1200})
+	w.deleteExpense(deleted)
+
+	rec := ana.send(http.MethodPatch, "/api/v1/groups/"+groupID, `{"currency":"CLP"}`)
+
+	group := decode[httpapi.Group](t, rec, http.StatusOK)
+	if group.Currency != "CLP" {
+		t.Errorf("currency = %s, want CLP", group.Currency)
+	}
+	changes := ana.pull()
+	// 90.00 COP is 90 CLP: the same number in a currency without decimals.
+	want := map[string]string{live: "CLP 90", deleted: "CLP 12"}
+	if got := totals(changes); !maps.Equal(got, want) {
+		t.Errorf("Expenses = %v, want %v", got, want)
+	}
+	for _, e := range changes.Expenses {
+		for _, s := range e.OwedShares {
+			if e.ID == live && s.Amount != 45 {
+				t.Errorf("OwedShare of %s in %s = %d, want 45", s.MemberID, e.ID, s.Amount)
+			}
+		}
+	}
+	if kinds := activityKinds(changes, groupID); kinds[len(kinds)-1] != "group_currency_changed" {
+		t.Errorf("activities = %v, want the last one to be group_currency_changed", kinds)
+	}
+}
+
+func TestTheGroupCurrencyCannotChangeIfSomeAmountWouldLoseDecimals(t *testing.T) {
+	w := newWorld(t)
+	ana := w.signIn("Ana")
+	groupID := ana.createGroup(`{"name":"Viaje","currency":"COP","pendingMembers":[{"name":"Beto"}]}`)
+	anaID, betoID := ana.memberID(groupID, "Ana"), ana.memberID(groupID, "Beto")
+	ana.expense(groupID, "COP", anaID, map[string]int64{betoID: 9000})
+	// 10.50 COP cannot be written in CLP, and a deleted Expense can come back.
+	cents := ana.expense(groupID, "COP", anaID, map[string]int64{betoID: 1050})
+	w.deleteExpense(cents)
+	before := totals(ana.pull())
+
+	rec := ana.send(http.MethodPatch, "/api/v1/groups/"+groupID, `{"name":"Viaje 2026","currency":"CLP"}`)
+
+	p := decode[httpapi.CurrencyPrecisionProblem](t, rec, http.StatusConflict)
+	if p.Code != httpapi.ProblemCodeCurrencyPrecisionLoss || len(p.ExpenseIds) != 1 || p.ExpenseIds[0].String() != cents || len(p.SettlementIds) != 0 {
+		t.Errorf("problem = %+v, want currency_precision_loss naming only %s", p, cents)
+	}
+	changes := ana.pull()
+	if got := totals(changes); !maps.Equal(got, before) {
+		t.Errorf("Expenses = %v, want them untouched: %v", got, before)
+	}
+	if changes.Ledgers[0].Name != "Viaje" {
+		t.Errorf("the Group was renamed anyway: %+v", changes.Ledgers[0])
 	}
 }

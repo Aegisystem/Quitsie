@@ -113,6 +113,84 @@ func (q *Queries) GetLedgerByInviteLink(ctx context.Context, inviteLinkHash stri
 	return i, err
 }
 
+const scaleLedgerExpenseTotals = `-- name: ScaleLedgerExpenseTotals :exec
+UPDATE expenses
+SET total = total * ?1 / ?2
+WHERE ledger_id = ?3
+`
+
+type ScaleLedgerExpenseTotalsParams struct {
+	Multiplier int64
+	Divisor    int64
+	LedgerID   string
+}
+
+// Use ScaleLedgerAmounts, which runs the four ScaleLedger* queries together.
+func (q *Queries) ScaleLedgerExpenseTotals(ctx context.Context, arg ScaleLedgerExpenseTotalsParams) error {
+	_, err := q.db.ExecContext(ctx, scaleLedgerExpenseTotals, arg.Multiplier, arg.Divisor, arg.LedgerID)
+	return err
+}
+
+const scaleLedgerOwedShares = `-- name: ScaleLedgerOwedShares :exec
+UPDATE owed_shares
+SET amount = amount * ?1 / ?2,
+    split_value = CASE
+        WHEN expense_id IN (SELECT expenses.id FROM expenses WHERE expenses.ledger_id = ?3 AND split_method = 'adjustment')
+        THEN split_value * ?1 / ?2
+        ELSE split_value
+    END
+WHERE expense_id IN (SELECT expenses.id FROM expenses WHERE expenses.ledger_id = ?3)
+`
+
+type ScaleLedgerOwedSharesParams struct {
+	Multiplier int64
+	Divisor    int64
+	LedgerID   string
+}
+
+// Use ScaleLedgerAmounts, which runs the four ScaleLedger* queries together.
+// An adjustment is an amount too; percentages and weights have no currency.
+func (q *Queries) ScaleLedgerOwedShares(ctx context.Context, arg ScaleLedgerOwedSharesParams) error {
+	_, err := q.db.ExecContext(ctx, scaleLedgerOwedShares, arg.Multiplier, arg.Divisor, arg.LedgerID)
+	return err
+}
+
+const scaleLedgerPaidShares = `-- name: ScaleLedgerPaidShares :exec
+UPDATE paid_shares
+SET amount = amount * ?1 / ?2
+WHERE expense_id IN (SELECT expenses.id FROM expenses WHERE expenses.ledger_id = ?3)
+`
+
+type ScaleLedgerPaidSharesParams struct {
+	Multiplier int64
+	Divisor    int64
+	LedgerID   string
+}
+
+// Use ScaleLedgerAmounts, which runs the four ScaleLedger* queries together.
+func (q *Queries) ScaleLedgerPaidShares(ctx context.Context, arg ScaleLedgerPaidSharesParams) error {
+	_, err := q.db.ExecContext(ctx, scaleLedgerPaidShares, arg.Multiplier, arg.Divisor, arg.LedgerID)
+	return err
+}
+
+const scaleLedgerSettlements = `-- name: ScaleLedgerSettlements :exec
+UPDATE settlements
+SET amount = amount * ?1 / ?2
+WHERE ledger_id = ?3
+`
+
+type ScaleLedgerSettlementsParams struct {
+	Multiplier int64
+	Divisor    int64
+	LedgerID   string
+}
+
+// Use ScaleLedgerAmounts, which runs the four ScaleLedger* queries together.
+func (q *Queries) ScaleLedgerSettlements(ctx context.Context, arg ScaleLedgerSettlementsParams) error {
+	_, err := q.db.ExecContext(ctx, scaleLedgerSettlements, arg.Multiplier, arg.Divisor, arg.LedgerID)
+	return err
+}
+
 const setLedgerInviteLink = `-- name: SetLedgerInviteLink :one
 UPDATE ledgers
 SET invite_link_hash = ?, version = ?

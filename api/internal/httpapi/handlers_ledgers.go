@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/Aegisystem/Quitsie/api/internal/auth"
 	"github.com/Aegisystem/Quitsie/api/internal/domain"
+	"github.com/Aegisystem/Quitsie/api/internal/ledgers"
 	"github.com/Aegisystem/Quitsie/api/internal/store"
 )
 
@@ -107,6 +109,32 @@ func answer[R any](err error, respond func(status int, p Problem) R) (R, error) 
 	}
 	var zero R
 	return zero, err
+}
+
+// errNotFound answers for a ledger the User cannot see, the same as for one
+// that does not exist.
+var errNotFound = &failure{status: http.StatusNotFound, code: ProblemCodeNotFound, title: "Not found."}
+
+// open loads the ledger ledgerID, which must be of kind and alive, with the
+// caller's active Member in it. Any other case is errNotFound: every query is
+// limited to the ledgers where the User has an active Member.
+func open(ctx context.Context, q *store.Queries, ledgerID, kind, userID string) (ledgers.Snapshot, store.Member, error) {
+	snap, err := ledgers.Load(ctx, q, ledgerID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ledgers.Snapshot{}, store.Member{}, errNotFound
+	}
+	if err != nil {
+		return ledgers.Snapshot{}, store.Member{}, err
+	}
+	if snap.Ledger.Kind != kind || snap.Ledger.DeletedAt != nil {
+		return ledgers.Snapshot{}, store.Member{}, errNotFound
+	}
+	for _, m := range snap.Members {
+		if m.UserID != nil && *m.UserID == userID && m.Status == "active" {
+			return snap, m, nil
+		}
+	}
+	return ledgers.Snapshot{}, store.Member{}, errNotFound
 }
 
 // currentUser is the signed-in User, or errUnauthenticated.
@@ -245,4 +273,131 @@ func (s *Server) CreateGroup(ctx context.Context, req CreateGroupRequestObject) 
 		return answer(err, respond)
 	}
 	return CreateGroup201JSONResponse(groupResponse(ledger)), nil
+}
+
+func (s *Server) UpdateGroup(ctx context.Context, req UpdateGroupRequestObject) (UpdateGroupResponseObject, error) {
+	respond := func(status int, p Problem) UpdateGroupResponseObject {
+		return UpdateGroupdefaultApplicationProblemPlusJSONResponse{Body: p, StatusCode: status}
+	}
+	user, err := currentUser(ctx)
+	if err != nil {
+		return answer(err, respond)
+	}
+	body := req.Body
+	if body.Name == nil && body.SimplifyDebts == nil && body.Currency == nil {
+		return answer(invalid("send at least one of name, simplifyDebts and currency"), respond)
+	}
+	var name string
+	if body.Name != nil {
+		if name, err = cleanName(*body.Name); err != nil {
+			return answer(err, respond)
+		}
+	}
+	if body.Currency != nil {
+		if err := checkCurrency(*body.Currency); err != nil {
+			return answer(err, respond)
+		}
+	}
+
+	var group store.Ledger
+	_, err = store.Write(ctx, s.deps.DB, func(q *store.Queries, version int64) error {
+		snap, _, err := open(ctx, q, req.GroupId.String(), "group", user.ID)
+		if err != nil {
+			return err
+		}
+		group = snap.Ledger
+		renamed := body.Name != nil && name != group.Name
+		toggled := body.SimplifyDebts != nil && *body.SimplifyDebts != group.SimplifyDebts
+		relabeled := body.Currency != nil && *body.Currency != *group.Currency
+
+		if relabeled {
+			if err := relabel(ctx, q, snap, domain.Currency(*body.Currency), version); err != nil {
+				return err
+			}
+			if err := activity(ctx, q, group.ID, user.ID, "group_currency_changed", map[string]any{"from": *group.Currency, "to": *body.Currency}, version); err != nil {
+				return err
+			}
+		}
+		if renamed || toggled {
+			params := store.UpdateLedgerParams{ID: group.ID, Name: group.Name, SimplifyDebts: group.SimplifyDebts, Version: version}
+			if renamed {
+				params.Name = name
+			}
+			if toggled {
+				params.SimplifyDebts = *body.SimplifyDebts
+			}
+			if _, err := q.UpdateLedger(ctx, params); err != nil {
+				return fmt.Errorf("update group: %w", err)
+			}
+		}
+		if renamed {
+			if err := activity(ctx, q, group.ID, user.ID, "group_renamed", map[string]any{"from": group.Name, "to": name}, version); err != nil {
+				return err
+			}
+		}
+		if toggled {
+			if err := activity(ctx, q, group.ID, user.ID, "debt_simplification_changed", map[string]any{"simplifyDebts": *body.SimplifyDebts}, version); err != nil {
+				return err
+			}
+		}
+		if !relabeled && !renamed && !toggled {
+			return nil
+		}
+		if group, err = q.GetLedger(ctx, group.ID); err != nil {
+			return fmt.Errorf("get updated group: %w", err)
+		}
+		return nil
+	})
+	var lost *domain.RelabelError
+	if errors.As(err, &lost) {
+		return UpdateGroup409ApplicationProblemPlusJSONResponse(precisionLoss(lost)), nil
+	}
+	if err != nil {
+		return answer(err, respond)
+	}
+	return UpdateGroup200JSONResponse(groupResponse(group)), nil
+}
+
+// relabel changes the currency of the Group in snap to to, with every
+// Expense and Settlement, deleted ones included because they can be
+// restored. It keeps the numbers people read and never converts; if some
+// amount would lose decimals it returns the *domain.RelabelError.
+func relabel(ctx context.Context, q *store.Queries, snap ledgers.Snapshot, to domain.Currency, version int64) error {
+	if _, _, err := domain.Relabel(snap.Expenses(), snap.Settlements(), to); err != nil {
+		return err
+	}
+	from := domain.Currency(*snap.Ledger.Currency)
+	fromDecimals, ok := from.Decimals()
+	if !ok {
+		return fmt.Errorf("group %s has the unknown currency %q", snap.Ledger.ID, from)
+	}
+	toDecimals, _ := to.Decimals()
+	if err := q.RelabelCurrency(ctx, snap.Ledger.ID, string(to), version); err != nil {
+		return fmt.Errorf("relabel group: %w", err)
+	}
+	// RelabelCurrency only changes the labels; the minor units change with
+	// the decimals (10.00 USD is 1000 cents, 10 JPY is 10).
+	if err := q.ScaleLedgerAmounts(ctx, snap.Ledger.ID, fromDecimals, toDecimals); err != nil {
+		return fmt.Errorf("relabel group: %w", err)
+	}
+	return nil
+}
+
+// precisionLoss answers a currency change that would drop decimals, with the
+// records to fix first.
+func precisionLoss(lost *domain.RelabelError) CurrencyPrecisionProblem {
+	p := CurrencyPrecisionProblem{
+		Status:        http.StatusConflict,
+		Code:          ProblemCodeCurrencyPrecisionLoss,
+		Title:         "Some amounts would lose decimals in the new currency.",
+		ExpenseIds:    make([]uuid.UUID, len(lost.ExpenseIDs)),
+		SettlementIds: make([]uuid.UUID, len(lost.SettlementIDs)),
+	}
+	for i, id := range lost.ExpenseIDs {
+		p.ExpenseIds[i] = uuid.MustParse(id)
+	}
+	for i, id := range lost.SettlementIDs {
+		p.SettlementIds[i] = uuid.MustParse(id)
+	}
+	return p
 }
