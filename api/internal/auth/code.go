@@ -66,6 +66,10 @@ func (s *Service) RequestCode(ctx context.Context, email, ip string) error {
 		if err := q.DeleteLoginCodes(ctx, email); err != nil {
 			return fmt.Errorf("auth: delete login codes: %w", err)
 		}
+		// Also forget other people's expired codes, and with them their emails.
+		if err := q.DeleteExpiredLoginCodes(ctx, now); err != nil {
+			return fmt.Errorf("auth: delete expired login codes: %w", err)
+		}
 		err := q.CreateLoginCode(ctx, store.CreateLoginCodeParams{
 			ID:        id.String(),
 			Email:     email,

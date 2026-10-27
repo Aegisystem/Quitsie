@@ -108,6 +108,8 @@ const (
 	anaEmail = "ana@example.com"
 	anaIP    = "203.0.113.7"
 	device   = "Firefox on Linux"
+
+	codeLifetime = 10 * time.Minute
 )
 
 func TestARequestedCodeSignsANewUserIn(t *testing.T) {
@@ -373,5 +375,22 @@ func TestTheDatabaseKeepsOnlyHashes(t *testing.T) {
 	}
 	if strings.Contains(f.dump(t, "sessions"), signIn.Token) {
 		t.Error("sessions holds the session token")
+	}
+}
+
+// Emails of people who never finished signing in should not stay around.
+func TestExpiredCodesAreForgotten(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	if err := f.svc.RequestCode(ctx, "beto@example.com", anaIP); err != nil {
+		t.Fatal(err)
+	}
+
+	f.clock.Advance(codeLifetime)
+	if err := f.svc.RequestCode(ctx, anaEmail, anaIP); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(f.dump(t, "login_codes"), "beto@example.com") {
+		t.Error("login_codes still holds an expired code for beto@example.com")
 	}
 }

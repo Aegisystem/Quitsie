@@ -16,3 +16,7 @@ WHERE email = ?;
 UPDATE login_codes
 SET attempts = attempts + 1
 WHERE id = ?;
+
+-- name: DeleteExpiredLoginCodes :exec
+DELETE FROM login_codes
+WHERE expires_at <= ?;

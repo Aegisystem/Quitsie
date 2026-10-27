@@ -45,6 +45,16 @@ func (q *Queries) CreateLoginCode(ctx context.Context, arg CreateLoginCodeParams
 	return err
 }
 
+const deleteExpiredLoginCodes = `-- name: DeleteExpiredLoginCodes :exec
+DELETE FROM login_codes
+WHERE expires_at <= ?
+`
+
+func (q *Queries) DeleteExpiredLoginCodes(ctx context.Context, expiresAt time.Time) error {
+	_, err := q.db.ExecContext(ctx, deleteExpiredLoginCodes, expiresAt)
+	return err
+}
+
 const deleteLoginCodes = `-- name: DeleteLoginCodes :exec
 DELETE FROM login_codes
 WHERE email = ?
