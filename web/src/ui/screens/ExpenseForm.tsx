@@ -2,7 +2,7 @@ import { useId, useState, type CSSProperties } from 'react'
 import { useTranslation } from 'react-i18next'
 import { CategoryGlyph, Figure, GroupGlyph, Icon } from '../components/icons'
 import { Screen, toast, useOnline } from '../components/Shell'
-import { previewOwedShares, type SplitParticipant } from '../demo/split'
+import { previewOwedShares, type SplitParticipant } from '../split'
 import { demo, ledgerById, ledgerMembers, ledgerName, memberById, myLedgers, myMemberId, useDemo } from '../demo/store'
 import { categories, splitMethods, type Category, type Expense, type Ledger, type SplitMethod } from '../demo/types'
 import { todayISO } from '../dates'
@@ -151,7 +151,7 @@ function ExpenseForm({ ledger, draft, rejectedId }: { ledger: Ledger; draft?: Ex
         splitMethod: method,
         paidShares,
         owedShares: preview.shares
-          .filter((x) => x.amount !== 0 || method === 'adjustment')
+          .filter((x) => x.amount !== 0)
           .map((x) => ({
             memberId: x.memberId,
             amount: x.amount,
@@ -175,6 +175,7 @@ function ExpenseForm({ ledger, draft, rejectedId }: { ledger: Ledger; draft?: Ex
   else if (preview.issue === 'noParticipants') closing = { tone: 'problem', text: t('expenseForm.noParticipants') }
   else if (preview.issue === 'noWeights') closing = { tone: 'problem', text: t('expenseForm.noWeights') }
   else if (preview.issue === 'negativeShare') closing = { tone: 'problem', text: t('expenseForm.negativeShare') }
+  else if (preview.issue === 'invalidValue') closing = { tone: 'problem', text: t('expenseForm.invalidValue') }
   else if (preview.issue === 'percentageNot100')
     closing =
       percentSum < 10000

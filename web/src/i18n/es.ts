@@ -201,6 +201,7 @@ export const es = {
     noParticipants: 'Elige al menos un participante.',
     noWeights: 'Pon un peso mayor que cero a alguien.',
     negativeShare: 'Con esos ajustes alguien quedaría con una cuota negativa.',
+    invalidValue: 'Hay un valor que no se puede usar: revisa que no haya negativos.',
     remainder_one: 'Al dividir sobra {{amount}}: va a la cuota marcada con +.',
     remainder_other: 'Al dividir sobran {{amount}}: van, de uno en uno, a las cuotas marcadas con +.',
     assigned: 'Repartido {{assigned}} de {{total}}',

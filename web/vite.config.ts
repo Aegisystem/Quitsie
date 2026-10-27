@@ -45,6 +45,8 @@ export default defineConfig({
         // The service worker only precaches the interface. Data lives in IndexedDB,
         // and /api must always reach the server instead of getting index.html.
         navigateFallbackDenylist: [/^\/api\//],
+        // The fonts too, or offline the interface falls back to a system font.
+        globPatterns: ['**/*.{js,css,html,woff2,png,svg}'],
       },
     }),
     keepGitkeep(),

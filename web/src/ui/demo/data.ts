@@ -1,4 +1,4 @@
-import { previewOwedShares } from './split'
+import { previewOwedShares } from '../split'
 import type {
   Activity,
   ActivityKind,
