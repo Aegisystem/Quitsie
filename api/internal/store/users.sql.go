@@ -53,3 +53,39 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error
 	)
 	return i, err
 }
+
+const getUserByGoogleSub = `-- name: GetUserByGoogleSub :one
+SELECT id, email, name, preferred_currency, google_sub, created_at, deleted_at FROM users
+WHERE google_sub = ?1 AND deleted_at IS NULL
+`
+
+func (q *Queries) GetUserByGoogleSub(ctx context.Context, googleSub *string) (User, error) {
+	row := q.db.QueryRowContext(ctx, getUserByGoogleSub, googleSub)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.Name,
+		&i.PreferredCurrency,
+		&i.GoogleSub,
+		&i.CreatedAt,
+		&i.DeletedAt,
+	)
+	return i, err
+}
+
+const setUserGoogleSub = `-- name: SetUserGoogleSub :exec
+UPDATE users
+SET google_sub = ?1
+WHERE id = ?2
+`
+
+type SetUserGoogleSubParams struct {
+	GoogleSub *string
+	ID        string
+}
+
+func (q *Queries) SetUserGoogleSub(ctx context.Context, arg SetUserGoogleSubParams) error {
+	_, err := q.db.ExecContext(ctx, setUserGoogleSub, arg.GoogleSub, arg.ID)
+	return err
+}

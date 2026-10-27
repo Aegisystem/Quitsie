@@ -75,7 +75,7 @@ type fixture struct {
 	clock *clock
 }
 
-func newFixture(t *testing.T) *fixture {
+func newFixture(t *testing.T, options ...func(*auth.Config)) *fixture {
 	t.Helper()
 	ctx := context.Background()
 	db, err := store.Open(ctx, filepath.Join(t.TempDir(), "quitsie.db"))
@@ -92,12 +92,16 @@ func newFixture(t *testing.T) *fixture {
 		mail:  &outbox{},
 		clock: &clock{now: time.Date(2026, 10, 26, 12, 0, 0, 0, time.UTC)},
 	}
-	f.svc, err = auth.New(auth.Config{
+	cfg := auth.Config{
 		DB:              db,
 		Mail:            f.mail,
 		DefaultCurrency: "USD",
 		Now:             f.clock.Now,
-	})
+	}
+	for _, option := range options {
+		option(&cfg)
+	}
+	f.svc, err = auth.New(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}

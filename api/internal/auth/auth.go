@@ -19,6 +19,8 @@ type Config struct {
 	Mail mail.Sender
 	// DefaultCurrency is the PreferredCurrency of new Users until they change it.
 	DefaultCurrency string
+	// Google enables signing in with Google; nil disables it.
+	Google *GoogleConfig
 	// Now defaults to time.Now; tests replace it to move the clock.
 	Now func() time.Time
 }
@@ -30,6 +32,7 @@ type Service struct {
 	defaultCurrency string
 	now             func() time.Time
 	sends           *limiter
+	google          *google
 }
 
 func New(cfg Config) (*Service, error) {
@@ -39,13 +42,21 @@ func New(cfg Config) (*Service, error) {
 	if cfg.Now == nil {
 		cfg.Now = time.Now
 	}
-	return &Service{
+	s := &Service{
 		db:              cfg.DB,
 		mail:            cfg.Mail,
 		defaultCurrency: cfg.DefaultCurrency,
 		now:             func() time.Time { return cfg.Now().UTC() },
 		sends:           newLimiter(sendWindow),
-	}, nil
+	}
+	if cfg.Google != nil {
+		g, err := newGoogle(*cfg.Google)
+		if err != nil {
+			return nil, err
+		}
+		s.google = g
+	}
+	return s, nil
 }
 
 // SignIn is the outcome of a successful sign-in.
@@ -86,14 +97,25 @@ func (s *Service) userByEmail(ctx context.Context, q *store.Queries, email strin
 	if !errors.Is(err, sql.ErrNoRows) {
 		return store.User{}, false, fmt.Errorf("auth: find user: %w", err)
 	}
+	// Signing in by code tells us nothing but the email, so the name stays
+	// empty until the PWA asks for it (see SignIn.NewUser).
+	user, err = s.createUser(ctx, q, email, "")
+	if err != nil {
+		return store.User{}, false, err
+	}
+	return user, true, nil
+}
 
+// createUser creates a User with the default PreferredCurrency.
+func (s *Service) createUser(ctx context.Context, q *store.Queries, email, name string) (store.User, error) {
 	id, err := uuid.NewV7()
 	if err != nil {
-		return store.User{}, false, fmt.Errorf("auth: %w", err)
+		return store.User{}, fmt.Errorf("auth: %w", err)
 	}
-	user = store.User{
+	user := store.User{
 		ID:                id.String(),
 		Email:             email,
+		Name:              name,
 		PreferredCurrency: s.defaultCurrency,
 		CreatedAt:         s.now(),
 	}
@@ -105,7 +127,7 @@ func (s *Service) userByEmail(ctx context.Context, q *store.Queries, email strin
 		CreatedAt:         user.CreatedAt,
 	})
 	if err != nil {
-		return store.User{}, false, fmt.Errorf("auth: create user: %w", err)
+		return store.User{}, fmt.Errorf("auth: create user: %w", err)
 	}
-	return user, true, nil
+	return user, nil
 }
