@@ -99,3 +99,18 @@ func dinner(id string) store.ExpenseWithShares {
 		},
 	}
 }
+
+// cashBack is a Settlement of ledger-1 in which Beto pays Ana back.
+func cashBack(id string) store.Settlement {
+	return store.Settlement{
+		ID:           id,
+		LedgerID:     "ledger-1",
+		FromMemberID: "member-beto",
+		ToMemberID:   "member-ana",
+		Amount:       3000,
+		Currency:     "COP",
+		Date:         time.Date(2026, 10, 26, 0, 0, 0, 0, time.UTC),
+		CreatedBy:    "beto",
+		CreatedAt:    now,
+	}
+}
