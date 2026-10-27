@@ -29,6 +29,7 @@ type Service struct {
 	mail            mail.Sender
 	defaultCurrency string
 	now             func() time.Time
+	sends           *limiter
 }
 
 func New(cfg Config) (*Service, error) {
@@ -43,6 +44,7 @@ func New(cfg Config) (*Service, error) {
 		mail:            cfg.Mail,
 		defaultCurrency: cfg.DefaultCurrency,
 		now:             func() time.Time { return cfg.Now().UTC() },
+		sends:           newLimiter(sendWindow),
 	}, nil
 }
 
