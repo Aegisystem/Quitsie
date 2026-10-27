@@ -117,7 +117,9 @@ CREATE TABLE paid_shares (
 CREATE TABLE owed_shares (
     expense_id  TEXT NOT NULL REFERENCES expenses (id) ON DELETE CASCADE,
     member_id   TEXT NOT NULL REFERENCES members (id),
-    amount      BIGINT NOT NULL CHECK (amount > 0),
+    -- An OwedShare may round down to zero (1 cent split in two); it is kept
+    -- so the split survives re-editing.
+    amount      BIGINT NOT NULL CHECK (amount >= 0),
     -- The Participant's input to the Expense's split_method, kept to re-edit it:
     -- percentage in hundredths (10000 = 100%), weight, or adjustment in minor
     -- units (may be negative). NULL for equal and exact.

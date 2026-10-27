@@ -42,6 +42,34 @@ func TestCreateExpenseStoresItWithItsShares(t *testing.T) {
 	}
 }
 
+func TestCreateExpenseKeepsAnOwedShareOfZero(t *testing.T) {
+	ctx := context.Background()
+	db := openMigrated(t)
+	seedGroup(t, db)
+	// One peso split equally: Beto's OwedShare rounds down to zero.
+	peso := dinner("expense-1")
+	peso.Total, peso.SplitMethod = 1, "equal"
+	peso.PaidShares = []store.PaidShare{{ExpenseID: "expense-1", MemberID: "member-ana", Amount: 1}}
+	peso.OwedShares = []store.OwedShare{
+		{ExpenseID: "expense-1", MemberID: "member-ana", Amount: 1},
+		{ExpenseID: "expense-1", MemberID: "member-beto", Amount: 0},
+	}
+
+	write(t, db, func(q *store.Queries, version int64) error {
+		peso.Version = version
+		_, _, err := q.CreateExpense(ctx, peso)
+		return err
+	})
+
+	got, err := store.New(db).GetExpenseWithShares(ctx, "expense-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got.OwedShares, peso.OwedShares) {
+		t.Errorf("OwedShares = %+v, want %+v", got.OwedShares, peso.OwedShares)
+	}
+}
+
 func TestCreateExpenseAgainWithTheSameIDKeepsTheFirstOne(t *testing.T) {
 	ctx := context.Background()
 	db := openMigrated(t)

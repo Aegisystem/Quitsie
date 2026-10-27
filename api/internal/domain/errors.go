@@ -7,7 +7,8 @@ import "errors"
 var (
 	// ErrUnknownCurrency: the code is not a current ISO 4217 currency.
 	ErrUnknownCurrency = errors.New("unknown currency")
-	// ErrNonPositiveAmount: a total, share or settlement amount is zero or negative.
+	// ErrNonPositiveAmount: a total, PaidShare or settlement amount is zero or
+	// negative, or an OwedShare is negative. An OwedShare may be zero.
 	ErrNonPositiveAmount = errors.New("amount must be greater than zero")
 	// ErrMissingShares: an Expense has no PaidShare or no OwedShare.
 	ErrMissingShares = errors.New("an expense needs at least one paid share and one owed share")

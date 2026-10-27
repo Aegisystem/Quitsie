@@ -47,8 +47,11 @@ func TestValidateExpenseRejects(t *testing.T) {
 		{"a negative paid share that still adds up", func(e *domain.Expense) {
 			e.PaidShares = []domain.PaidShare{{MemberID: "ana", Amount: 1100}, {MemberID: "beto", Amount: -50}}
 		}, domain.ErrNonPositiveAmount},
-		{"a zero owed share", func(e *domain.Expense) {
-			e.OwedShares = append(e.OwedShares, domain.OwedShare{MemberID: "carla", Amount: 0})
+		{"a zero paid share", func(e *domain.Expense) {
+			e.PaidShares = append(e.PaidShares, domain.PaidShare{MemberID: "beto", Amount: 0})
+		}, domain.ErrNonPositiveAmount},
+		{"a negative owed share that still adds up", func(e *domain.Expense) {
+			e.OwedShares = []domain.OwedShare{{MemberID: "ana", Amount: 1100}, {MemberID: "beto", Amount: -50}}
 		}, domain.ErrNonPositiveAmount},
 		{"paid shares that add up only by overflowing", func(e *domain.Expense) {
 			e.PaidShares = []domain.PaidShare{
@@ -76,6 +79,19 @@ func TestValidateExpenseRejects(t *testing.T) {
 				t.Errorf("err = %v, want %v", err, tt.want)
 			}
 		})
+	}
+}
+
+func TestValidateExpenseAcceptsAnOwedShareRoundedToZero(t *testing.T) {
+	// One cent split equally between Ana and Beto: Beto's OwedShare rounds to
+	// zero, and it is kept so the split survives re-editing.
+	cent := domain.Expense{
+		ID: "gum", Currency: "USD", Total: 1, SplitMethod: domain.SplitEqual,
+		PaidShares: []domain.PaidShare{{MemberID: "ana", Amount: 1}},
+		OwedShares: []domain.OwedShare{{MemberID: "ana", Amount: 1}, {MemberID: "beto", Amount: 0}},
+	}
+	if err := domain.ValidateExpense(trip(), cent); err != nil {
+		t.Errorf("ValidateExpense(1 cent split in two) = %v, want nil", err)
 	}
 }
 

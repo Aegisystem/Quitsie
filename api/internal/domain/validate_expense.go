@@ -20,7 +20,7 @@ func ValidateExpense(ledger Ledger, e Expense) error {
 	for i, s := range e.PaidShares {
 		payers[i], paid[i] = s.MemberID, s.Amount
 	}
-	if err := addUpTo(e.Total, paid); err != nil {
+	if err := addUpTo(e.Total, paid, 1); err != nil {
 		return fmt.Errorf("paid shares: %w", err)
 	}
 	if err := checkParticipants(ledger, payers); err != nil {
@@ -32,7 +32,9 @@ func ValidateExpense(ledger Ledger, e Expense) error {
 	for i, s := range e.OwedShares {
 		debtors[i], owed[i] = s.MemberID, s.Amount
 	}
-	if err := addUpTo(e.Total, owed); err != nil {
+	// An OwedShare may round down to zero (1 cent split in two), and is kept
+	// so the split survives re-editing (docs/reglas-de-negocio.md).
+	if err := addUpTo(e.Total, owed, 0); err != nil {
 		return fmt.Errorf("owed shares: %w", err)
 	}
 	if err := checkParticipants(ledger, debtors); err != nil {
@@ -109,10 +111,10 @@ func checkParticipants(ledger Ledger, memberIDs []string) error {
 	return nil
 }
 
-// addUpTo checks that every amount is positive and that they add up to total.
-func addUpTo(total int64, amounts []int64) error {
+// addUpTo checks that every amount is at least `least` and that they add up to total.
+func addUpTo(total int64, amounts []int64, least int64) error {
 	for _, a := range amounts {
-		if a <= 0 {
+		if a < least {
 			return fmt.Errorf("%d: %w", a, ErrNonPositiveAmount)
 		}
 	}
