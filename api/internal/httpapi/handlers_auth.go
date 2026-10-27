@@ -2,8 +2,11 @@ package httpapi
 
 import (
 	"context"
+	"errors"
+	"math"
 	"net"
 	"net/http"
+	"regexp"
 
 	"github.com/google/uuid"
 	openapi_types "github.com/oapi-codegen/runtime/types"
@@ -16,16 +19,47 @@ import (
 
 func (s *Server) RequestLoginCode(ctx context.Context, req RequestLoginCodeRequestObject) (RequestLoginCodeResponseObject, error) {
 	r := requestFrom(ctx)
-	if err := s.deps.Auth.RequestCode(ctx, string(req.Body.Email), clientIP(r)); err != nil {
+	err := s.deps.Auth.RequestCode(ctx, string(req.Body.Email), clientIP(r))
+	var limited *auth.RateLimitError
+	switch {
+	case err == nil:
+		return RequestLoginCode204Response{}, nil
+	case errors.Is(err, auth.ErrInvalidEmail):
+		return RequestLoginCode400ApplicationProblemPlusJSONResponse{BadRequestApplicationProblemPlusJSONResponse(
+			problem(http.StatusBadRequest, ProblemCodeValidationFailed, "The email address is not valid."))}, nil
+	case errors.As(err, &limited):
+		seconds := int(math.Ceil(limited.RetryAfter.Seconds()))
+		return RequestLoginCode429ApplicationProblemPlusJSONResponse{
+			Body:    problem(http.StatusTooManyRequests, ProblemCodeRateLimited, "Too many login codes requested."),
+			Headers: RequestLoginCode429ResponseHeaders{RetryAfter: &seconds},
+		}, nil
+	default:
 		return nil, err
 	}
-	return RequestLoginCode204Response{}, nil
 }
 
 func (s *Server) VerifyLoginCode(ctx context.Context, req VerifyLoginCodeRequestObject) (VerifyLoginCodeResponseObject, error) {
+	if !sixDigits.MatchString(req.Body.Code) {
+		return VerifyLoginCode400ApplicationProblemPlusJSONResponse(
+			problem(http.StatusBadRequest, ProblemCodeValidationFailed, "A login code is 6 digits.")), nil
+	}
 	r := requestFrom(ctx)
 	signIn, err := s.deps.Auth.VerifyCode(ctx, string(req.Body.Email), req.Body.Code, r.UserAgent())
-	if err != nil {
+	switch {
+	case err == nil:
+	case errors.Is(err, auth.ErrInvalidEmail):
+		return VerifyLoginCode400ApplicationProblemPlusJSONResponse(
+			problem(http.StatusBadRequest, ProblemCodeValidationFailed, "The email address is not valid.")), nil
+	case errors.Is(err, auth.ErrWrongCode):
+		return VerifyLoginCode400ApplicationProblemPlusJSONResponse(
+			problem(http.StatusBadRequest, ProblemCodeLoginCodeInvalid, "The login code is wrong.")), nil
+	case errors.Is(err, auth.ErrCodeExpired):
+		return VerifyLoginCode400ApplicationProblemPlusJSONResponse(
+			problem(http.StatusBadRequest, ProblemCodeLoginCodeExpired, "The login code expired; request another.")), nil
+	case errors.Is(err, auth.ErrTooManyAttempts):
+		return VerifyLoginCode429ApplicationProblemPlusJSONResponse(
+			problem(http.StatusTooManyRequests, ProblemCodeTooManyAttempts, "The login code was guessed wrong too many times; request another.")), nil
+	default:
 		return nil, err
 	}
 	cookie := auth.SessionCookie(signIn.Token).String()
@@ -34,6 +68,8 @@ func (s *Server) VerifyLoginCode(ctx context.Context, req VerifyLoginCodeRequest
 		Headers: VerifyLoginCode200ResponseHeaders{SetCookie: &cookie},
 	}, nil
 }
+
+var sixDigits = regexp.MustCompile(`^[0-9]{6}$`)
 
 func (s *Server) GetMe(ctx context.Context, _ GetMeRequestObject) (GetMeResponseObject, error) {
 	user, _ := auth.CurrentUser(ctx) // requireSession checked there is one

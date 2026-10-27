@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Aegisystem/Quitsie/api/internal/auth"
 	"github.com/Aegisystem/Quitsie/api/internal/httpapi"
@@ -135,4 +136,69 @@ func TestAFailingSessionLookupIsAnInternalError(t *testing.T) {
 	api.db.Close()
 
 	wantProblem(t, ana.do(http.MethodGet, "/api/v1/me", ""), http.StatusInternalServerError, httpapi.ProblemCodeInternalError)
+}
+
+func TestALoginCodeMustBeTheOneSentAndStillLive(t *testing.T) {
+	var clk *clock
+	api := newTestAPI(t, withClock(&clk))
+	phone := api.newClient(t)
+	verify := func(code string) *http.Response {
+		return phone.do(http.MethodPost, "/api/v1/auth/login-code/verify", `{"email":"ana@example.com","code":"`+code+`"}`)
+	}
+	requestCode := func() string {
+		wantStatus(t, phone.do(http.MethodPost, "/api/v1/auth/login-code", `{"email":"ana@example.com"}`), http.StatusNoContent)
+		return api.mail.lastCode(t, "ana@example.com")
+	}
+	wrong := func(code string) string {
+		if code == "000000" {
+			return "000001"
+		}
+		return "000000"
+	}
+
+	code := requestCode()
+	wantProblem(t, verify(wrong(code)), http.StatusBadRequest, httpapi.ProblemCodeLoginCodeInvalid)
+	wantProblem(t, verify("12ab56"), http.StatusBadRequest, httpapi.ProblemCodeValidationFailed)
+
+	clk.Advance(10 * time.Minute)
+	wantProblem(t, verify(code), http.StatusBadRequest, httpapi.ProblemCodeLoginCodeExpired)
+
+	code = requestCode()
+	for range 5 {
+		wantProblem(t, verify(wrong(code)), http.StatusBadRequest, httpapi.ProblemCodeLoginCodeInvalid)
+	}
+	wantProblem(t, verify(code), http.StatusTooManyRequests, httpapi.ProblemCodeTooManyAttempts)
+	if c := cookie(verify(code), auth.SessionCookieName); c != nil {
+		t.Errorf("a failed verification set the session cookie %v", c)
+	}
+}
+
+func TestLoginCodesAreLimitedPerEmail(t *testing.T) {
+	var clk *clock
+	api := newTestAPI(t, withClock(&clk))
+	phone := api.newClient(t)
+	request := func() *http.Response {
+		return phone.do(http.MethodPost, "/api/v1/auth/login-code", `{"email":"ana@example.com"}`)
+	}
+
+	for range 5 {
+		wantStatus(t, request(), http.StatusNoContent)
+		clk.Advance(time.Minute)
+	}
+	resp := request()
+
+	wantProblem(t, resp, http.StatusTooManyRequests, httpapi.ProblemCodeRateLimited)
+	// The first of the 5 codes was sent 5 minutes ago; the hour ends in 55.
+	if got := resp.Header.Get("Retry-After"); got != "3300" {
+		t.Errorf("Retry-After = %q, want 3300 seconds", got)
+	}
+}
+
+func TestALoginCodeNeedsAnEmailAddress(t *testing.T) {
+	api := newTestAPI(t)
+	phone := api.newClient(t)
+
+	for _, body := range []string{`{"email":"ana"}`, `{"email":"ana@"}`, `{}`} {
+		wantProblem(t, phone.do(http.MethodPost, "/api/v1/auth/login-code", body), http.StatusBadRequest, httpapi.ProblemCodeValidationFailed)
+	}
 }

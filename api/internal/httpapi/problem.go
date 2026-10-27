@@ -17,9 +17,14 @@ var errNotImplemented = errors.New("not implemented")
 // request has none; it becomes 401 unauthenticated.
 var errUnauthenticated = errors.New("unauthenticated")
 
+// problem is the body of an error response.
+func problem(status int, code ProblemCode, title string) Problem {
+	return Problem{Status: status, Code: code, Title: title}
+}
+
 // writeProblem writes an application/problem+json body (RFC 9457).
 func writeProblem(w http.ResponseWriter, status int, code ProblemCode, title, detail string) {
-	p := Problem{Status: status, Code: code, Title: title}
+	p := problem(status, code, title)
 	if detail != "" {
 		p.Detail = &detail
 	}

@@ -33,23 +33,29 @@ type quota struct {
 }
 
 // allow records an event under every quota's key, or under none of them if
-// any key already reached its maximum within the window.
-func (l *limiter) allow(now time.Time, quotas ...quota) bool {
+// any key already reached its maximum within the window. Then it reports
+// how long until every such key has room again.
+func (l *limiter) allow(now time.Time, quotas ...quota) (ok bool, retryAfter time.Duration) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.sweep(now)
 
 	since := now.Add(-l.window)
 	for _, q := range quotas {
-		l.hits[q.key] = recent(l.hits[q.key], since)
-		if len(l.hits[q.key]) >= q.max {
-			return false
+		hits := recent(l.hits[q.key], since)
+		l.hits[q.key] = hits
+		if len(hits) >= q.max {
+			// The key has room once the event that filled it leaves the window.
+			retryAfter = max(retryAfter, hits[len(hits)-q.max].Add(l.window).Sub(now))
 		}
+	}
+	if retryAfter > 0 {
+		return false, retryAfter
 	}
 	for _, q := range quotas {
 		l.hits[q.key] = append(l.hits[q.key], now)
 	}
-	return true
+	return true, 0
 }
 
 // sweep drops keys with no recent events, at most once per window, so the
