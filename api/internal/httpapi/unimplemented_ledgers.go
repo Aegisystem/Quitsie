@@ -9,10 +9,6 @@ import "context"
 
 // --- groups ---
 
-func (s *Server) CreateGroup(context.Context, CreateGroupRequestObject) (CreateGroupResponseObject, error) {
-	return nil, errNotImplemented
-}
-
 func (s *Server) UpdateGroup(context.Context, UpdateGroupRequestObject) (UpdateGroupResponseObject, error) {
 	return nil, errNotImplemented
 }
