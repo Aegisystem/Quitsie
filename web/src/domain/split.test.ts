@@ -232,3 +232,90 @@ describe('weights', () => {
     }
   })
 })
+
+describe('adjustment', () => {
+  it('splits what is left after the adjustments equally and adds each one back', () => {
+    // 90.00 where Ana had 15.00 more and Carla 6.00 less: 81.00 is split three ways.
+    const adjustments = [
+      { participantId: 'ana', value: 1500 },
+      { participantId: 'beto', value: 0 },
+      { participantId: 'carla', value: -600 },
+    ]
+    expect(splitExpense(9000, { method: 'adjustment', adjustments })).toEqual({
+      ok: true,
+      value: [
+        { participantId: 'ana', amount: 4200, splitValue: 1500 },
+        { participantId: 'beto', amount: 2700, splitValue: 0 },
+        { participantId: 'carla', amount: 2100, splitValue: -600 },
+      ],
+    })
+  })
+
+  it('gives the leftover of the equal part to the lowest ids', () => {
+    const adjustments = [
+      { participantId: 'carla', value: 100 },
+      { participantId: 'ana', value: 0 },
+      { participantId: 'beto', value: 0 },
+    ]
+    expect(splitExpense(1001, { method: 'adjustment', adjustments })).toEqual({
+      ok: true,
+      value: [
+        { participantId: 'carla', amount: 400, splitValue: 100 },
+        { participantId: 'ana', amount: 301, splitValue: 0 },
+        { participantId: 'beto', amount: 300, splitValue: 0 },
+      ],
+    })
+  })
+
+  it('allows adjustments larger than the total while nobody owes less than zero', () => {
+    // 1.01 - 1.20 leaves -0.19 to split: -0.09 for Ana and -0.10 for Beto.
+    const adjustments = [
+      { participantId: 'ana', value: 60 },
+      { participantId: 'beto', value: 60 },
+    ]
+    expect(splitExpense(101, { method: 'adjustment', adjustments })).toEqual({
+      ok: true,
+      value: [
+        { participantId: 'ana', amount: 51, splitValue: 60 },
+        { participantId: 'beto', amount: 50, splitValue: 60 },
+      ],
+    })
+  })
+
+  it('rejects adjustments that leave someone owing less than zero', () => {
+    const adjustments = [
+      { participantId: 'ana', value: -1200 },
+      { participantId: 'beto', value: 0 },
+    ]
+    expect(splitExpense(1000, { method: 'adjustment', adjustments })).toEqual({
+      ok: false,
+      error: { code: 'negative-share', participantId: 'ana' },
+    })
+  })
+
+  it('leaves out whoever the adjustment brings to exactly zero', () => {
+    const adjustments = [
+      { participantId: 'ana', value: -3000 },
+      { participantId: 'beto', value: 0 },
+      { participantId: 'carla', value: 0 },
+    ]
+    expect(splitExpense(6000, { method: 'adjustment', adjustments })).toEqual({
+      ok: true,
+      value: [
+        { participantId: 'beto', amount: 3000, splitValue: 0 },
+        { participantId: 'carla', amount: 3000, splitValue: 0 },
+      ],
+    })
+  })
+
+  it('only accepts whole minor units', () => {
+    const adjustments = [
+      { participantId: 'ana', value: 0 },
+      { participantId: 'beto', value: 2.5 },
+    ]
+    expect(splitExpense(1000, { method: 'adjustment', adjustments })).toEqual({
+      ok: false,
+      error: { code: 'invalid-value', participantId: 'beto' },
+    })
+  })
+})

@@ -17,6 +17,7 @@ export type Split =
   | { method: 'exact'; amounts: readonly ParticipantValue[] }
   | { method: 'percentage'; percentages: readonly ParticipantValue[] }
   | { method: 'weights'; weights: readonly ParticipantValue[] }
+  | { method: 'adjustment'; adjustments: readonly ParticipantValue[] }
 
 export type SplitMethod = Split['method']
 
@@ -38,35 +39,39 @@ export type SplitError =
   // How much the values add up to minus what they should: the total for exact,
   // 10000 hundredths for percentage.
   | { code: 'sum-mismatch'; difference: number }
+  // The adjustments leave this Participant owing less than zero.
+  | { code: 'negative-share'; participantId: ParticipantId }
 
 function compareIds(a: ParticipantId, b: ParticipantId): number {
   return a < b ? -1 : a > b ? 1 : 0
 }
 
 // Largest remainder method: everyone gets the floor of their exact part of the
-// total, in proportion to their value, and the minor units left over go one each
+// total, in proportion to their weight, and the minor units left over go one each
 // to the largest remainders. Ties go to the lowest id, so the result never
-// depends on the order on screen.
-function apportion(
+// depends on the order on screen. The total may be negative (see adjustment).
+function apportion<T extends { participantId: ParticipantId }>(
   total: bigint,
-  weights: readonly ParticipantValue[],
-): (ParticipantValue & { amount: bigint })[] {
-  const sum = weights.reduce((acc, { value }) => acc + BigInt(value), 0n)
-  const parts = weights.map((weight) => {
-    const exact = total * BigInt(weight.value)
-    const floor = exact / sum
-    return { weight, floor, remainder: exact - floor * sum }
+  items: readonly T[],
+  weightOf: (item: T) => bigint,
+): (T & { amount: bigint })[] {
+  const sum = items.reduce((acc, item) => acc + weightOf(item), 0n)
+  const parts = items.map((item) => {
+    const exact = total * weightOf(item)
+    // BigInt division truncates towards zero; the method needs the floor.
+    const floor = exact / sum - (exact % sum < 0n ? 1n : 0n)
+    return { item, floor, remainder: exact - floor * sum }
   })
   const leftover = total - parts.reduce((acc, { floor }) => acc + floor, 0n)
   const ranked = [...parts].sort((a, b) =>
     a.remainder === b.remainder
-      ? compareIds(a.weight.participantId, b.weight.participantId)
+      ? compareIds(a.item.participantId, b.item.participantId)
       : a.remainder > b.remainder
         ? -1
         : 1,
   )
   const extra = new Set(ranked.slice(0, Number(leftover)))
-  return parts.map((part) => ({ ...part.weight, amount: extra.has(part) ? part.floor + 1n : part.floor }))
+  return parts.map((part) => ({ ...part.item, amount: extra.has(part) ? part.floor + 1n : part.floor }))
 }
 
 function findDuplicate(ids: readonly ParticipantId[]): ParticipantId | undefined {
@@ -88,6 +93,8 @@ function participantsOf(split: Split): readonly ParticipantId[] {
       return split.percentages.map(({ participantId }) => participantId)
     case 'weights':
       return split.weights.map(({ participantId }) => participantId)
+    case 'adjustment':
+      return split.adjustments.map(({ participantId }) => participantId)
   }
 }
 
@@ -109,14 +116,18 @@ function sumOf(values: readonly ParticipantValue[]): bigint {
 const wholePercentage = 10000n
 
 function proportional(total: bigint, values: readonly ParticipantValue[]): Owed[] {
-  return apportion(total, values).map(({ participantId, value, amount }) => ({ participantId, amount, splitValue: value }))
+  return apportion(total, values, ({ value }) => BigInt(value)).map(({ participantId, value, amount }) => ({
+    participantId,
+    amount,
+    splitValue: value,
+  }))
 }
 
 function owe(total: bigint, split: Split): Result<Owed[], SplitError> {
   switch (split.method) {
     case 'equal': {
-      const weights = split.participantIds.map((participantId) => ({ participantId, value: 1 }))
-      return ok(apportion(total, weights).map(({ participantId, amount }) => ({ participantId, amount, splitValue: null })))
+      const participants = split.participantIds.map((participantId) => ({ participantId }))
+      return ok(apportion(total, participants, () => 1n).map((owed) => ({ ...owed, splitValue: null })))
     }
     case 'exact': {
       const invalid = invalidValue(split.amounts, (value) => value >= 0)
@@ -136,6 +147,20 @@ function owe(total: bigint, split: Split): Result<Owed[], SplitError> {
       const invalid = invalidValue(split.weights, (value) => value > 0)
       if (invalid) return fail(invalid)
       return ok(proportional(total, split.weights))
+    }
+    case 'adjustment': {
+      const invalid = invalidValue(split.adjustments, () => true)
+      if (invalid) return fail(invalid)
+      // What is left after the adjustments, which may be negative, is split equally.
+      const rest = total - sumOf(split.adjustments)
+      const owed = apportion(rest, split.adjustments, () => 1n).map(({ participantId, value, amount }) => ({
+        participantId,
+        amount: amount + BigInt(value),
+        splitValue: value,
+      }))
+      const negative = owed.find(({ amount }) => amount < 0n)
+      if (negative) return fail({ code: 'negative-share', participantId: negative.participantId })
+      return ok(owed)
     }
   }
 }
