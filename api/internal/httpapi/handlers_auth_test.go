@@ -1,0 +1,107 @@
+package httpapi_test
+
+import (
+	"net/http"
+	"reflect"
+	"slices"
+	"testing"
+
+	"github.com/Aegisystem/Quitsie/api/internal/auth"
+	"github.com/Aegisystem/Quitsie/api/internal/httpapi"
+)
+
+func TestSigningInWithAnEmailedCode(t *testing.T) {
+	api := newTestAPI(t)
+	phone := api.newClient(t)
+
+	resp := phone.do(http.MethodPost, "/api/v1/auth/login-code", `{"email":"ana@example.com"}`)
+	wantStatus(t, resp, http.StatusNoContent)
+	code := api.mail.lastCode(t, "ana@example.com")
+
+	resp = phone.do(http.MethodPost, "/api/v1/auth/login-code/verify", `{"email":"ana@example.com","code":"`+code+`"}`)
+	login := decode[httpapi.LoginResult](t, resp, http.StatusOK)
+
+	if !login.NewUser || login.User.Email != "ana@example.com" || login.User.Name != "" || login.User.PreferredCurrency != "USD" {
+		t.Errorf("login = %+v, want a new User ana@example.com with no name and USD", login)
+	}
+	session := cookie(resp, auth.SessionCookieName)
+	if session == nil || !session.HttpOnly || !session.Secure || session.SameSite != http.SameSiteLaxMode {
+		t.Errorf("session cookie = %v, want an HttpOnly, Secure, SameSite=Lax cookie", session)
+	}
+
+	me := decode[httpapi.User](t, phone.do(http.MethodGet, "/api/v1/me", ""), http.StatusOK)
+	if me != login.User {
+		t.Errorf("/me = %+v, want %+v", me, login.User)
+	}
+}
+
+// One request that reaches each operation of the contract.
+var everyOperation = []operationRequest{
+	{"GetHealth", http.MethodGet, "/api/v1/health", ""},
+	{"RequestLoginCode", http.MethodPost, "/api/v1/auth/login-code", `{"email":"ana@example.com"}`},
+	{"VerifyLoginCode", http.MethodPost, "/api/v1/auth/login-code/verify", `{"email":"ana@example.com","code":"000000"}`},
+	{"StartGoogleLogin", http.MethodGet, "/api/v1/auth/google?returnTo=/groups", ""},
+	{"FinishGoogleLogin", http.MethodGet, "/api/v1/auth/google/callback?code=c&state=s", ""},
+	{"Logout", http.MethodPost, "/api/v1/auth/logout", ""},
+	{"ListSessions", http.MethodGet, "/api/v1/auth/sessions", ""},
+	{"RevokeSession", http.MethodDelete, "/api/v1/auth/sessions/" + someID, ""},
+	{"GetMe", http.MethodGet, "/api/v1/me", ""},
+	{"UpdateMe", http.MethodPatch, "/api/v1/me", `{"name":"Ana"}`},
+	{"DeleteMe", http.MethodDelete, "/api/v1/me", ""},
+	{"CreateGroup", http.MethodPost, "/api/v1/groups", "{}"},
+	{"UpdateGroup", http.MethodPatch, "/api/v1/groups/" + someID, "{}"},
+	{"DeleteGroup", http.MethodDelete, "/api/v1/groups/" + someID, ""},
+	{"AddPendingMember", http.MethodPost, "/api/v1/groups/" + someID + "/members", "{}"},
+	{"RemoveMember", http.MethodDelete, "/api/v1/groups/" + someID + "/members/" + someID, ""},
+	{"UndoClaim", http.MethodDelete, "/api/v1/groups/" + someID + "/members/" + someID + "/claim", ""},
+	{"LeaveGroup", http.MethodPost, "/api/v1/groups/" + someID + "/leave", ""},
+	{"RegenerateGroupInviteLink", http.MethodPost, "/api/v1/groups/" + someID + "/invite-link", ""},
+	{"GetInvite", http.MethodGet, "/api/v1/invites/k3J9xQ2mV7pL8wR4tY6u", ""},
+	{"ClaimMember", http.MethodPost, "/api/v1/invites/k3J9xQ2mV7pL8wR4tY6u/claim", "{}"},
+	{"JoinGroup", http.MethodPost, "/api/v1/invites/k3J9xQ2mV7pL8wR4tY6u/join", ""},
+	{"CreateFriendship", http.MethodPost, "/api/v1/friendships", "{}"},
+	{"RegenerateFriendInviteLink", http.MethodPost, "/api/v1/friendships/" + someID + "/invite-link", ""},
+	{"PushRecords", http.MethodPost, "/api/v1/records", `{"expenses":[],"settlements":[]}`},
+	{"UpdateExpense", http.MethodPatch, "/api/v1/expenses/" + someID, "{}"},
+	{"DeleteExpense", http.MethodDelete, "/api/v1/expenses/" + someID, ""},
+	{"RestoreExpense", http.MethodPost, "/api/v1/expenses/" + someID + "/restore", ""},
+	{"UpdateSettlement", http.MethodPatch, "/api/v1/settlements/" + someID, "{}"},
+	{"DeleteSettlement", http.MethodDelete, "/api/v1/settlements/" + someID, ""},
+	{"RestoreSettlement", http.MethodPost, "/api/v1/settlements/" + someID + "/restore", ""},
+	{"PullChanges", http.MethodGet, "/api/v1/sync?since=0", ""},
+}
+
+// The operations anyone can call. GetInvite shows an invitation before its
+// guest signs in.
+var publicOperations = []string{
+	"GetHealth", "RequestLoginCode", "VerifyLoginCode", "StartGoogleLogin", "FinishGoogleLogin", "GetInvite",
+}
+
+func TestOnlyPublicOperationsAnswerWithoutASession(t *testing.T) {
+	api := newTestAPI(t)
+	stranger := api.newClient(t)
+
+	for _, op := range everyOperation {
+		t.Run(op.op, func(t *testing.T) {
+			resp := stranger.do(op.method, op.target, op.body)
+
+			if slices.Contains(publicOperations, op.op) {
+				if resp.StatusCode == http.StatusUnauthorized {
+					t.Errorf("public operation answered 401")
+				}
+				return
+			}
+			wantProblem(t, resp, http.StatusUnauthorized, httpapi.ProblemCodeUnauthenticated)
+		})
+	}
+}
+
+func TestEveryOperationIsInTheSessionCheck(t *testing.T) {
+	ops := reflect.TypeFor[httpapi.StrictServerInterface]()
+	for i := range ops.NumMethod() {
+		name := ops.Method(i).Name
+		if !slices.ContainsFunc(everyOperation, func(o operationRequest) bool { return o.op == name }) {
+			t.Errorf("operation %s has no request in everyOperation", name)
+		}
+	}
+}

@@ -9,14 +9,6 @@ import "context"
 
 // --- auth ---
 
-func (s *Server) RequestLoginCode(context.Context, RequestLoginCodeRequestObject) (RequestLoginCodeResponseObject, error) {
-	return nil, errNotImplemented
-}
-
-func (s *Server) VerifyLoginCode(context.Context, VerifyLoginCodeRequestObject) (VerifyLoginCodeResponseObject, error) {
-	return nil, errNotImplemented
-}
-
 func (s *Server) StartGoogleLogin(context.Context, StartGoogleLoginRequestObject) (StartGoogleLoginResponseObject, error) {
 	return nil, errNotImplemented
 }
@@ -38,10 +30,6 @@ func (s *Server) RevokeSession(context.Context, RevokeSessionRequestObject) (Rev
 }
 
 // --- profile ---
-
-func (s *Server) GetMe(context.Context, GetMeRequestObject) (GetMeResponseObject, error) {
-	return nil, errNotImplemented
-}
 
 func (s *Server) UpdateMe(context.Context, UpdateMeRequestObject) (UpdateMeResponseObject, error) {
 	return nil, errNotImplemented

@@ -29,14 +29,11 @@ var unimplemented = slices.Concat(unimplementedAuth, unimplementedLedgers, unimp
 
 // Sign-in, sessions and the profile.
 var unimplementedAuth = []operationRequest{
-	{"RequestLoginCode", http.MethodPost, "/api/v1/auth/login-code", "{}"},
-	{"VerifyLoginCode", http.MethodPost, "/api/v1/auth/login-code/verify", "{}"},
 	{"StartGoogleLogin", http.MethodGet, "/api/v1/auth/google?returnTo=/groups", ""},
 	{"FinishGoogleLogin", http.MethodGet, "/api/v1/auth/google/callback?code=c&state=s", ""},
 	{"Logout", http.MethodPost, "/api/v1/auth/logout", ""},
 	{"ListSessions", http.MethodGet, "/api/v1/auth/sessions", ""},
 	{"RevokeSession", http.MethodDelete, "/api/v1/auth/sessions/" + someID, ""},
-	{"GetMe", http.MethodGet, "/api/v1/me", ""},
 	{"UpdateMe", http.MethodPatch, "/api/v1/me", "{}"},
 	{"DeleteMe", http.MethodDelete, "/api/v1/me", ""},
 }
@@ -73,7 +70,7 @@ var unimplementedRecords = []operationRequest{
 // The operations that have a real handler, per area.
 var (
 	implementedBase    = []string{"GetHealth"}
-	implementedAuth    = []string{}
+	implementedAuth    = []string{"RequestLoginCode", "VerifyLoginCode", "GetMe"}
 	implementedLedgers = []string{}
 	implementedRecords = []string{}
 	implemented        = slices.Concat(implementedBase, implementedAuth, implementedLedgers, implementedRecords)
@@ -110,13 +107,14 @@ func decodeProblem(t *testing.T, rec *httptest.ResponseRecorder, status int, cod
 }
 
 func TestUnimplementedOperationsAnswer501(t *testing.T) {
-	h := httpapi.NewHandler(httpapi.NewServer(fakeDB{}, "test"), builtPWA)
+	// Signed in, so the operations that need a session get to answer.
+	ana, _ := newTestAPI(t).signedIn(t, "ana@example.com")
 
 	for _, tt := range unimplemented {
 		t.Run(tt.op, func(t *testing.T) {
-			rec := send(t, h, tt.method, tt.target, tt.body)
+			resp := ana.do(tt.method, tt.target, tt.body)
 
-			decodeProblem(t, rec, http.StatusNotImplemented, httpapi.ProblemCodeNotImplemented)
+			wantProblem(t, resp, http.StatusNotImplemented, httpapi.ProblemCodeNotImplemented)
 		})
 	}
 }
