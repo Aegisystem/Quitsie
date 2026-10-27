@@ -105,7 +105,7 @@ func (q *Queries) ChangedExpenses(ctx context.Context, arg ChangedExpensesParams
 }
 
 const changedLedgers = `-- name: ChangedLedgers :many
-SELECT ledgers.id, ledgers.kind, ledgers.name, ledgers.currency, ledgers.simplify_debts, ledgers.invite_link_hash, ledgers.version, ledgers.created_at, ledgers.deleted_at FROM ledgers
+SELECT ledgers.id, ledgers.kind, ledgers.name, ledgers.currency, ledgers.simplify_debts, ledgers.invite_link_generation, ledgers.version, ledgers.created_at, ledgers.deleted_at FROM ledgers
 JOIN members me ON me.ledger_id = ledgers.id
 WHERE me.user_id = CAST(?1 AS TEXT) AND me.status = 'active'
   AND (ledgers.version > ?2 OR me.version > ?2)
@@ -136,7 +136,7 @@ func (q *Queries) ChangedLedgers(ctx context.Context, arg ChangedLedgersParams) 
 			&i.Name,
 			&i.Currency,
 			&i.SimplifyDebts,
-			&i.InviteLinkHash,
+			&i.InviteLinkGeneration,
 			&i.Version,
 			&i.CreatedAt,
 			&i.DeletedAt,

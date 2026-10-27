@@ -61,53 +61,42 @@ func TestDeleteLedgerKeepsItAsAVersionedDeletion(t *testing.T) {
 	}
 }
 
-func TestInviteLinkFindsItsLedgerUntilRegeneratedOrRevoked(t *testing.T) {
+func TestRegenerateInviteLinkMovesToTheNextGeneration(t *testing.T) {
 	ctx := context.Background()
 	db := openMigrated(t)
-	q := store.New(db)
-	setInviteLink := func(hash *string) {
-		t.Helper()
-		write(t, db, func(q *store.Queries, version int64) error {
-			_, err := q.SetLedgerInviteLink(ctx, store.SetLedgerInviteLinkParams{ID: "ledger-1", InviteLinkHash: hash, Version: version})
-			return err
-		})
-	}
 	write(t, db, func(q *store.Queries, version int64) error {
 		return q.CreateLedger(ctx, newGroup("ledger-1", version))
 	})
 
-	setInviteLink(ptr("hash-1"))
-	if ledger, err := q.GetLedgerByInviteLink(ctx, "hash-1"); err != nil || ledger.ID != "ledger-1" {
-		t.Errorf("GetLedgerByInviteLink(hash-1) = %q, %v; want ledger-1", ledger.ID, err)
-	}
+	var regenerated store.Ledger
+	version := write(t, db, func(q *store.Queries, version int64) (err error) {
+		regenerated, err = q.RegenerateInviteLink(ctx, store.RegenerateInviteLinkParams{ID: "ledger-1", Version: version})
+		return err
+	})
 
-	setInviteLink(ptr("hash-2"))
-	if _, err := q.GetLedgerByInviteLink(ctx, "hash-1"); !errors.Is(err, sql.ErrNoRows) {
-		t.Errorf("regenerated link still works: err = %v, want sql.ErrNoRows", err)
-	}
-
-	setInviteLink(nil)
-	if _, err := q.GetLedgerByInviteLink(ctx, "hash-2"); !errors.Is(err, sql.ErrNoRows) {
-		t.Errorf("revoked link still works: err = %v, want sql.ErrNoRows", err)
+	if regenerated.InviteLinkGeneration != 1 || regenerated.Version != version {
+		t.Errorf("regenerated ledger = %+v, want generation 1 with version %d", regenerated, version)
 	}
 }
 
-func TestInviteLinkOfADeletedLedgerFindsNothing(t *testing.T) {
+func TestRegenerateInviteLinkOfADeletedLedgerChangesNothing(t *testing.T) {
 	ctx := context.Background()
 	db := openMigrated(t)
 	write(t, db, func(q *store.Queries, version int64) error {
 		if err := q.CreateLedger(ctx, newGroup("ledger-1", version)); err != nil {
 			return err
 		}
-		if _, err := q.SetLedgerInviteLink(ctx, store.SetLedgerInviteLinkParams{ID: "ledger-1", InviteLinkHash: ptr("hash-1"), Version: version}); err != nil {
-			return err
-		}
 		_, err := q.DeleteLedger(ctx, store.DeleteLedgerParams{ID: "ledger-1", DeletedAt: &now, Version: version})
 		return err
 	})
 
-	if _, err := store.New(db).GetLedgerByInviteLink(ctx, "hash-1"); !errors.Is(err, sql.ErrNoRows) {
-		t.Errorf("GetLedgerByInviteLink on a deleted ledger: err = %v, want sql.ErrNoRows", err)
+	_, err := store.Write(ctx, db, func(q *store.Queries, version int64) error {
+		_, err := q.RegenerateInviteLink(ctx, store.RegenerateInviteLinkParams{ID: "ledger-1", Version: version})
+		return err
+	})
+
+	if !errors.Is(err, sql.ErrNoRows) {
+		t.Errorf("RegenerateInviteLink on a deleted ledger: err = %v, want sql.ErrNoRows", err)
 	}
 }
 

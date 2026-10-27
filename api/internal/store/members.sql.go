@@ -99,7 +99,7 @@ func (q *Queries) GetActiveMemberOfUser(ctx context.Context, arg GetActiveMember
 }
 
 const listLedgersOfUser = `-- name: ListLedgersOfUser :many
-SELECT ledgers.id, ledgers.kind, ledgers.name, ledgers.currency, ledgers.simplify_debts, ledgers.invite_link_hash, ledgers.version, ledgers.created_at, ledgers.deleted_at FROM ledgers
+SELECT ledgers.id, ledgers.kind, ledgers.name, ledgers.currency, ledgers.simplify_debts, ledgers.invite_link_generation, ledgers.version, ledgers.created_at, ledgers.deleted_at FROM ledgers
 JOIN members ON members.ledger_id = ledgers.id
 WHERE members.user_id = CAST(?1 AS TEXT)
   AND members.status = 'active'
@@ -122,7 +122,7 @@ func (q *Queries) ListLedgersOfUser(ctx context.Context, userID string) ([]Ledge
 			&i.Name,
 			&i.Currency,
 			&i.SimplifyDebts,
-			&i.InviteLinkHash,
+			&i.InviteLinkGeneration,
 			&i.Version,
 			&i.CreatedAt,
 			&i.DeletedAt,
