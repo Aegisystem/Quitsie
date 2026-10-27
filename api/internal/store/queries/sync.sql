@@ -58,3 +58,11 @@ JOIN members me ON me.ledger_id = activities.ledger_id
 WHERE me.user_id = CAST(sqlc.arg(user_id) AS TEXT) AND me.status = 'active'
   AND (activities.version > sqlc.arg(since) OR me.version > sqlc.arg(since))
 ORDER BY activities.version, activities.id;
+
+-- name: DroppedLedgers :many
+-- The ledgers where the User's Member became former above the cursor: the
+-- User no longer sees them, so their replica must drop them.
+SELECT ledger_id FROM members
+WHERE user_id = CAST(sqlc.arg(user_id) AS TEXT) AND status = 'former'
+  AND version > sqlc.arg(since)
+ORDER BY ledger_id;

@@ -329,3 +329,40 @@ func (q *Queries) ChangedSettlements(ctx context.Context, arg ChangedSettlements
 	}
 	return items, nil
 }
+
+const droppedLedgers = `-- name: DroppedLedgers :many
+SELECT ledger_id FROM members
+WHERE user_id = CAST(?1 AS TEXT) AND status = 'former'
+  AND version > ?2
+ORDER BY ledger_id
+`
+
+type DroppedLedgersParams struct {
+	UserID string
+	Since  int64
+}
+
+// The ledgers where the User's Member became former above the cursor: the
+// User no longer sees them, so their replica must drop them.
+func (q *Queries) DroppedLedgers(ctx context.Context, arg DroppedLedgersParams) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, droppedLedgers, arg.UserID, arg.Since)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var ledger_id string
+		if err := rows.Scan(&ledger_id); err != nil {
+			return nil, err
+		}
+		items = append(items, ledger_id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}

@@ -18,6 +18,10 @@ type Changes struct {
 	Expenses    []ExpenseWithShares
 	Settlements []Settlement
 	Activities  []Activity
+	// DroppedLedgerIDs are the ledgers where the User's Member became former
+	// after the cursor. The User no longer sees them, so the replica drops
+	// them with everything in them.
+	DroppedLedgerIDs []string
 }
 
 // ChangesSince returns what changed after the cursor since in the ledgers
@@ -53,6 +57,9 @@ func ChangesSince(ctx context.Context, db *sql.DB, userID string, since int64) (
 	}
 	if c.Activities, err = q.ChangedActivities(ctx, ChangedActivitiesParams{UserID: userID, Since: since}); err != nil {
 		return Changes{}, fmt.Errorf("changed activities: %w", err)
+	}
+	if c.DroppedLedgerIDs, err = q.DroppedLedgers(ctx, DroppedLedgersParams{UserID: userID, Since: since}); err != nil {
+		return Changes{}, fmt.Errorf("dropped ledgers: %w", err)
 	}
 	return c, nil
 }

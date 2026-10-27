@@ -144,3 +144,20 @@ func TestChangesBringTheWholeLedgerTheUserJustJoined(t *testing.T) {
 	assertIDs(t, "Settlements", settlementIDs(c), "settlement-1")
 	assertIDs(t, "Activities", activityIDs(c), "activity-1")
 }
+
+func TestChangesTellTheUserToDropALedgerTheyLeft(t *testing.T) {
+	ctx := context.Background()
+	db := openMigrated(t)
+	cursor := seedBusyGroup(t, db)
+	write(t, db, func(q *store.Queries, version int64) error {
+		_, err := q.MarkMemberFormer(ctx, store.MarkMemberFormerParams{ID: "member-beto", Version: version})
+		return err
+	})
+	createDinner(t, db, "after-leaving")
+
+	c := changesSince(t, db, "beto", cursor)
+
+	assertIDs(t, "DroppedLedgerIDs", c.DroppedLedgerIDs, "ledger-1")
+	assertIDs(t, "Members", memberIDs(c))
+	assertIDs(t, "Expenses", expenseIDs(c))
+}
