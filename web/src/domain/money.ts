@@ -5,7 +5,7 @@ import { fail, ok, type Result } from './result'
 // 1050 is 10.50 USD and 1050 JPY. They never go through floating point.
 // No amount goes over 10^15 minor units, so that adding up Balances never
 // leaves the safe integers (docs/reglas-de-negocio.md).
-export const maxAmount = 10 ** 15
+const maxAmount = 10 ** 15
 
 export function assertAmount(amount: number): void {
   if (!Number.isSafeInteger(amount)) {
@@ -21,24 +21,77 @@ function toDecimalString(amount: number, digits: number): string {
   return `${sign}${units.slice(0, -digits)}.${units.slice(-digits)}`
 }
 
-export function formatAmount(amount: number, currency: CurrencyCode, locale: string): string {
+// Browsers accept useGrouping: 'always' (ES2023), but the ES2022 types in
+// tsconfig.app.json only know booleans.
+type NumberFormatOptions = Omit<Intl.NumberFormatOptions, 'useGrouping'> & { useGrouping?: boolean | 'always' }
+
+const formatters = new Map<string, Intl.NumberFormat>()
+
+// Every amount is written with Latin digits, the ones the Usuario types and
+// parseAmount reads, in the separators of their region. Formatters are cached:
+// a listing formats hundreds of amounts.
+function numberFormat(locale: string, options: NumberFormatOptions = {}): Intl.NumberFormat {
+  const key = `${locale}|${JSON.stringify(options)}`
+  let formatter = formatters.get(key)
+  if (!formatter) {
+    formatter = new Intl.NumberFormat(locale, { ...options, numberingSystem: 'latn' } as Intl.NumberFormatOptions)
+    formatters.set(key, formatter)
+  }
+  return formatter
+}
+
+export interface FormatOptions {
+  // Listings drop the decimals when they are all zero ('45 €', but '45,50 €');
+  // forms always show them.
+  hideZeroDecimals?: boolean
+  // '+' on positive amounts, for Balances in someone's favour. Zero stays unsigned.
+  signed?: boolean
+}
+
+export function formatAmount(
+  amount: number,
+  currency: CurrencyCode,
+  locale: string,
+  options: FormatOptions = {},
+): string {
   assertAmount(amount)
-  const digits = minorUnitDigits(currency)
-  const formatter = new Intl.NumberFormat(locale, {
+  let digits = minorUnitDigits(currency)
+  if (options.hideZeroDecimals && amount % 10 ** digits === 0) {
+    amount /= 10 ** digits
+    digits = 0
+  }
+  const formatter = numberFormat(locale, {
     style: 'currency',
     currency,
     minimumFractionDigits: digits,
     maximumFractionDigits: digits,
+    signDisplay: options.signed ? 'exceptZero' : 'auto',
+    // Spanish CLDR only groups from five digits ('7589,67 €'); amounts read
+    // better grouped every time ('7.589,67 €'), as in es-CO and es-MX.
+    useGrouping: 'always',
   })
-  // Intl formats a decimal string exactly (ES2023), but the ES2022 types in
-  // tsconfig.app.json only declare numbers.
+  // Intl formats a decimal string exactly (ES2023), but the ES2022 types only
+  // declare numbers.
+  return formatter.format(toDecimalString(amount, digits) as unknown as number)
+}
+
+// The amount as the Usuario would type it, to fill a form field: every decimal,
+// without symbol or grouping ('1234,56' in es-CO). parseAmount reads it back.
+export function formatAmountInput(amount: number, currency: CurrencyCode, locale: string): string {
+  assertAmount(amount)
+  const digits = minorUnitDigits(currency)
+  const formatter = numberFormat(locale, {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+    useGrouping: false,
+  })
   return formatter.format(toDecimalString(amount, digits) as unknown as number)
 }
 
 export type ParseError = 'empty' | 'invalid' | 'too-many-decimals' | 'too-large'
 
 function separators(locale: string): { group: string; decimal: string } {
-  const parts = new Intl.NumberFormat(locale).formatToParts(1234567.8)
+  const parts = numberFormat(locale).formatToParts(1234567.8)
   const find = (type: Intl.NumberFormatPartTypes) => parts.find((part) => part.type === type)?.value
   return { group: find('group') ?? '', decimal: find('decimal') ?? '.' }
 }
@@ -51,7 +104,8 @@ function escapeRegExp(text: string): string {
 // 10^-digits: ('10,50', 'es-CO', 2) is 1050.
 function parseDecimal(input: string, locale: string, digits: number): Result<number, ParseError> {
   const { group, decimal } = separators(locale)
-  let text = input.trim()
+  // Right-to-left locales write a direction mark before the sign ('\u200e-5.25').
+  let text = input.replace(/[\u200e\u200f\u061c]/g, '').trim()
   if (text === '') return fail('empty')
   // fr-FR groups with a narrow no-break space, which nobody can type.
   if (/^\s$/.test(group)) text = text.replace(/\s/g, group)

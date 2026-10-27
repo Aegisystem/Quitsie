@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { formatAmount, parseAmount, parsePercentage } from './money'
+import { formatAmount, formatAmountInput, parseAmount, parsePercentage } from './money'
 
 // CLDR separates the currency symbol with a no-break space in these locales.
 const nbsp = ' '
@@ -12,17 +12,64 @@ describe('formatAmount', () => {
     expect(formatAmount(1234, 'KWD', 'en-US')).toBe(`KWD${nbsp}1.234`)
   })
 
+  it('follows the region’s separators and groups every amount from four digits', () => {
+    expect(formatAmount(758967, 'MXN', 'es-MX')).toBe('$7,589.67')
+    expect(formatAmount(758967, 'COP', 'es-CO')).toBe(`$${nbsp}7.589,67`)
+    expect(formatAmount(758967, 'EUR', 'es-ES')).toBe(`7.589,67${nbsp}€`)
+  })
+
+  it('writes Latin digits in every region, the ones parseAmount reads', () => {
+    expect(formatAmount(758967, 'EGP', 'ar-EG')).toMatch(/7,589\.67/)
+  })
+
   it('always shows every decimal of the currency', () => {
     expect(formatAmount(1000, 'USD', 'en-US')).toBe('$10.00')
     expect(formatAmount(5, 'USD', 'en-US')).toBe('$0.05')
+  })
+
+  it('can hide the decimals when they are all zero, as listings do', () => {
+    const listing = { hideZeroDecimals: true }
+    expect(formatAmount(4500, 'EUR', 'es-ES', listing)).toBe(`45${nbsp}€`)
+    expect(formatAmount(4550, 'EUR', 'es-ES', listing)).toBe(`45,50${nbsp}€`)
+    expect(formatAmount(4505, 'EUR', 'es-ES', listing)).toBe(`45,05${nbsp}€`)
+    expect(formatAmount(-100000, 'USD', 'en-US', listing)).toBe('-$1,000')
+    expect(formatAmount(1500, 'JPY', 'en-US', listing)).toBe('¥1,500')
   })
 
   it('formats negative amounts, as in a Balance against someone', () => {
     expect(formatAmount(-1050, 'USD', 'en-US')).toBe('-$10.50')
   })
 
+  it('can sign a Balance both ways, leaving zero unsigned', () => {
+    const signed = { signed: true }
+    expect(formatAmount(1050, 'USD', 'en-US', signed)).toBe('+$10.50')
+    expect(formatAmount(-1050, 'USD', 'en-US', signed)).toBe('-$10.50')
+    expect(formatAmount(0, 'USD', 'en-US', signed)).toBe('$0.00')
+  })
+
   it('formats the largest safe amounts without floating-point rounding', () => {
     expect(formatAmount(9007199254740985, 'USD', 'en-US')).toBe('$90,071,992,547,409.85')
+  })
+})
+
+describe('formatAmountInput', () => {
+  it('writes an amount as the Usuario would type it: every decimal, no symbol or grouping', () => {
+    expect(formatAmountInput(123456, 'COP', 'es-CO')).toBe('1234,56')
+    expect(formatAmountInput(123456, 'MXN', 'es-MX')).toBe('1234.56')
+    expect(formatAmountInput(4500, 'EUR', 'es-ES')).toBe('45,00')
+    expect(formatAmountInput(1500, 'JPY', 'ja-JP')).toBe('1500')
+  })
+
+  it('is read back by parseAmount as the same amount in any region', () => {
+    const locales = ['es-CO', 'es-MX', 'es-ES', 'en-US', 'fr-FR', 'de-CH', 'sv-SE', 'ar-EG', 'he-IL', 'hi-IN']
+    for (const locale of locales) {
+      for (const currency of ['USD', 'JPY', 'KWD', 'CLF']) {
+        for (const amount of [0, 5, 999, 1000, 1500, 123456, -525, 10 ** 15, -(10 ** 15)]) {
+          const typed = formatAmountInput(amount, currency, locale)
+          expect(parseAmount(typed, currency, locale), `${typed} in ${locale}`).toEqual({ ok: true, value: amount })
+        }
+      }
+    }
   })
 })
 

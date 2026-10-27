@@ -3,7 +3,14 @@
 // of the client.
 export { type Balance, type ExpenseRecord, provisionalBalances, type Records, type SettlementRecord } from './balances'
 export { type CurrencyCode, isCurrency, minorUnitDigits } from './currencies'
-export { formatAmount, type ParseError, parseAmount, parsePercentage } from './money'
+export {
+  formatAmount,
+  formatAmountInput,
+  type FormatOptions,
+  type ParseError,
+  parseAmount,
+  parsePercentage,
+} from './money'
 export { multiplePayers, type PaidShare, singlePayer } from './paidShares'
 export type { Result } from './result'
 export {
