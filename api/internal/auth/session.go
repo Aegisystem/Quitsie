@@ -50,12 +50,24 @@ func ClearSessionCookie() *http.Cookie {
 	return c
 }
 
-type userKey struct{}
+// identity is what Authenticate puts in the request's context.
+type identity struct {
+	user    store.User
+	session Session
+}
+
+type identityKey struct{}
 
 // CurrentUser returns the User that Authenticate found for the request.
 func CurrentUser(ctx context.Context) (store.User, bool) {
-	user, ok := ctx.Value(userKey{}).(store.User)
-	return user, ok
+	id, ok := ctx.Value(identityKey{}).(identity)
+	return id.user, ok
+}
+
+// CurrentSession returns the session that Authenticate found for the request.
+func CurrentSession(ctx context.Context) (Session, bool) {
+	id, ok := ctx.Value(identityKey{}).(identity)
+	return id.session, ok
 }
 
 // Authenticate resolves the User from the session cookie, when there is a
@@ -68,7 +80,7 @@ func (s *Service) Authenticate(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
-		user, renewed, err := s.resolve(r.Context(), cookie.Value)
+		id, renewed, err := s.resolve(r.Context(), cookie.Value)
 		if errors.Is(err, errNoSession) {
 			// The session expired or was ended: stop the browser sending it.
 			http.SetCookie(w, ClearSessionCookie())
@@ -82,41 +94,42 @@ func (s *Service) Authenticate(next http.Handler) http.Handler {
 		if renewed {
 			http.SetCookie(w, SessionCookie(cookie.Value))
 		}
-		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), userKey{}, user)))
+		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), identityKey{}, id)))
 	})
 }
 
 var errNoSession = errors.New("auth: no session")
 
-// resolve returns the User whose session has token, or errNoSession. When
+// resolve finds the session with token and its User, or errNoSession. When
 // the session was last used more than touchInterval ago, it moves its last
 // use to now, which pushes its expiry 90 days ahead, and reports renewed so
 // the cookie gets a new Max-Age too.
-func (s *Service) resolve(ctx context.Context, token string) (user store.User, renewed bool, err error) {
+func (s *Service) resolve(ctx context.Context, token string) (id identity, renewed bool, err error) {
 	q := store.New(s.db)
 	row, err := q.GetSessionByTokenHash(ctx, hashToken(token))
 	if errors.Is(err, sql.ErrNoRows) {
-		return store.User{}, false, errNoSession
+		return identity{}, false, errNoSession
 	}
 	if err != nil {
-		return store.User{}, false, fmt.Errorf("auth: find session: %w", err)
+		return identity{}, false, fmt.Errorf("auth: find session: %w", err)
 	}
 
 	now := s.now()
 	idle := now.Sub(row.Session.LastUsedAt)
 	if idle >= sessionLifetime {
 		if _, err := q.DeleteSession(ctx, store.DeleteSessionParams{ID: row.Session.ID, UserID: row.User.ID}); err != nil {
-			return store.User{}, false, fmt.Errorf("auth: delete expired session: %w", err)
+			return identity{}, false, fmt.Errorf("auth: delete expired session: %w", err)
 		}
-		return store.User{}, false, errNoSession
+		return identity{}, false, errNoSession
 	}
 	if idle >= touchInterval {
 		if err := q.TouchSession(ctx, store.TouchSessionParams{LastUsedAt: now, ID: row.Session.ID}); err != nil {
-			return store.User{}, false, fmt.Errorf("auth: touch session: %w", err)
+			return identity{}, false, fmt.Errorf("auth: touch session: %w", err)
 		}
+		row.Session.LastUsedAt = now
 		renewed = true
 	}
-	return row.User, renewed, nil
+	return identity{user: row.User, session: sessionFrom(row.Session)}, renewed, nil
 }
 
 // RequireUser answers 401 Unauthorized when Authenticate found no User.
@@ -143,6 +156,10 @@ func (s *Service) createSession(ctx context.Context, q *store.Queries, userID, d
 	}
 
 	now := s.now()
+	// Sessions nobody used in 90 days would otherwise stay forever.
+	if err := q.DeleteExpiredSessions(ctx, now.Add(-sessionLifetime)); err != nil {
+		return "", fmt.Errorf("auth: delete expired sessions: %w", err)
+	}
 	err = q.CreateSession(ctx, store.CreateSessionParams{
 		ID:         id.String(),
 		UserID:     userID,
@@ -160,4 +177,48 @@ func (s *Service) createSession(ctx context.Context, q *store.Queries, userID, d
 func hashToken(token string) string {
 	sum := sha256.Sum256([]byte(token))
 	return hex.EncodeToString(sum[:])
+}
+
+// Session is a device where a User is signed in.
+type Session struct {
+	ID         string
+	Device     string
+	CreatedAt  time.Time
+	LastUsedAt time.Time
+}
+
+// Sessions lists the User's live sessions, most recently used first.
+func (s *Service) Sessions(ctx context.Context, userID string) ([]Session, error) {
+	rows, err := store.New(s.db).ListSessions(ctx, store.ListSessionsParams{
+		UserID:    userID,
+		UsedAfter: s.now().Add(-sessionLifetime),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("auth: list sessions: %w", err)
+	}
+	sessions := make([]Session, len(rows))
+	for i, row := range rows {
+		sessions[i] = sessionFrom(row)
+	}
+	return sessions, nil
+}
+
+func sessionFrom(row store.Session) Session {
+	return Session{ID: row.ID, Device: row.Device, CreatedAt: row.CreatedAt, LastUsedAt: row.LastUsedAt}
+}
+
+// ErrSessionNotFound means the User has no session with that ID.
+var ErrSessionNotFound = errors.New("auth: session not found")
+
+// EndSession signs the User out of one device. To sign out of the current
+// one, pass CurrentSession's ID and send ClearSessionCookie.
+func (s *Service) EndSession(ctx context.Context, userID, sessionID string) error {
+	n, err := store.New(s.db).DeleteSession(ctx, store.DeleteSessionParams{ID: sessionID, UserID: userID})
+	if err != nil {
+		return fmt.Errorf("auth: end session: %w", err)
+	}
+	if n == 0 {
+		return ErrSessionNotFound
+	}
+	return nil
 }

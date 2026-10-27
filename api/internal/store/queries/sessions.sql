@@ -16,3 +16,12 @@ WHERE id = ?;
 -- name: DeleteSession :execrows
 DELETE FROM sessions
 WHERE id = ? AND user_id = ?;
+
+-- name: ListSessions :many
+SELECT * FROM sessions
+WHERE user_id = sqlc.arg(user_id) AND last_used_at > sqlc.arg(used_after)
+ORDER BY last_used_at DESC, id DESC;
+
+-- name: DeleteExpiredSessions :exec
+DELETE FROM sessions
+WHERE last_used_at <= ?;

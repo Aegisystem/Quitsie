@@ -36,6 +36,16 @@ func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) er
 	return err
 }
 
+const deleteExpiredSessions = `-- name: DeleteExpiredSessions :exec
+DELETE FROM sessions
+WHERE last_used_at <= ?
+`
+
+func (q *Queries) DeleteExpiredSessions(ctx context.Context, lastUsedAt time.Time) error {
+	_, err := q.db.ExecContext(ctx, deleteExpiredSessions, lastUsedAt)
+	return err
+}
+
 const deleteSession = `-- name: DeleteSession :execrows
 DELETE FROM sessions
 WHERE id = ? AND user_id = ?
@@ -85,6 +95,47 @@ func (q *Queries) GetSessionByTokenHash(ctx context.Context, tokenHash string) (
 		&i.User.DeletedAt,
 	)
 	return i, err
+}
+
+const listSessions = `-- name: ListSessions :many
+SELECT id, user_id, token_hash, device, created_at, last_used_at FROM sessions
+WHERE user_id = ?1 AND last_used_at > ?2
+ORDER BY last_used_at DESC, id DESC
+`
+
+type ListSessionsParams struct {
+	UserID    string
+	UsedAfter time.Time
+}
+
+func (q *Queries) ListSessions(ctx context.Context, arg ListSessionsParams) ([]Session, error) {
+	rows, err := q.db.QueryContext(ctx, listSessions, arg.UserID, arg.UsedAfter)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Session
+	for rows.Next() {
+		var i Session
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.TokenHash,
+			&i.Device,
+			&i.CreatedAt,
+			&i.LastUsedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const touchSession = `-- name: TouchSession :exec
