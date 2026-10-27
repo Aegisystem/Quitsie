@@ -34,3 +34,25 @@ func newGroup(id string, version int64) store.CreateLedgerParams {
 		CreatedAt:     now,
 	}
 }
+
+// insertUser adds a User with raw SQL, so these tests do not depend on the
+// auth queries in users.sql.
+func insertUser(t *testing.T, db *sql.DB, id string) {
+	t.Helper()
+	_, err := db.Exec(`INSERT INTO users (id, email, name, preferred_currency, created_at) VALUES (?, ?, ?, 'COP', ?)`,
+		id, id+"@example.com", id, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func newMember(id, ledgerID string, userID *string, version int64) store.CreateMemberParams {
+	return store.CreateMemberParams{
+		ID:        id,
+		LedgerID:  ledgerID,
+		UserID:    userID,
+		Name:      id,
+		Version:   version,
+		CreatedAt: now,
+	}
+}
