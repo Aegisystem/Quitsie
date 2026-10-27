@@ -1,0 +1,28 @@
+-- name: InsertExpense :execrows
+-- Use CreateExpense, which also stores the shares. The id comes from the
+-- client, so a resent Expense inserts nothing (ADR 0001).
+INSERT INTO expenses (id, ledger_id, description, date, currency, total, category, split_method, created_by, version, created_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT (id) DO NOTHING;
+
+-- name: InsertPaidShare :exec
+INSERT INTO paid_shares (expense_id, member_id, amount)
+VALUES (?, ?, ?);
+
+-- name: InsertOwedShare :exec
+INSERT INTO owed_shares (expense_id, member_id, amount, split_value)
+VALUES (?, ?, ?, ?);
+
+-- name: GetExpense :one
+SELECT * FROM expenses
+WHERE id = ?;
+
+-- name: ListPaidSharesOfExpense :many
+SELECT * FROM paid_shares
+WHERE expense_id = ?
+ORDER BY member_id;
+
+-- name: ListOwedSharesOfExpense :many
+SELECT * FROM owed_shares
+WHERE expense_id = ?
+ORDER BY member_id;
