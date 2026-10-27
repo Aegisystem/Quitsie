@@ -72,6 +72,21 @@ func TestUserRoundTrip(t *testing.T) {
 	}
 }
 
+func TestNextVersionCountsUp(t *testing.T) {
+	ctx := context.Background()
+	q := store.New(openMigrated(t))
+
+	for want := int64(1); want <= 3; want++ {
+		got, err := q.NextVersion(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got != want {
+			t.Errorf("NextVersion = %d, want %d", got, want)
+		}
+	}
+}
+
 func TestSchemaRejectsNonISOCurrency(t *testing.T) {
 	q := store.New(openMigrated(t))
 

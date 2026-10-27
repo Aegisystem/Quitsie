@@ -67,8 +67,9 @@ flowchart LR
 
 ### Traer cambios
 
-- Cada escritura en el servidor recibe un número de versión de un contador global. Como SQLite tiene un único escritor, el contador es estrictamente creciente sin esfuerzo.
+- Cada transacción de escritura toma el siguiente número del contador global (la tabla `version_counter`, de una sola fila) y lo pone en todas las filas que crea o cambia: libros, Miembros, Gastos, Liquidaciones y Actividades. Incrementar esa fila bloquea a los demás escritores, así que las versiones siguen el orden en que se confirman las escrituras y un pull nunca se salta un cambio. Con SQLite ya ocurre por tener un único escritor; a diferencia de una secuencia, la tabla mantiene la garantía si algún día se pasa a PostgreSQL.
 - `GET /api/v1/sync?since=<cursor>` devuelve todo lo que cambió, con versión mayor que el cursor, en los Grupos y Amistades del Usuario, incluidos los borrados (para quitarlos de la réplica), junto con el cursor nuevo.
+- Los libros, Gastos y Liquidaciones no se borran físicamente: borrarlos les pone fecha de borrado y una versión nueva, y así el pull se entera. Un Miembro que sale de un Grupo pasa a `former`, también con versión nueva. Los Aportes y las Cuotas viajan con su Gasto y no tienen versión propia.
 - Con el cursor en 0 se descarga todo; así ocurre el primer inicio de sesión en un dispositivo.
 - Al unirse a un Grupo, el siguiente pull incluye ese Grupo completo aunque sus cambios sean anteriores al cursor.
 - La respuesta incluye las Deudas ya simplificadas de cada Grupo que cambió, para poder mostrarlas sin conexión.
@@ -112,12 +113,14 @@ Un **libro** (`Ledger`) es el contenedor de Gastos y Liquidaciones. Cada Grupo t
 | `users` | email, nombre, Moneda preferida, identificador de Google, fecha de borrado |
 | `sessions` | hash del token, dispositivo, último uso |
 | `login_codes` | hash del código, caducidad, intentos |
-| `ledgers` | tipo (`group` o `friendship`), nombre, Moneda del grupo (vacía en Amistades), Simplificación de deudas, hash del Enlace de invitación, versión |
-| `members` | libro, Usuario vinculado (vacío si está pendiente), nombre, email, estado (`active` o `former`) |
+| `ledgers` | tipo (`group` o `friendship`), nombre, Moneda del grupo (vacía en Amistades), Simplificación de deudas, hash del Enlace de invitación, versión, fecha de borrado |
+| `members` | libro, Usuario vinculado (vacío si está pendiente), nombre, email, estado (`active` o `former`), versión |
 | `expenses` | identificador del cliente, libro, descripción, fecha, moneda, total, Categoría, Método de reparto (para reeditar), autor, versión, fecha de borrado |
-| `paid_shares`, `owed_shares` | gasto, miembro, importe (Aportes y Cuotas) |
+| `paid_shares` | gasto, miembro, importe (Aportes) |
+| `owed_shares` | gasto, miembro, importe (Cuotas) y, para poder reeditar el Gasto, el valor del Participante en el Método de reparto: porcentaje en centésimas (10000 = 100 %), peso o ajuste en la unidad mínima; vacío en Partes iguales y Montos exactos |
 | `settlements` | libro, de quién, a quién, importe, moneda, fecha, autor, versión, fecha de borrado |
-| `activities` | libro, Usuario, qué cambió, cuándo |
+| `activities` | libro, Usuario, qué cambió, versión, cuándo |
+| `version_counter` | una sola fila con la última versión entregada (ver [Traer cambios](#traer-cambios)) |
 
 Los Saldos no se guardan: se calculan sumando, lo cual es rápido a esta escala.
 

@@ -14,6 +14,7 @@ type Activity struct {
 	UserID    string
 	Kind      string
 	Details   string
+	Version   int64
 	CreatedAt time.Time
 }
 
@@ -41,6 +42,7 @@ type Ledger struct {
 	InviteLinkHash *string
 	Version        int64
 	CreatedAt      time.Time
+	DeletedAt      *time.Time
 }
 
 type LoginCode struct {
@@ -59,13 +61,15 @@ type Member struct {
 	Name      string
 	Email     *string
 	Status    string
+	Version   int64
 	CreatedAt time.Time
 }
 
 type OwedShare struct {
-	ExpenseID string
-	MemberID  string
-	Amount    int64
+	ExpenseID  string
+	MemberID   string
+	Amount     int64
+	SplitValue *int64
 }
 
 type PaidShare struct {
@@ -105,4 +109,9 @@ type User struct {
 	GoogleSub         *string
 	CreatedAt         time.Time
 	DeletedAt         *time.Time
+}
+
+type VersionCounter struct {
+	ID    int64
+	Value int64
 }

@@ -6,9 +6,21 @@
 --   * amounts are BIGINT in the currency's minor unit (cents); never floats.
 --   * currencies are ISO 4217 codes: three upper-case letters.
 --   * timestamps are TIMESTAMP in UTC; calendar dates are DATE.
---   * version comes from the global write counter used by sync.
+--   * version comes from version_counter; sync pulls rows by version, and
+--     deleted_at turns deletions into versioned changes.
 
 -- +goose Up
+
+-- Global counter for sync. Each write transaction increments it once and stamps
+-- every row it creates or changes with the new value. Incrementing the single
+-- row locks out other writers, so versions follow commit order and a pull never
+-- skips a change (a PostgreSQL sequence would not guarantee that).
+CREATE TABLE version_counter (
+    id    INTEGER PRIMARY KEY CHECK (id = 1),
+    value BIGINT NOT NULL
+);
+
+INSERT INTO version_counter (id, value) VALUES (1, 0);
 
 CREATE TABLE users (
     id                 TEXT PRIMARY KEY,
@@ -53,6 +65,7 @@ CREATE TABLE ledgers (
     invite_link_hash TEXT UNIQUE,
     version          BIGINT NOT NULL,
     created_at       TIMESTAMP NOT NULL,
+    deleted_at       TIMESTAMP,
     -- A Group always has a currency; a Friendship never does (each Expense carries its own).
     CHECK ((kind = 'group' AND currency IS NOT NULL) OR (kind = 'friendship' AND currency IS NULL))
 );
@@ -65,12 +78,14 @@ CREATE TABLE members (
     name       TEXT NOT NULL,
     email      TEXT,
     status     TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'former')),
+    version    BIGINT NOT NULL,
     created_at TIMESTAMP NOT NULL,
     -- A User holds at most one Member per ledger.
     UNIQUE (ledger_id, user_id)
 );
 
 CREATE INDEX members_user_id ON members (user_id);
+CREATE INDEX members_ledger_version ON members (ledger_id, version);
 
 CREATE TABLE expenses (
     id           TEXT PRIMARY KEY,
@@ -91,6 +106,7 @@ CREATE TABLE expenses (
 CREATE INDEX expenses_ledger_version ON expenses (ledger_id, version);
 
 -- PaidShares (Aportes) and OwedShares (Cuotas) each add up to the Expense total.
+-- They travel with their Expense and have no version of their own.
 CREATE TABLE paid_shares (
     expense_id TEXT NOT NULL REFERENCES expenses (id) ON DELETE CASCADE,
     member_id  TEXT NOT NULL REFERENCES members (id),
@@ -99,9 +115,13 @@ CREATE TABLE paid_shares (
 );
 
 CREATE TABLE owed_shares (
-    expense_id TEXT NOT NULL REFERENCES expenses (id) ON DELETE CASCADE,
-    member_id  TEXT NOT NULL REFERENCES members (id),
-    amount     BIGINT NOT NULL CHECK (amount > 0),
+    expense_id  TEXT NOT NULL REFERENCES expenses (id) ON DELETE CASCADE,
+    member_id   TEXT NOT NULL REFERENCES members (id),
+    amount      BIGINT NOT NULL CHECK (amount > 0),
+    -- The Participant's input to the Expense's split_method, kept to re-edit it:
+    -- percentage in hundredths (10000 = 100%), weight, or adjustment in minor
+    -- units (may be negative). NULL for equal and exact.
+    split_value BIGINT,
     PRIMARY KEY (expense_id, member_id)
 );
 
@@ -129,10 +149,11 @@ CREATE TABLE activities (
     user_id    TEXT NOT NULL REFERENCES users (id),
     kind       TEXT NOT NULL,
     details    TEXT NOT NULL DEFAULT '{}',
+    version    BIGINT NOT NULL,
     created_at TIMESTAMP NOT NULL
 );
 
-CREATE INDEX activities_ledger_created ON activities (ledger_id, created_at);
+CREATE INDEX activities_ledger_version ON activities (ledger_id, version);
 
 -- +goose Down
 
@@ -146,3 +167,4 @@ DROP TABLE ledgers;
 DROP TABLE login_codes;
 DROP TABLE sessions;
 DROP TABLE users;
+DROP TABLE version_counter;
