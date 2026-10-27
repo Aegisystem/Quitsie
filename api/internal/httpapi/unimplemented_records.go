@@ -9,10 +9,6 @@ import "context"
 
 // --- records ---
 
-func (s *Server) PushRecords(context.Context, PushRecordsRequestObject) (PushRecordsResponseObject, error) {
-	return nil, errNotImplemented
-}
-
 func (s *Server) UpdateExpense(context.Context, UpdateExpenseRequestObject) (UpdateExpenseResponseObject, error) {
 	return nil, errNotImplemented
 }

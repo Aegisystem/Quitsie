@@ -60,7 +60,6 @@ var unimplementedLedgers = []operationRequest{
 
 // Expenses, Settlements, records and sync.
 var unimplementedRecords = []operationRequest{
-	{"PushRecords", http.MethodPost, "/api/v1/records", `{"expenses":[],"settlements":[]}`},
 	{"UpdateExpense", http.MethodPatch, "/api/v1/expenses/" + someID, "{}"},
 	{"DeleteExpense", http.MethodDelete, "/api/v1/expenses/" + someID, ""},
 	{"RestoreExpense", http.MethodPost, "/api/v1/expenses/" + someID + "/restore", ""},
@@ -74,7 +73,7 @@ var (
 	implementedBase    = []string{"GetHealth"}
 	implementedAuth    = []string{}
 	implementedLedgers = []string{}
-	implementedRecords = []string{}
+	implementedRecords = []string{"PushRecords"}
 	implemented        = slices.Concat(implementedBase, implementedAuth, implementedLedgers, implementedRecords)
 )
 
