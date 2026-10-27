@@ -2,8 +2,12 @@ package domain
 
 import "fmt"
 
-// ValidateExpense checks an Expense before it is stored in ledger. It does not
-// recompute the OwedShares from the SplitMethod: the client did (ADR 0003).
+// ValidateExpense checks a new Expense before it is stored in ledger, or a
+// deleted one before it is restored. Every Participant must be an active
+// Member, so restoring an Expense with a former member is rejected: it would
+// change their Balance, which is zero. To check an edit, use
+// ValidateExpenseUpdate. It does not recompute the OwedShares from the
+// SplitMethod: the client did (ADR 0003).
 func ValidateExpense(ledger Ledger, e Expense) error {
 	if err := ledger.checkRecord(e.Currency); err != nil {
 		return err
