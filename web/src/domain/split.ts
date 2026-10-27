@@ -16,6 +16,7 @@ export type Split =
   | { method: 'equal'; participantIds: readonly ParticipantId[] }
   | { method: 'exact'; amounts: readonly ParticipantValue[] }
   | { method: 'percentage'; percentages: readonly ParticipantValue[] }
+  | { method: 'weights'; weights: readonly ParticipantValue[] }
 
 export type SplitMethod = Split['method']
 
@@ -85,6 +86,8 @@ function participantsOf(split: Split): readonly ParticipantId[] {
       return split.amounts.map(({ participantId }) => participantId)
     case 'percentage':
       return split.percentages.map(({ participantId }) => participantId)
+    case 'weights':
+      return split.weights.map(({ participantId }) => participantId)
   }
 }
 
@@ -128,6 +131,11 @@ function owe(total: bigint, split: Split): Result<Owed[], SplitError> {
       const difference = sumOf(split.percentages) - wholePercentage
       if (difference !== 0n) return fail({ code: 'sum-mismatch', difference: Number(difference) })
       return ok(proportional(total, split.percentages))
+    }
+    case 'weights': {
+      const invalid = invalidValue(split.weights, (value) => value > 0)
+      if (invalid) return fail(invalid)
+      return ok(proportional(total, split.weights))
     }
   }
 }

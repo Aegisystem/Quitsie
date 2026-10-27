@@ -186,3 +186,49 @@ describe('percentage', () => {
     }
   })
 })
+
+describe('weights', () => {
+  it('splits in proportion to the weights and keeps each weight to re-edit', () => {
+    const weights = [
+      { participantId: 'ana', value: 2 },
+      { participantId: 'beto', value: 1 },
+      { participantId: 'carla', value: 1 },
+    ]
+    expect(splitExpense(1000, { method: 'weights', weights })).toEqual({
+      ok: true,
+      value: [
+        { participantId: 'ana', amount: 500, splitValue: 2 },
+        { participantId: 'beto', amount: 250, splitValue: 1 },
+        { participantId: 'carla', amount: 250, splitValue: 1 },
+      ],
+    })
+  })
+
+  it('gives the leftover to the largest remainder', () => {
+    // 1:2 of 1.00 is 0.333… and 0.666…
+    const weights = [
+      { participantId: 'ana', value: 1 },
+      { participantId: 'beto', value: 2 },
+    ]
+    expect(splitExpense(100, { method: 'weights', weights })).toEqual({
+      ok: true,
+      value: [
+        { participantId: 'ana', amount: 33, splitValue: 1 },
+        { participantId: 'beto', amount: 67, splitValue: 2 },
+      ],
+    })
+  })
+
+  it('only accepts positive whole weights', () => {
+    for (const value of [0, -1, 1.5]) {
+      const weights = [
+        { participantId: 'ana', value: 1 },
+        { participantId: 'beto', value },
+      ]
+      expect(splitExpense(100, { method: 'weights', weights })).toEqual({
+        ok: false,
+        error: { code: 'invalid-value', participantId: 'beto' },
+      })
+    }
+  })
+})
