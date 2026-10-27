@@ -13,15 +13,7 @@ func (s *Server) UndoClaim(context.Context, UndoClaimRequestObject) (UndoClaimRe
 	return nil, errNotImplemented
 }
 
-func (s *Server) RegenerateGroupInviteLink(context.Context, RegenerateGroupInviteLinkRequestObject) (RegenerateGroupInviteLinkResponseObject, error) {
-	return nil, errNotImplemented
-}
-
 // --- invites ---
-
-func (s *Server) GetInvite(context.Context, GetInviteRequestObject) (GetInviteResponseObject, error) {
-	return nil, errNotImplemented
-}
 
 func (s *Server) ClaimMember(context.Context, ClaimMemberRequestObject) (ClaimMemberResponseObject, error) {
 	return nil, errNotImplemented
@@ -34,6 +26,10 @@ func (s *Server) JoinGroup(context.Context, JoinGroupRequestObject) (JoinGroupRe
 // --- friendships ---
 
 func (s *Server) CreateFriendship(context.Context, CreateFriendshipRequestObject) (CreateFriendshipResponseObject, error) {
+	return nil, errNotImplemented
+}
+
+func (s *Server) GetFriendInviteLink(context.Context, GetFriendInviteLinkRequestObject) (GetFriendInviteLinkResponseObject, error) {
 	return nil, errNotImplemented
 }
 

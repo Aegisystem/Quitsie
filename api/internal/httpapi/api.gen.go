@@ -30,6 +30,7 @@ const (
 	GroupCreated              ActivityKind = "group_created"
 	GroupCurrencyChanged      ActivityKind = "group_currency_changed"
 	GroupRenamed              ActivityKind = "group_renamed"
+	InviteLinkRegenerated     ActivityKind = "invite_link_regenerated"
 	MemberAdded               ActivityKind = "member_added"
 	MemberClaimed             ActivityKind = "member_claimed"
 	MemberJoined              ActivityKind = "member_joined"
@@ -63,6 +64,8 @@ func (e ActivityKind) Valid() bool {
 	case GroupCurrencyChanged:
 		return true
 	case GroupRenamed:
+		return true
+	case InviteLinkRegenerated:
 		return true
 	case MemberAdded:
 		return true
@@ -694,7 +697,7 @@ type InviteKind string
 
 // InviteLink defines model for InviteLink.
 type InviteLink struct {
-	// Token Secret to put in the app's invite URL. Only its hash is stored.
+	// Token Secret to put in the app's invite URL. It is derived, not stored, so it stays the same until the link is regenerated (ADR 0010).
 	Token string `json:"token"`
 }
 
@@ -1152,6 +1155,9 @@ type ServerInterface interface {
 	// CreateFriendship Creates a Friendship with a pending Friend or with an existing User.
 	// (POST /friendships)
 	CreateFriendship(w http.ResponseWriter, r *http.Request)
+	// GetFriendInviteLink Shows the current Invite link of a pending Friend.
+	// (GET /friendships/{friendshipId}/invite-link)
+	GetFriendInviteLink(w http.ResponseWriter, r *http.Request, friendshipId FriendshipId)
 	// RegenerateFriendInviteLink Creates a new Invite link for a pending Friend and revokes the previous one.
 	// (POST /friendships/{friendshipId}/invite-link)
 	RegenerateFriendInviteLink(w http.ResponseWriter, r *http.Request, friendshipId FriendshipId)
@@ -1164,6 +1170,9 @@ type ServerInterface interface {
 	// UpdateGroup Renames a Group, turns Debt simplification on or off, or changes the Group currency.
 	// (PATCH /groups/{groupId})
 	UpdateGroup(w http.ResponseWriter, r *http.Request, groupId GroupId)
+	// GetGroupInviteLink Shows the Group's current Invite link.
+	// (GET /groups/{groupId}/invite-link)
+	GetGroupInviteLink(w http.ResponseWriter, r *http.Request, groupId GroupId)
 	// RegenerateGroupInviteLink Creates a new Invite link for a Group and revokes the previous one.
 	// (POST /groups/{groupId}/invite-link)
 	RegenerateGroupInviteLink(w http.ResponseWriter, r *http.Request, groupId GroupId)
@@ -1492,6 +1501,32 @@ func (siw *ServerInterfaceWrapper) CreateFriendship(w http.ResponseWriter, r *ht
 	handler.ServeHTTP(w, r)
 }
 
+// GetFriendInviteLink operation middleware
+func (siw *ServerInterfaceWrapper) GetFriendInviteLink(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "friendshipId" -------------
+	var friendshipId FriendshipId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "friendshipId", r.PathValue("friendshipId"), &friendshipId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "friendshipId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetFriendInviteLink(w, r, friendshipId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // RegenerateFriendInviteLink operation middleware
 func (siw *ServerInterfaceWrapper) RegenerateFriendInviteLink(w http.ResponseWriter, r *http.Request) {
 
@@ -1575,6 +1610,32 @@ func (siw *ServerInterfaceWrapper) UpdateGroup(w http.ResponseWriter, r *http.Re
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.UpdateGroup(w, r, groupId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetGroupInviteLink operation middleware
+func (siw *ServerInterfaceWrapper) GetGroupInviteLink(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "groupId" -------------
+	var groupId GroupId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "groupId", r.PathValue("groupId"), &groupId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "groupId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetGroupInviteLink(w, r, groupId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -2129,11 +2190,13 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/groups/{groupId}/members/{memberId}", wrapper.RemoveMember)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/groups/{groupId}/members/{memberId}/claim", wrapper.UndoClaim)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/groups/{groupId}/leave", wrapper.LeaveGroup)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/groups/{groupId}/invite-link", wrapper.GetGroupInviteLink)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/groups/{groupId}/invite-link", wrapper.RegenerateGroupInviteLink)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/invites/{token}", wrapper.GetInvite)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/invites/{token}/claim", wrapper.ClaimMember)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/invites/{token}/join", wrapper.JoinGroup)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/friendships", wrapper.CreateFriendship)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/friendships/{friendshipId}/invite-link", wrapper.GetFriendInviteLink)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/friendships/{friendshipId}/invite-link", wrapper.RegenerateFriendInviteLink)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/records", wrapper.PushRecords)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/expenses/{expenseId}", wrapper.DeleteExpense)
@@ -2919,6 +2982,91 @@ func (response CreateFriendshipdefaultApplicationProblemPlusJSONResponse) VisitC
 	return err
 }
 
+type GetFriendInviteLinkRequestObject struct {
+	FriendshipId FriendshipId `json:"friendshipId"`
+}
+
+type GetFriendInviteLinkResponseObject interface {
+	VisitGetFriendInviteLinkResponse(w http.ResponseWriter) error
+}
+
+type GetFriendInviteLink200JSONResponse InviteLink
+
+func (response GetFriendInviteLink200JSONResponse) VisitGetFriendInviteLinkResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetFriendInviteLink401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response GetFriendInviteLink401ApplicationProblemPlusJSONResponse) VisitGetFriendInviteLinkResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetFriendInviteLink404ApplicationProblemPlusJSONResponse struct {
+	NotFoundApplicationProblemPlusJSONResponse
+}
+
+func (response GetFriendInviteLink404ApplicationProblemPlusJSONResponse) VisitGetFriendInviteLinkResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetFriendInviteLink409ApplicationProblemPlusJSONResponse Problem
+
+func (response GetFriendInviteLink409ApplicationProblemPlusJSONResponse) VisitGetFriendInviteLinkResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetFriendInviteLinkdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response GetFriendInviteLinkdefaultApplicationProblemPlusJSONResponse) VisitGetFriendInviteLinkResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type RegenerateFriendInviteLinkRequestObject struct {
 	FriendshipId FriendshipId `json:"friendshipId"`
 }
@@ -3245,6 +3393,77 @@ type UpdateGroupdefaultApplicationProblemPlusJSONResponse struct {
 }
 
 func (response UpdateGroupdefaultApplicationProblemPlusJSONResponse) VisitUpdateGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetGroupInviteLinkRequestObject struct {
+	GroupId GroupId `json:"groupId"`
+}
+
+type GetGroupInviteLinkResponseObject interface {
+	VisitGetGroupInviteLinkResponse(w http.ResponseWriter) error
+}
+
+type GetGroupInviteLink200JSONResponse InviteLink
+
+func (response GetGroupInviteLink200JSONResponse) VisitGetGroupInviteLinkResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetGroupInviteLink401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response GetGroupInviteLink401ApplicationProblemPlusJSONResponse) VisitGetGroupInviteLinkResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetGroupInviteLink404ApplicationProblemPlusJSONResponse struct {
+	NotFoundApplicationProblemPlusJSONResponse
+}
+
+func (response GetGroupInviteLink404ApplicationProblemPlusJSONResponse) VisitGetGroupInviteLinkResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetGroupInviteLinkdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response GetGroupInviteLinkdefaultApplicationProblemPlusJSONResponse) VisitGetGroupInviteLinkResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -4565,6 +4784,9 @@ type StrictServerInterface interface {
 	// CreateFriendship Creates a Friendship with a pending Friend or with an existing User.
 	// (POST /friendships)
 	CreateFriendship(ctx context.Context, request CreateFriendshipRequestObject) (CreateFriendshipResponseObject, error)
+	// GetFriendInviteLink Shows the current Invite link of a pending Friend.
+	// (GET /friendships/{friendshipId}/invite-link)
+	GetFriendInviteLink(ctx context.Context, request GetFriendInviteLinkRequestObject) (GetFriendInviteLinkResponseObject, error)
 	// RegenerateFriendInviteLink Creates a new Invite link for a pending Friend and revokes the previous one.
 	// (POST /friendships/{friendshipId}/invite-link)
 	RegenerateFriendInviteLink(ctx context.Context, request RegenerateFriendInviteLinkRequestObject) (RegenerateFriendInviteLinkResponseObject, error)
@@ -4577,6 +4799,9 @@ type StrictServerInterface interface {
 	// UpdateGroup Renames a Group, turns Debt simplification on or off, or changes the Group currency.
 	// (PATCH /groups/{groupId})
 	UpdateGroup(ctx context.Context, request UpdateGroupRequestObject) (UpdateGroupResponseObject, error)
+	// GetGroupInviteLink Shows the Group's current Invite link.
+	// (GET /groups/{groupId}/invite-link)
+	GetGroupInviteLink(ctx context.Context, request GetGroupInviteLinkRequestObject) (GetGroupInviteLinkResponseObject, error)
 	// RegenerateGroupInviteLink Creates a new Invite link for a Group and revokes the previous one.
 	// (POST /groups/{groupId}/invite-link)
 	RegenerateGroupInviteLink(ctx context.Context, request RegenerateGroupInviteLinkRequestObject) (RegenerateGroupInviteLinkResponseObject, error)
@@ -4973,6 +5198,32 @@ func (sh *strictHandler) CreateFriendship(w http.ResponseWriter, r *http.Request
 	}
 }
 
+// GetFriendInviteLink operation middleware
+func (sh *strictHandler) GetFriendInviteLink(w http.ResponseWriter, r *http.Request, friendshipId FriendshipId) {
+	var request GetFriendInviteLinkRequestObject
+
+	request.FriendshipId = friendshipId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetFriendInviteLink(ctx, request.(GetFriendInviteLinkRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetFriendInviteLink")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetFriendInviteLinkResponseObject); ok {
+		if err := validResponse.VisitGetFriendInviteLinkResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // RegenerateFriendInviteLink operation middleware
 func (sh *strictHandler) RegenerateFriendInviteLink(w http.ResponseWriter, r *http.Request, friendshipId FriendshipId) {
 	var request RegenerateFriendInviteLinkRequestObject
@@ -5082,6 +5333,32 @@ func (sh *strictHandler) UpdateGroup(w http.ResponseWriter, r *http.Request, gro
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(UpdateGroupResponseObject); ok {
 		if err := validResponse.VisitUpdateGroupResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetGroupInviteLink operation middleware
+func (sh *strictHandler) GetGroupInviteLink(w http.ResponseWriter, r *http.Request, groupId GroupId) {
+	var request GetGroupInviteLinkRequestObject
+
+	request.GroupId = groupId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetGroupInviteLink(ctx, request.(GetGroupInviteLinkRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetGroupInviteLink")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetGroupInviteLinkResponseObject); ok {
+		if err := validResponse.VisitGetGroupInviteLinkResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

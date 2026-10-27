@@ -16,6 +16,7 @@ import (
 
 	"github.com/Aegisystem/Quitsie/api/internal/auth"
 	"github.com/Aegisystem/Quitsie/api/internal/domain"
+	"github.com/Aegisystem/Quitsie/api/internal/invites"
 	"github.com/Aegisystem/Quitsie/api/internal/ledgers"
 	"github.com/Aegisystem/Quitsie/api/internal/store"
 )
@@ -139,6 +140,17 @@ func open(ctx context.Context, q *store.Queries, ledgerID, kind, userID string) 
 }
 
 var errNonzeroBalance = &failure{status: http.StatusConflict, code: ProblemCodeNonzeroBalance, title: "Some Balance is not zero."}
+
+// read runs fn in a read-only transaction, so everything it loads comes from
+// the same snapshot.
+func (s *Server) read(ctx context.Context, fn func(q *store.Queries) error) error {
+	tx, err := s.deps.DB.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return fmt.Errorf("begin read: %w", err)
+	}
+	defer tx.Rollback()
+	return fn(store.New(tx))
+}
 
 // currentUser is the signed-in User, or errUnauthenticated.
 func currentUser(ctx context.Context) (store.User, error) {
@@ -576,4 +588,154 @@ func (s *Server) LeaveGroup(ctx context.Context, req LeaveGroupRequestObject) (L
 		return answer(err, respond)
 	}
 	return LeaveGroup204Response{}, nil
+}
+
+// --- invite links ---
+
+var errInviteLinkInvalid = &failure{status: http.StatusNotFound, code: ProblemCodeInviteLinkInvalid, title: "The Invite link does not exist or was revoked."}
+
+// inviteLink is the current Invite link of l (ADR 0010).
+func (s *Server) inviteLink(l store.Ledger) (InviteLink, error) {
+	token, err := invites.Token(s.deps.InviteSecret, l.ID, l.InviteLinkGeneration)
+	if err != nil {
+		return InviteLink{}, err
+	}
+	return InviteLink{Token: token}, nil
+}
+
+// openInvite loads the live ledger whose current Invite link is token.
+func (s *Server) openInvite(ctx context.Context, q *store.Queries, token string) (ledgers.Snapshot, error) {
+	ledgerID, ok := invites.LedgerID(token)
+	if !ok {
+		return ledgers.Snapshot{}, errInviteLinkInvalid
+	}
+	snap, err := ledgers.Load(ctx, q, ledgerID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ledgers.Snapshot{}, errInviteLinkInvalid
+	}
+	if err != nil {
+		return ledgers.Snapshot{}, err
+	}
+	if snap.Ledger.DeletedAt != nil || !invites.Valid(s.deps.InviteSecret, token, snap.Ledger.InviteLinkGeneration) {
+		return ledgers.Snapshot{}, errInviteLinkInvalid
+	}
+	return snap, nil
+}
+
+// claimable are the pending Members of snap that can still be claimed.
+func claimable(snap ledgers.Snapshot) []store.Member {
+	var out []store.Member
+	for _, m := range snap.Members {
+		if m.UserID == nil && m.Status == "active" {
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
+// heldBy is userID's Member in snap, in any status.
+func heldBy(snap ledgers.Snapshot, userID string) (store.Member, bool) {
+	for _, m := range snap.Members {
+		if m.UserID != nil && *m.UserID == userID {
+			return m, true
+		}
+	}
+	return store.Member{}, false
+}
+
+func (s *Server) GetGroupInviteLink(ctx context.Context, req GetGroupInviteLinkRequestObject) (GetGroupInviteLinkResponseObject, error) {
+	respond := func(status int, p Problem) GetGroupInviteLinkResponseObject {
+		return GetGroupInviteLinkdefaultApplicationProblemPlusJSONResponse{Body: p, StatusCode: status}
+	}
+	user, err := currentUser(ctx)
+	if err != nil {
+		return answer(err, respond)
+	}
+	var link InviteLink
+	err = s.read(ctx, func(q *store.Queries) error {
+		snap, _, err := open(ctx, q, req.GroupId.String(), "group", user.ID)
+		if err != nil {
+			return err
+		}
+		link, err = s.inviteLink(snap.Ledger)
+		return err
+	})
+	if err != nil {
+		return answer(err, respond)
+	}
+	return GetGroupInviteLink200JSONResponse(link), nil
+}
+
+func (s *Server) RegenerateGroupInviteLink(ctx context.Context, req RegenerateGroupInviteLinkRequestObject) (RegenerateGroupInviteLinkResponseObject, error) {
+	respond := func(status int, p Problem) RegenerateGroupInviteLinkResponseObject {
+		return RegenerateGroupInviteLinkdefaultApplicationProblemPlusJSONResponse{Body: p, StatusCode: status}
+	}
+	user, err := currentUser(ctx)
+	if err != nil {
+		return answer(err, respond)
+	}
+	var link InviteLink
+	_, err = store.Write(ctx, s.deps.DB, func(q *store.Queries, version int64) error {
+		snap, _, err := open(ctx, q, req.GroupId.String(), "group", user.ID)
+		if err != nil {
+			return err
+		}
+		link, err = s.regenerate(ctx, q, snap.Ledger.ID, user.ID, version)
+		return err
+	})
+	if err != nil {
+		return answer(err, respond)
+	}
+	return RegenerateGroupInviteLink200JSONResponse(link), nil
+}
+
+// regenerate moves the ledger's Invite link to its next generation, which
+// revokes the previous token, and returns the new link.
+func (s *Server) regenerate(ctx context.Context, q *store.Queries, ledgerID, userID string, version int64) (InviteLink, error) {
+	ledger, err := q.RegenerateInviteLink(ctx, store.RegenerateInviteLinkParams{ID: ledgerID, Version: version})
+	if err != nil {
+		return InviteLink{}, fmt.Errorf("regenerate invite link: %w", err)
+	}
+	if err := activity(ctx, q, ledgerID, userID, "invite_link_regenerated", nil, version); err != nil {
+		return InviteLink{}, err
+	}
+	return s.inviteLink(ledger)
+}
+
+func (s *Server) GetInvite(ctx context.Context, req GetInviteRequestObject) (GetInviteResponseObject, error) {
+	respond := func(status int, p Problem) GetInviteResponseObject {
+		return GetInvitedefaultApplicationProblemPlusJSONResponse{Body: p, StatusCode: status}
+	}
+	// The invite page shows the Group before signing in, so the session is optional.
+	user, signedIn := auth.CurrentUser(ctx)
+	var invite Invite
+	err := s.read(ctx, func(q *store.Queries) error {
+		snap, err := s.openInvite(ctx, q, req.Token)
+		if err != nil {
+			return err
+		}
+		invite = Invite{
+			Kind:           InviteKind(snap.Ledger.Kind),
+			LedgerId:       uuid.MustParse(snap.Ledger.ID),
+			GroupName:      &snap.Ledger.Name,
+			PendingMembers: []InviteMember{},
+		}
+		for _, m := range claimable(snap) {
+			invite.PendingMembers = append(invite.PendingMembers, InviteMember{Id: uuid.MustParse(m.ID), Name: m.Name})
+			// Only a suggestion: claiming is always the User's choice.
+			if signedIn && invite.SuggestedMemberId == nil && m.Email != nil && strings.EqualFold(*m.Email, user.Email) {
+				id := uuid.MustParse(m.ID)
+				invite.SuggestedMemberId = &id
+			}
+		}
+		if m, ok := heldBy(snap, user.ID); signedIn && ok && m.Status == "active" {
+			id := uuid.MustParse(m.ID)
+			invite.JoinedMemberId = &id
+		}
+		return nil
+	})
+	if err != nil {
+		return answer(err, respond)
+	}
+	return GetInvite200JSONResponse(invite), nil
 }

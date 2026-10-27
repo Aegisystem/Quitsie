@@ -7,6 +7,9 @@ import "database/sql"
 // cmd/server wires them.
 type Deps struct {
 	DB *sql.DB
+	// InviteSecret signs the Invite links (ADR 0010): at least
+	// invites.MinSecretLength random bytes. Changing it revokes every link.
+	InviteSecret []byte
 }
 
 // WithDeps gives the handlers their dependencies.

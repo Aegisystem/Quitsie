@@ -531,12 +531,29 @@ paths:
   /groups/{groupId}/invite-link:
     parameters:
       - $ref: "#/components/parameters/GroupId"
+    get:
+      operationId: getGroupInviteLink
+      summary: Shows the Group's current Invite link.
+      description: >
+        The token is derived from the Group, so it can be shown as many times
+        as needed and stays the same until someone regenerates it (ADR 0010).
+      tags: [groups]
+      responses:
+        "200":
+          description: The current Invite link.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InviteLink"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        default:
+          $ref: "#/components/responses/Problem"
     post:
       operationId: regenerateGroupInviteLink
       summary: Creates a new Invite link for a Group and revokes the previous one.
-      description: >
-        The server only keeps the link's hash, so the token can only be read
-        in this response.
       tags: [groups]
       responses:
         "200":
@@ -707,10 +724,36 @@ paths:
   /friendships/{friendshipId}/invite-link:
     parameters:
       - $ref: "#/components/parameters/FriendshipId"
+    get:
+      operationId: getFriendInviteLink
+      summary: Shows the current Invite link of a pending Friend.
+      description: >
+        The link only allows claiming the pending Friend. Like a Group's, it
+        can be shown as many times as needed (ADR 0010).
+      tags: [friendships]
+      responses:
+        "200":
+          description: The current Invite link.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InviteLink"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: The Friend is already linked to a User (`member_not_pending`).
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
     post:
       operationId: regenerateFriendInviteLink
       summary: Creates a new Invite link for a pending Friend and revokes the previous one.
-      description: The link only allows claiming the pending Friend. The token can only be read in this response.
+      description: The link only allows claiming the pending Friend.
       tags: [friendships]
       responses:
         "200":
@@ -1033,7 +1076,7 @@ components:
       name: token
       in: path
       required: true
-      description: The secret part of an Invite link.
+      description: The token of an Invite link. It carries the ledger id and a signature of the server (ADR 0010).
       schema:
         type: string
         minLength: 16
@@ -1425,7 +1468,9 @@ components:
       properties:
         token:
           type: string
-          description: Secret to put in the app's invite URL. Only its hash is stored.
+          description: >
+            Secret to put in the app's invite URL. It is derived, not stored,
+            so it stays the same until the link is regenerated (ADR 0010).
 
     Invite:
       type: object
@@ -1865,6 +1910,7 @@ components:
             - claim_undone
             - member_removed
             - member_left
+            - invite_link_regenerated
             - friendship_created
             - expense_created
             - expense_updated

@@ -49,7 +49,7 @@ func newWorld(t *testing.T) *world {
 	if err != nil {
 		t.Fatal(err)
 	}
-	server := httpapi.NewServer(db, "test").WithDeps(httpapi.Deps{DB: db})
+	server := httpapi.NewServer(db, "test").WithDeps(httpapi.Deps{DB: db, InviteSecret: []byte("a test secret of at least 32 bytes")})
 	w.h = w.auth.Authenticate(httpapi.NewHandler(server, builtPWA))
 	return w
 }
@@ -611,5 +611,120 @@ func TestNobodyLeavesAGroupOwingOrBeingOwed(t *testing.T) {
 	decodeProblem(t, rec, http.StatusConflict, httpapi.ProblemCodeNonzeroBalance)
 	if dropped := ana.pull().DroppedLedgerIDs; len(dropped) != 0 {
 		t.Errorf("dropped ledgers = %v, want none", dropped)
+	}
+}
+
+// groupLink is the token of the Group's current Invite link.
+func (p *person) groupLink(groupID string) string {
+	p.w.t.Helper()
+	return decode[httpapi.InviteLink](p.w.t, p.send(http.MethodGet, "/api/v1/groups/"+groupID+"/invite-link", ""), http.StatusOK).Token
+}
+
+func TestTheGroupInviteLinkCanBeShownAgainUntilRegenerated(t *testing.T) {
+	w := newWorld(t)
+	ana := w.signIn("Ana")
+	groupID := ana.createGroup(`{"name":"Casa","currency":"COP"}`)
+	first := ana.groupLink(groupID)
+	if again := ana.groupLink(groupID); again != first {
+		t.Fatalf("the link changed from %q to %q without regenerating it", first, again)
+	}
+
+	rec := ana.send(http.MethodPost, "/api/v1/groups/"+groupID+"/invite-link", "")
+
+	regenerated := decode[httpapi.InviteLink](t, rec, http.StatusOK).Token
+	if regenerated == first || ana.groupLink(groupID) != regenerated {
+		t.Errorf("regenerated %q from %q, and the Group now shows %q", regenerated, first, ana.groupLink(groupID))
+	}
+	decodeProblem(t, w.anonymous().send(http.MethodGet, "/api/v1/invites/"+first, ""), http.StatusNotFound, httpapi.ProblemCodeInviteLinkInvalid)
+	decode[httpapi.Invite](t, w.anonymous().send(http.MethodGet, "/api/v1/invites/"+regenerated, ""), http.StatusOK)
+	if kinds := strings.Join(activityKinds(ana.pull(), groupID), ","); kinds != "group_created,invite_link_regenerated" {
+		t.Errorf("activities = %s, want group_created,invite_link_regenerated", kinds)
+	}
+}
+
+func TestOnlyMembersSeeTheGroupInviteLink(t *testing.T) {
+	w := newWorld(t)
+	ana := w.signIn("Ana")
+	beto := w.signIn("Beto")
+	groupID := ana.createGroup(`{"name":"Casa","currency":"COP"}`)
+
+	decodeProblem(t, beto.send(http.MethodGet, "/api/v1/groups/"+groupID+"/invite-link", ""), http.StatusNotFound, httpapi.ProblemCodeNotFound)
+	decodeProblem(t, beto.send(http.MethodPost, "/api/v1/groups/"+groupID+"/invite-link", ""), http.StatusNotFound, httpapi.ProblemCodeNotFound)
+}
+
+func TestAnInviteShowsTheGroupAndItsPendingMembersWithoutASession(t *testing.T) {
+	w := newWorld(t)
+	ana := w.signIn("Ana")
+	groupID := ana.createGroup(`{"name":"Casa","currency":"COP","pendingMembers":[{"name":"Beto"},{"name":"Carla"},{"name":"Dani"}]}`)
+	ana.send(http.MethodDelete, "/api/v1/groups/"+groupID+"/members/"+ana.memberID(groupID, "Dani"), "")
+
+	rec := w.anonymous().send(http.MethodGet, "/api/v1/invites/"+ana.groupLink(groupID), "")
+
+	invite := decode[httpapi.Invite](t, rec, http.StatusOK)
+	if invite.Kind != httpapi.InviteKindGroup || invite.LedgerId.String() != groupID || invite.GroupName == nil || *invite.GroupName != "Casa" {
+		t.Errorf("invite = %+v, want the Group Casa", invite)
+	}
+	var names []string
+	for _, m := range invite.PendingMembers {
+		names = append(names, m.Name)
+	}
+	if strings.Join(names, ",") != "Beto,Carla" {
+		t.Errorf("pending members = %v, want Beto and Carla: Dani was removed and Ana is linked", names)
+	}
+	if invite.SuggestedMemberId != nil || invite.JoinedMemberId != nil {
+		t.Errorf("invite = %+v, want no suggestion and no Member without a session", invite)
+	}
+}
+
+func TestAnInviteSuggestsThePendingMemberWithTheUsersEmail(t *testing.T) {
+	w := newWorld(t)
+	ana := w.signIn("Ana")
+	beto := w.signIn("Beto")
+	groupID := ana.createGroup(`{"name":"Casa","currency":"COP","pendingMembers":[{"name":"Carla"},{"name":"Betico","email":"Beto@Example.com"}]}`)
+
+	rec := beto.send(http.MethodGet, "/api/v1/invites/"+ana.groupLink(groupID), "")
+
+	invite := decode[httpapi.Invite](t, rec, http.StatusOK)
+	if invite.SuggestedMemberId == nil || invite.SuggestedMemberId.String() != ana.memberID(groupID, "Betico") {
+		t.Errorf("suggested member = %v, want Betico, whose email is Beto's", invite.SuggestedMemberId)
+	}
+	if invite.JoinedMemberId != nil {
+		t.Errorf("joined member = %v, want none: Beto is not in the Group", invite.JoinedMemberId)
+	}
+	// A suggestion never links anyone.
+	if m := ana.member(groupID, ana.memberID(groupID, "Betico")); m.UserID != nil {
+		t.Errorf("Betico = %+v, want still pending", m)
+	}
+}
+
+func TestAnInviteSaysWhichMemberTheUserAlreadyHolds(t *testing.T) {
+	w := newWorld(t)
+	ana := w.signIn("Ana")
+	groupID := ana.createGroup(`{"name":"Casa","currency":"COP"}`)
+
+	rec := ana.send(http.MethodGet, "/api/v1/invites/"+ana.groupLink(groupID), "")
+
+	invite := decode[httpapi.Invite](t, rec, http.StatusOK)
+	if invite.JoinedMemberId == nil || invite.JoinedMemberId.String() != ana.memberID(groupID, "Ana") {
+		t.Errorf("joined member = %v, want Ana's", invite.JoinedMemberId)
+	}
+}
+
+func TestInvalidInviteLinks(t *testing.T) {
+	w := newWorld(t)
+	ana := w.signIn("Ana")
+	deletedID := ana.createGroup(`{"name":"Casa","currency":"COP"}`)
+	deletedLink := ana.groupLink(deletedID)
+	ana.send(http.MethodDelete, "/api/v1/groups/"+deletedID, "")
+
+	for name, token := range map[string]string{
+		"made up":            "k3J9xQ2mV7pL8wR4tY6u",
+		"of a deleted Group": deletedLink,
+	} {
+		t.Run(name, func(t *testing.T) {
+			rec := ana.send(http.MethodGet, "/api/v1/invites/"+token, "")
+
+			decodeProblem(t, rec, http.StatusNotFound, httpapi.ProblemCodeInviteLinkInvalid)
+		})
 	}
 }
