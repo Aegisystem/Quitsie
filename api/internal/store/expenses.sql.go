@@ -10,6 +10,40 @@ import (
 	"time"
 )
 
+const deleteExpense = `-- name: DeleteExpense :one
+UPDATE expenses
+SET deleted_at = ?, version = ?
+WHERE id = ? AND deleted_at IS NULL
+RETURNING id, ledger_id, description, date, currency, total, category, split_method, created_by, version, created_at, deleted_at
+`
+
+type DeleteExpenseParams struct {
+	DeletedAt *time.Time
+	Version   int64
+	ID        string
+}
+
+// A deleted Expense no longer counts in Balances; its shares stay so it can be restored.
+func (q *Queries) DeleteExpense(ctx context.Context, arg DeleteExpenseParams) (Expense, error) {
+	row := q.db.QueryRowContext(ctx, deleteExpense, arg.DeletedAt, arg.Version, arg.ID)
+	var i Expense
+	err := row.Scan(
+		&i.ID,
+		&i.LedgerID,
+		&i.Description,
+		&i.Date,
+		&i.Currency,
+		&i.Total,
+		&i.Category,
+		&i.SplitMethod,
+		&i.CreatedBy,
+		&i.Version,
+		&i.CreatedAt,
+		&i.DeletedAt,
+	)
+	return i, err
+}
+
 const deleteOwedSharesOfExpense = `-- name: DeleteOwedSharesOfExpense :exec
 DELETE FROM owed_shares
 WHERE expense_id = ?
@@ -196,6 +230,38 @@ func (q *Queries) ListPaidSharesOfExpense(ctx context.Context, expenseID string)
 		return nil, err
 	}
 	return items, nil
+}
+
+const restoreExpense = `-- name: RestoreExpense :one
+UPDATE expenses
+SET deleted_at = NULL, version = ?
+WHERE id = ? AND deleted_at IS NOT NULL
+RETURNING id, ledger_id, description, date, currency, total, category, split_method, created_by, version, created_at, deleted_at
+`
+
+type RestoreExpenseParams struct {
+	Version int64
+	ID      string
+}
+
+func (q *Queries) RestoreExpense(ctx context.Context, arg RestoreExpenseParams) (Expense, error) {
+	row := q.db.QueryRowContext(ctx, restoreExpense, arg.Version, arg.ID)
+	var i Expense
+	err := row.Scan(
+		&i.ID,
+		&i.LedgerID,
+		&i.Description,
+		&i.Date,
+		&i.Currency,
+		&i.Total,
+		&i.Category,
+		&i.SplitMethod,
+		&i.CreatedBy,
+		&i.Version,
+		&i.CreatedAt,
+		&i.DeletedAt,
+	)
+	return i, err
 }
 
 const updateExpenseAtVersion = `-- name: UpdateExpenseAtVersion :one

@@ -47,3 +47,16 @@ WHERE expense_id = ?;
 -- name: DeleteOwedSharesOfExpense :exec
 DELETE FROM owed_shares
 WHERE expense_id = ?;
+
+-- name: DeleteExpense :one
+-- A deleted Expense no longer counts in Balances; its shares stay so it can be restored.
+UPDATE expenses
+SET deleted_at = ?, version = ?
+WHERE id = ? AND deleted_at IS NULL
+RETURNING *;
+
+-- name: RestoreExpense :one
+UPDATE expenses
+SET deleted_at = NULL, version = ?
+WHERE id = ? AND deleted_at IS NOT NULL
+RETURNING *;

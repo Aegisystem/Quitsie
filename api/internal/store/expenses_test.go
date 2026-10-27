@@ -177,3 +177,54 @@ func TestUpdateExpenseThatDoesNotExistFindsNothing(t *testing.T) {
 		t.Errorf("UpdateExpense of an unknown Expense: err = %v, want sql.ErrNoRows", err)
 	}
 }
+
+func TestDeletedExpenseCanBeRestoredWithItsShares(t *testing.T) {
+	ctx := context.Background()
+	db := openMigrated(t)
+	q := store.New(db)
+	seedGroup(t, db)
+	createDinner(t, db, "expense-1")
+
+	deletedAt := write(t, db, func(q *store.Queries, version int64) error {
+		_, err := q.DeleteExpense(ctx, store.DeleteExpenseParams{ID: "expense-1", DeletedAt: &now, Version: version})
+		return err
+	})
+	deleted, err := q.GetExpenseWithShares(ctx, "expense-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if deleted.DeletedAt == nil || deleted.Version != deletedAt {
+		t.Errorf("deleted Expense = %+v, want a deletion date and version %d", deleted.Expense, deletedAt)
+	}
+
+	restoredAt := write(t, db, func(q *store.Queries, version int64) error {
+		_, err := q.RestoreExpense(ctx, store.RestoreExpenseParams{ID: "expense-1", Version: version})
+		return err
+	})
+	restored, err := q.GetExpenseWithShares(ctx, "expense-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if restored.DeletedAt != nil || restored.Version != restoredAt {
+		t.Errorf("restored Expense = %+v, want no deletion date and version %d", restored.Expense, restoredAt)
+	}
+	if len(restored.PaidShares) != 1 || len(restored.OwedShares) != 2 {
+		t.Errorf("restored Expense lost its shares: %+v", restored)
+	}
+}
+
+func TestRestoreExpenseThatIsNotDeletedChangesNothing(t *testing.T) {
+	ctx := context.Background()
+	db := openMigrated(t)
+	seedGroup(t, db)
+	createDinner(t, db, "expense-1")
+
+	_, err := store.Write(ctx, db, func(q *store.Queries, version int64) error {
+		_, err := q.RestoreExpense(ctx, store.RestoreExpenseParams{ID: "expense-1", Version: version})
+		return err
+	})
+
+	if !errors.Is(err, sql.ErrNoRows) {
+		t.Errorf("RestoreExpense of a live Expense: err = %v, want sql.ErrNoRows", err)
+	}
+}
