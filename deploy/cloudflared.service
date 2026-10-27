@@ -1,6 +1,10 @@
-# Draft. Install as /etc/systemd/system/cloudflared.service on the VM.
-# The tunnel is managed from the Cloudflare dashboard, where its public
-# hostname points to http://127.0.0.1:8080. The VM opens no inbound ports.
+# Install as /etc/systemd/system/cloudflared.service on the VM (provision.sh does it).
+#
+# The tunnel is managed from the Cloudflare dashboard (a remotely-managed
+# tunnel). Its published routes point to the local services:
+#   <domain>      -> http://localhost:8080   (the app)
+#   ssh.<domain>  -> ssh://localhost:22      (deploys; protected by Cloudflare Access)
+# The VM opens no inbound ports.
 [Unit]
 Description=Cloudflare Tunnel: the only way in to Quitsie
 After=network-online.target
@@ -11,6 +15,7 @@ Type=notify
 DynamicUser=true
 # Provides TUNNEL_TOKEN, which `tunnel run` reads from the environment.
 EnvironmentFile=/etc/quitsie/cloudflared.env
+# Updates come with `apt upgrade` (the Cloudflare repository), not from the process.
 ExecStart=/usr/bin/cloudflared --no-autoupdate tunnel run
 Restart=on-failure
 RestartSec=5
@@ -20,6 +25,16 @@ NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
 PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+CapabilityBoundingSet=
+SystemCallArchitectures=native
 
 [Install]
 WantedBy=multi-user.target
