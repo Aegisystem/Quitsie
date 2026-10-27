@@ -21,6 +21,7 @@ type RelabelExpensesParams struct {
 	LedgerID string
 }
 
+// Use RelabelCurrency, which runs SetGroupCurrency, RelabelExpenses and RelabelSettlements together.
 // Deleted Expenses too, so restoring one never brings back the old currency.
 func (q *Queries) RelabelExpenses(ctx context.Context, arg RelabelExpensesParams) error {
 	_, err := q.db.ExecContext(ctx, relabelExpenses, arg.Currency, arg.Version, arg.LedgerID)
@@ -39,13 +40,13 @@ type RelabelSettlementsParams struct {
 	LedgerID string
 }
 
+// Use RelabelCurrency, which runs SetGroupCurrency, RelabelExpenses and RelabelSettlements together.
 func (q *Queries) RelabelSettlements(ctx context.Context, arg RelabelSettlementsParams) error {
 	_, err := q.db.ExecContext(ctx, relabelSettlements, arg.Currency, arg.Version, arg.LedgerID)
 	return err
 }
 
 const setGroupCurrency = `-- name: SetGroupCurrency :one
-
 UPDATE ledgers
 SET currency = CAST(?1 AS TEXT), version = ?2
 WHERE id = ?3 AND kind = 'group' AND deleted_at IS NULL
@@ -58,7 +59,7 @@ type SetGroupCurrencyParams struct {
 	ID       string
 }
 
-// Use RelabelCurrency, which runs these three together.
+// Use RelabelCurrency, which runs SetGroupCurrency, RelabelExpenses and RelabelSettlements together.
 func (q *Queries) SetGroupCurrency(ctx context.Context, arg SetGroupCurrencyParams) (Ledger, error) {
 	row := q.db.QueryRowContext(ctx, setGroupCurrency, arg.Currency, arg.Version, arg.ID)
 	var i Ledger

@@ -9,6 +9,19 @@ import (
 	"context"
 )
 
+const currentVersion = `-- name: CurrentVersion :one
+SELECT value FROM version_counter
+WHERE id = 1
+`
+
+// The last version handed out; read in the same transaction as a pull, it is the pull's new cursor.
+func (q *Queries) CurrentVersion(ctx context.Context) (int64, error) {
+	row := q.db.QueryRowContext(ctx, currentVersion)
+	var value int64
+	err := row.Scan(&value)
+	return value, err
+}
+
 const nextVersion = `-- name: NextVersion :one
 UPDATE version_counter
 SET value = value + 1

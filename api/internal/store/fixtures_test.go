@@ -3,6 +3,7 @@ package store_test
 import (
 	"context"
 	"database/sql"
+	"slices"
 	"testing"
 	"time"
 
@@ -112,5 +113,16 @@ func cashBack(id string) store.Settlement {
 		Date:         time.Date(2026, 10, 26, 0, 0, 0, 0, time.UTC),
 		CreatedBy:    "beto",
 		CreatedAt:    now,
+	}
+}
+
+// assertIDs checks that got lists exactly the ids in want, in that order.
+func assertIDs(t *testing.T, what string, got []string, want ...string) {
+	t.Helper()
+	if want == nil {
+		want = []string{}
+	}
+	if !slices.Equal(got, want) {
+		t.Errorf("%s = %v, want %v", what, got, want)
 	}
 }
