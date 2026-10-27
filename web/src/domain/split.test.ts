@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { splitExpense } from './split'
+import { type OwedShare, type ParticipantValue, type Split, splitExpense } from './split'
 
 describe('equal', () => {
   it('splits the total among the chosen Participants only', () => {
@@ -317,5 +317,127 @@ describe('adjustment', () => {
       ok: false,
       error: { code: 'invalid-value', participantId: 'beto' },
     })
+  })
+})
+
+describe('every SplitMethod, on random Expenses', () => {
+  // Mulberry32: a small seeded generator, so a failure always reproduces.
+  function generator(seed: number): (max: number) => number {
+    let state = seed
+    return (max) => {
+      state = (state + 0x6d2b79f5) | 0
+      let t = Math.imul(state ^ (state >>> 15), 1 | state)
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
+      return Math.floor((((t ^ (t >>> 14)) >>> 0) / 4294967296) * max)
+    }
+  }
+  const random = generator(20261026)
+
+  function randomTotal(): number {
+    // Mostly everyday amounts, sometimes near the largest safe integer.
+    return random(10) === 0 ? Number.MAX_SAFE_INTEGER - random(1000) : 1 + random(1_000_000)
+  }
+
+  function randomValues(count: number, valueOf: (index: number) => number): ParticipantValue[] {
+    return Array.from({ length: count }, (_, index) => ({
+      participantId: `member-${random(1_000_000)}-${index}`,
+      value: valueOf(index),
+    }))
+  }
+
+  function shuffled<T>(items: readonly T[]): T[] {
+    const copy = [...items]
+    for (let i = copy.length - 1; i > 0; i--) {
+      const j = random(i + 1)
+      ;[copy[i], copy[j]] = [copy[j] as T, copy[i] as T]
+    }
+    return copy
+  }
+
+  function reordered(split: Split): Split {
+    switch (split.method) {
+      case 'equal':
+        return { ...split, participantIds: shuffled(split.participantIds) }
+      case 'exact':
+        return { ...split, amounts: shuffled(split.amounts) }
+      case 'percentage':
+        return { ...split, percentages: shuffled(split.percentages) }
+      case 'weights':
+        return { ...split, weights: shuffled(split.weights) }
+      case 'adjustment':
+        return { ...split, adjustments: shuffled(split.adjustments) }
+    }
+  }
+
+  function owedShares(total: number, split: Split): OwedShare[] {
+    const result = splitExpense(total, split)
+    if (!result.ok) throw new Error(`unexpected ${result.error.code}`)
+    return result.value
+  }
+
+  function byParticipant(shares: readonly OwedShare[]): Map<string, number> {
+    return new Map(shares.map(({ participantId, amount }) => [participantId, amount]))
+  }
+
+  function expectSumAndOrderIndependence(total: number, split: Split): OwedShare[] {
+    const shares = owedShares(total, split)
+    expect(shares.reduce((acc, { amount }) => acc + BigInt(amount), 0n)).toBe(BigInt(total))
+    expect(shares.every(({ amount }) => Number.isSafeInteger(amount) && amount > 0)).toBe(true)
+    expect(byParticipant(owedShares(total, reordered(split)))).toEqual(byParticipant(shares))
+    return shares
+  }
+
+  // Each OwedShare is its exact part of the total, rounded down or up.
+  function expectWithinOneUnit(total: number, values: readonly ParticipantValue[], shares: readonly OwedShare[]) {
+    const sum = values.reduce((acc, { value }) => acc + BigInt(value), 0n)
+    const amounts = byParticipant(shares)
+    for (const { participantId, value } of values) {
+      const scaled = BigInt(amounts.get(participantId) ?? 0) * sum
+      const exact = BigInt(total) * BigInt(value)
+      expect(scaled > exact - sum && scaled < exact + sum).toBe(true)
+    }
+  }
+
+  const cases = Array.from({ length: 300 }, (_, i) => i)
+
+  it.each(cases)('equal #%i', () => {
+    const participantIds = randomValues(1 + random(8), () => 1).map(({ participantId }) => participantId)
+    const total = randomTotal()
+    const shares = expectSumAndOrderIndependence(total, { method: 'equal', participantIds })
+    const amounts = participantIds.map((id) => byParticipant(shares).get(id) ?? 0)
+    expect(Math.max(...amounts) - Math.min(...amounts)).toBeLessThanOrEqual(1)
+  })
+
+  it.each(cases)('percentage #%i', () => {
+    const count = 1 + random(8)
+    let left = 10000
+    const percentages = randomValues(count, (index) => {
+      const value = index === count - 1 ? left : random(left + 1)
+      left -= value
+      return value
+    })
+    const total = randomTotal()
+    const shares = expectSumAndOrderIndependence(total, { method: 'percentage', percentages })
+    expectWithinOneUnit(total, percentages, shares)
+  })
+
+  it.each(cases)('weights #%i', () => {
+    const weights = randomValues(1 + random(8), () => 1 + random(100))
+    const total = randomTotal()
+    const shares = expectSumAndOrderIndependence(total, { method: 'weights', weights })
+    expectWithinOneUnit(total, weights, shares)
+  })
+
+  it.each(cases)('adjustment #%i', () => {
+    const total = 1 + random(1_000_000)
+    const count = 1 + random(8)
+    // Small enough that nobody can end up owing less than zero.
+    const adjustments = randomValues(count, () => random(Math.floor(total / count) + 1) - Math.floor(total / (2 * count)))
+    const shares = expectSumAndOrderIndependence(total, { method: 'adjustment', adjustments })
+    // Adding the same amount to everyone's adjustment changes nobody's OwedShare,
+    // even when the adjustments then add up to more than the total.
+    const extra = 1 + random(2 * total)
+    const shifted = adjustments.map(({ participantId, value }) => ({ participantId, value: value + extra }))
+    expect(byParticipant(owedShares(total, { method: 'adjustment', adjustments: shifted }))).toEqual(byParticipant(shares))
   })
 })
