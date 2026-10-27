@@ -71,3 +71,59 @@ describe('any SplitMethod', () => {
     expect(() => splitExpense(10.5, { method: 'equal', participantIds: ['ana'] })).toThrow()
   })
 })
+
+describe('exact', () => {
+  it('keeps the amounts as typed when they add up to the total', () => {
+    const split = {
+      method: 'exact',
+      amounts: [
+        { participantId: 'ana', value: 2550 },
+        { participantId: 'beto', value: 7450 },
+      ],
+    } as const
+    expect(splitExpense(10000, split)).toEqual({
+      ok: true,
+      value: [
+        { participantId: 'ana', amount: 2550, splitValue: null },
+        { participantId: 'beto', amount: 7450, splitValue: null },
+      ],
+    })
+  })
+
+  it('says by how much the amounts miss the total', () => {
+    const amounts = [
+      { participantId: 'ana', value: 2550 },
+      { participantId: 'beto', value: 7000 },
+    ]
+    expect(splitExpense(10000, { method: 'exact', amounts })).toEqual({
+      ok: false,
+      error: { code: 'sum-mismatch', difference: -450 },
+    })
+    expect(splitExpense(9000, { method: 'exact', amounts })).toEqual({
+      ok: false,
+      error: { code: 'sum-mismatch', difference: 550 },
+    })
+  })
+
+  it('rejects a negative amount', () => {
+    const amounts = [
+      { participantId: 'ana', value: 11000 },
+      { participantId: 'beto', value: -1000 },
+    ]
+    expect(splitExpense(10000, { method: 'exact', amounts })).toEqual({
+      ok: false,
+      error: { code: 'invalid-value', participantId: 'beto' },
+    })
+  })
+
+  it('leaves out a Participant whose amount is zero', () => {
+    const amounts = [
+      { participantId: 'ana', value: 10000 },
+      { participantId: 'beto', value: 0 },
+    ]
+    expect(splitExpense(10000, { method: 'exact', amounts })).toEqual({
+      ok: true,
+      value: [{ participantId: 'ana', amount: 10000, splitValue: null }],
+    })
+  })
+})
