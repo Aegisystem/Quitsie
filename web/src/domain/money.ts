@@ -53,7 +53,8 @@ function parseDecimal(input: string, locale: string, digits: number): Result<num
   if (/^\s$/.test(group)) text = text.replace(/\s/g, group)
 
   // Thousands separators must sit every three digits. Otherwise '10.50' in es-CO,
-  // where '.' groups thousands, would silently become 1050 pesos.
+  // where '.' groups thousands, would silently become 1050 pesos. The sign may be
+  // a hyphen or the minus sign (U+2212) that Intl writes in some locales.
   const g = escapeRegExp(group)
   const d = escapeRegExp(decimal)
   const match = new RegExp(`^([-−]?)(\\d{1,3}(?:${g}\\d{3})+|\\d*)(?:${d}(\\d*))?$`).exec(text)
