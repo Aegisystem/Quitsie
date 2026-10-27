@@ -18,12 +18,13 @@ export function App() {
   const route = useRoute()
   const online = useOnline()
 
-  // The queue empties when the connection comes back (docs/arquitectura.md).
-  const wasOnline = useRef(online)
+  // The queue empties when the app opens and when the connection comes back
+  // (docs/arquitectura.md).
+  const wasOnline = useRef<boolean | null>(null)
   useEffect(() => {
-    if (online && !wasOnline.current) demo.sync()
+    if (signedIn && online && wasOnline.current !== true) demo.sync()
     wasOnline.current = online
-  }, [online])
+  }, [online, signedIn])
 
   useEffect(() => {
     window.scrollTo(0, 0)

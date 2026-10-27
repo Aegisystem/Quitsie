@@ -309,7 +309,17 @@ function BalancesTab({ group, me }: { group: Group; me: string }) {
                 </span>
                 <span className="chart-amount">
                   <span className={`chart-amount-label tone-${tone}`}>
-                    {tone === 'favor' ? t('balance.memberOwed') : tone === 'against' ? t('balance.memberOwes') : t('balance.memberSettled')}
+                    {m.id === me
+                      ? tone === 'favor'
+                        ? t('balance.youOwedShort')
+                        : tone === 'against'
+                          ? t('balance.youOweShort')
+                          : t('balance.youSettledShort')
+                      : tone === 'favor'
+                        ? t('balance.memberOwed')
+                        : tone === 'against'
+                          ? t('balance.memberOwes')
+                          : t('balance.memberSettled')}
                   </span>
                   {amount !== 0 && <Amount minor={Math.abs(amount)} currency={group.currency} tone={tone} />}
                 </span>

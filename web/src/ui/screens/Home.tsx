@@ -17,6 +17,8 @@ export function Home() {
   return (
     <Screen
       tab="home"
+      wide
+      className="screen-home"
       dock={
         <a className="button button-primary button-block" href={href({ name: 'newExpense' })}>
           <Icon name="plus" />
@@ -28,6 +30,15 @@ export function Home() {
       <section aria-label={t('home.summary')} className="full-bleed">
         <BalanceBands balances={myTotals(s)} settledTitle={t('balance.settledAll')} settledBody={t('balance.settledAllWink')} />
       </section>
+
+      <div className="home-actions">
+        <a className="button button-primary" href={href({ name: 'newExpense' })}>
+          <Icon name="plus" />
+          {t('home.addExpense')}
+        </a>
+      </div>
+
+      <div className="home-lists">
 
       <section className="section" aria-labelledby="groups-title">
         <div className="section-head">
@@ -54,6 +65,7 @@ export function Home() {
         </div>
         {friends.length === 0 ? <p className="empty">{t('home.emptyFriends')}</p> : <LedgerList ledgers={friends} />}
       </section>
+      </div>
 
       <InstallPrompt />
     </Screen>

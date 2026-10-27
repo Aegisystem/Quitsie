@@ -21,7 +21,7 @@ Restricciones: datos de prueba dentro de web/src/ui; sin tocar web/src/domain, a
 
 THESIS: Las Deudas se cuentan, no se leen. Cada Saldo es una fila de fichas iguales con su leyenda, a la manera de Isotype, y quedar a mano es ver la fila vaciarse. Rechaza el estándar de la categoría: lista blanca con verde/naranja, avatares de iniciales y botón flotante.
 
-OWN-WORLD: color plano de imprenta sin sombras ni degradados: tinta #1F2328, azul a favor, rojo en contra, verde a mano y ocre para lo pendiente, sobre un fondo neutro. Jost con cifras tabulares, títulos en mayúsculas espaciadas solo para secciones. Personas como figuras de silueta: llenas si están vinculadas, huecas si están pendientes, grises si salieron. Categorías como pictogramas de trazo uniforme.
+OWN-WORLD: color plano de imprenta sin sombras ni degradados: tinta #1F2328, azul a favor, rojo en contra, verde a mano y ocre para lo pendiente, sobre un fondo neutro. Jost con cifras tabulares, títulos en mayúsculas espaciadas solo para secciones. Personas como figuras de silueta: llenas si están vinculadas, huecas si están pendientes, grises si salieron. Categorías como pictogramas de silueta llena, la misma familia que las figuras; el trazo de 2px queda solo para los iconos de control. Un problema (registro rechazado, campo inválido, reparto que no cierra) se marca en tinta con la celda tachada: el rojo significa solo «debes». (Enmienda tras la revisión final, 2026-10-27: el contrato decía «trazo uniforme», pero la silueta llena es más fiel a Isotype.)
 
 STORY: el Usuario entiende en un segundo cuánto le deben o debe en cada moneda, ve por qué (las cifras llevan su prueba), apunta el Gasto, ve las Cuotas cerrar justo antes de guardar y confía en que nada se pierde sin conexión.
 

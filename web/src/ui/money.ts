@@ -5,16 +5,24 @@ import i18n from 'i18next'
 
 const formatters = new Map<string, Intl.NumberFormat>()
 
+// Browsers accept useGrouping: 'always' (ES2023); the ES2022 lib types used here
+// only know booleans.
+type FormatOptions = Omit<Intl.NumberFormatOptions, 'useGrouping'> & { useGrouping?: boolean | 'always' }
+
 function formatter(currency: string, signed: boolean, whole = false): Intl.NumberFormat {
   const key = `${i18n.language}|${currency}|${signed}|${whole}`
   let f = formatters.get(key)
   if (!f) {
-    f = new Intl.NumberFormat(i18n.language, {
+    const options: FormatOptions = {
       style: 'currency',
       currency,
       signDisplay: signed ? 'exceptZero' : 'auto',
       minimumFractionDigits: whole ? 0 : undefined,
-    })
+      // Spanish CLDR only groups from five digits ("7589,67"); amounts read
+      // better grouped every time ("7.589,67").
+      useGrouping: 'always',
+    }
+    f = new Intl.NumberFormat(i18n.language, options as Intl.NumberFormatOptions)
     formatters.set(key, f)
   }
   return f

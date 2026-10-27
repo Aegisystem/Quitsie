@@ -170,18 +170,18 @@ function ExpenseForm({ ledger, draft, rejectedId }: { ledger: Ledger; draft?: Ex
   const remainderShares = preview.shares.filter((x) => x.remainder > 0)
   const remainderTotal = remainderShares.reduce((sum, x) => sum + x.remainder, 0)
 
-  let closing: { tone: 'even' | 'against' | 'quiet'; text: string }
+  let closing: { tone: 'even' | 'problem' | 'quiet'; text: string }
   if (total <= 0) closing = { tone: 'quiet', text: t('expenseForm.amountRequired') }
-  else if (preview.issue === 'noParticipants') closing = { tone: 'against', text: t('expenseForm.noParticipants') }
-  else if (preview.issue === 'noWeights') closing = { tone: 'against', text: t('expenseForm.noWeights') }
-  else if (preview.issue === 'negativeShare') closing = { tone: 'against', text: t('expenseForm.negativeShare') }
+  else if (preview.issue === 'noParticipants') closing = { tone: 'problem', text: t('expenseForm.noParticipants') }
+  else if (preview.issue === 'noWeights') closing = { tone: 'problem', text: t('expenseForm.noWeights') }
+  else if (preview.issue === 'negativeShare') closing = { tone: 'problem', text: t('expenseForm.negativeShare') }
   else if (preview.issue === 'percentageNot100')
     closing =
       percentSum < 10000
-        ? { tone: 'against', text: t('expenseForm.percentMissing', { value: formatPercent(10000 - percentSum) }) }
-        : { tone: 'against', text: t('expenseForm.percentOver', { value: formatPercent(percentSum - 10000) }) }
-  else if (preview.unassigned > 0) closing = { tone: 'against', text: t('expenseForm.missing', { amount: formatMoney(preview.unassigned, currency) }) }
-  else if (preview.unassigned < 0) closing = { tone: 'against', text: t('expenseForm.over', { amount: formatMoney(-preview.unassigned, currency) }) }
+        ? { tone: 'problem', text: t('expenseForm.percentMissing', { value: formatPercent(10000 - percentSum) }) }
+        : { tone: 'problem', text: t('expenseForm.percentOver', { value: formatPercent(percentSum - 10000) }) }
+  else if (preview.unassigned > 0) closing = { tone: 'problem', text: t('expenseForm.missing', { amount: formatMoney(preview.unassigned, currency) }) }
+  else if (preview.unassigned < 0) closing = { tone: 'problem', text: t('expenseForm.over', { amount: formatMoney(-preview.unassigned, currency) }) }
   else closing = { tone: 'even', text: t('expenseForm.closes') }
 
   const backRoute = { name: 'ledger' as const, ledgerId: ledger.id }
@@ -214,7 +214,7 @@ function ExpenseForm({ ledger, draft, rejectedId }: { ledger: Ledger; draft?: Ex
         </p>
 
         {rejected && rejected.reason.code === 'currencyChanged' && (
-          <p className="notice notice-against">
+          <p className="notice notice-problem">
             {t('expenseForm.rejectedNote', { reason: t('records.reasons.currencyChanged', { from: rejected.reason.from, to: rejected.reason.to }) })}
           </p>
         )}
@@ -323,7 +323,7 @@ function ExpenseForm({ ledger, draft, rejectedId }: { ledger: Ledger; draft?: Ex
                 ))}
               </ul>
               <div className="split-status">
-                <p className={`closing tone-${paidLeft === 0 ? 'even' : 'against'}`}>
+                <p className={`closing tone-${paidLeft === 0 ? 'even' : 'problem'}`}>
                   {paidLeft === 0 && <Icon name="check" size={18} />}
                   {paidLeft === 0
                     ? t('expenseForm.payersOk')
@@ -341,7 +341,7 @@ function ExpenseForm({ ledger, draft, rejectedId }: { ledger: Ledger; draft?: Ex
 
         <fieldset className="field">
           <legend>{t('expenseForm.split')}</legend>
-          <div className="chips chips-scroll" role="radiogroup" aria-label={t('expenseForm.splitMethod')}>
+          <div className="chips" role="radiogroup" aria-label={t('expenseForm.splitMethod')}>
             {splitMethods.map((m) => (
               <label key={m} className="chip">
                 <input type="radio" name={`${ids}-method`} checked={method === m} onChange={() => setMethod(m)} />

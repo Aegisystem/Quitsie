@@ -75,10 +75,14 @@ function NavLinks({ current, className }: { current?: string; className: string 
   )
 }
 
-function ConnectionStatus() {
+// A fixed state cell: filled while online, hollow while sending, struck when
+// offline. Next to a screen title it shrinks to the cell alone.
+function ConnectionStatus({ compact }: { compact: boolean }) {
   const { t } = useTranslation()
   const s = useDemo()
   const online = useOnline()
+  const state = !online ? 'offline' : s.syncing ? 'syncing' : 'online'
+  const stateLabel = state === 'offline' ? t('connection.offline') : state === 'syncing' ? t('connection.syncing') : t('connection.online')
   const unsynced = unsyncedCount(s)
   const rejected = s.rejected.length
   const count = unsynced + rejected
@@ -91,13 +95,10 @@ function ConnectionStatus() {
 
   return (
     <div className="status">
-      {!online && (
-        <span className="status-chip">
-          <Icon name="offline" size={18} />
-          <span>{t('connection.offline')}</span>
-        </span>
-      )}
-      {online && s.syncing && <span className="status-chip status-chip-quiet">{t('connection.syncing')}</span>}
+      <span className={`status-chip status-${state}${compact ? ' status-compact' : ''}`} title={stateLabel}>
+        <span className={`state-cell state-${state}`} aria-hidden="true" />
+        <span className={compact ? 'sr-only' : undefined}>{stateLabel}</span>
+      </span>
       <a className="records-button" href={href({ name: 'records' })} aria-label={label ? `${t('nav.records')}: ${label}` : t('nav.records')}>
         <Icon name="tray" />
         {count > 0 && <span className={`records-badge${rejected ? ' records-badge-rejected' : ''}`}>{count}</span>}
@@ -130,6 +131,7 @@ export function Screen({
   dock,
   children,
   wide,
+  className,
 }: {
   title?: string
   back?: Route
@@ -138,10 +140,11 @@ export function Screen({
   dock?: ReactNode
   children: ReactNode
   wide?: boolean
+  className?: string
 }) {
   const { t } = useTranslation()
   return (
-    <div className={`screen${tab ? ' screen-tabbed' : ''}${dock ? ' screen-docked' : ''}`}>
+    <div className={`screen${tab ? ' screen-tabbed' : ''}${dock ? ' screen-docked' : ''}${className ? ` ${className}` : ''}`}>
       <header className="topbar">
         <div className="topbar-inner">
           {back ? (
@@ -158,7 +161,7 @@ export function Screen({
           {!back && <NavLinks current={tab} className="topnav" />}
           <div className="topbar-actions">
             {actions}
-            <ConnectionStatus />
+            <ConnectionStatus compact={!!title} />
           </div>
         </div>
       </header>

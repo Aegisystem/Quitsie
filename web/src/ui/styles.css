@@ -190,7 +190,7 @@ h3 {
 }
 
 .topbar-inner {
-  max-width: 64rem;
+  max-width: 72rem;
   height: var(--bar-h);
   margin: 0 auto;
   padding: 0 calc(var(--gutter) - 6px) 0 var(--gutter);
@@ -264,21 +264,54 @@ h3 {
 .status-chip {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 7px;
   height: 28px;
-  padding: 0 10px 0 8px;
+  padding: 0 11px 0 9px;
   border-radius: 999px;
-  background: var(--pending);
-  color: #1f2328;
+  color: var(--on-bar-2);
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.22);
   font-size: 0.8125rem;
-  font-weight: 600;
+  font-weight: 500;
   white-space: nowrap;
 }
 
-.status-chip-quiet {
-  background: transparent;
-  color: var(--on-bar-2);
-  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.25);
+.status-offline {
+  background: var(--pending);
+  color: #1f2328;
+  box-shadow: none;
+  font-weight: 600;
+}
+
+.status-compact {
+  width: 28px;
+  padding: 0;
+  justify-content: center;
+  box-shadow: none;
+}
+
+.state-cell {
+  display: block;
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.state-online {
+  background: var(--on-bar);
+}
+
+.state-syncing {
+  box-shadow: inset 0 0 0 2px var(--pending);
+}
+
+.state-offline {
+  border-radius: 0;
+  width: 12px;
+  height: 12px;
+  background: currentColor;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Ccircle cx='6' cy='6' r='4.6' fill='none' stroke='%23000' stroke-width='1.8'/%3E%3Cpath d='M1.6 10.4l8.8-8.8' stroke='%23000' stroke-width='1.8'/%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Ccircle cx='6' cy='6' r='4.6' fill='none' stroke='%23000' stroke-width='1.8'/%3E%3Cpath d='M1.6 10.4l8.8-8.8' stroke='%23000' stroke-width='1.8'/%3E%3C/svg%3E") center / contain no-repeat;
 }
 
 .records-badge {
@@ -299,8 +332,8 @@ h3 {
 }
 
 .records-badge-rejected {
-  background: var(--against);
-  color: #fff;
+  background: #fff;
+  color: #1f2328;
 }
 
 .topnav {
@@ -443,7 +476,6 @@ h3 {
   background: var(--ink);
   color: var(--paper);
   font-weight: 500;
-  box-shadow: 0 8px 24px rgb(0 0 0 / 0.2);
   animation: rise 0.45s var(--ease-out) both;
 }
 
@@ -831,20 +863,41 @@ h3 {
 }
 
 .sync-rejected {
-  position: relative;
-  box-shadow: inset 0 0 0 2px var(--against-text);
+  width: 12px;
+  height: 12px;
+  border-radius: 0;
+  background: var(--ink);
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Ccircle cx='6' cy='6' r='4.6' fill='none' stroke='%23000' stroke-width='1.8'/%3E%3Cpath d='M1.6 10.4l8.8-8.8' stroke='%23000' stroke-width='1.8'/%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Ccircle cx='6' cy='6' r='4.6' fill='none' stroke='%23000' stroke-width='1.8'/%3E%3Cpath d='M1.6 10.4l8.8-8.8' stroke='%23000' stroke-width='1.8'/%3E%3C/svg%3E") center / contain no-repeat;
 }
 
-.sync-rejected::after {
+/* A problem (rejected record, invalid field, a split that does not close) is
+   ink with the struck cell; red stays reserved for "debes". */
+.field-error,
+.rejected-reason,
+.tone-problem,
+.notice-problem {
+  color: var(--ink);
+}
+
+.field-error::before,
+.rejected-reason::before,
+.tone-problem::before,
+.notice-problem::before {
   content: '';
-  position: absolute;
-  left: -2px;
-  right: -2px;
-  top: 50%;
-  height: 2px;
-  margin-top: -1px;
-  background: var(--against-text);
-  transform: rotate(-45deg);
+  display: inline-block;
+  flex: none;
+  width: 12px;
+  height: 12px;
+  margin-right: 7px;
+  vertical-align: -1px;
+  background: currentColor;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Ccircle cx='6' cy='6' r='4.6' fill='none' stroke='%23000' stroke-width='1.8'/%3E%3Cpath d='M1.6 10.4l8.8-8.8' stroke='%23000' stroke-width='1.8'/%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Ccircle cx='6' cy='6' r='4.6' fill='none' stroke='%23000' stroke-width='1.8'/%3E%3Cpath d='M1.6 10.4l8.8-8.8' stroke='%23000' stroke-width='1.8'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+
+.tone-problem::before {
+  margin-right: 1px;
 }
 
 .tag {
@@ -1270,8 +1323,8 @@ h3 {
 }
 
 .button-danger {
-  background: var(--against);
-  color: #fff;
+  background: var(--ink);
+  color: var(--paper);
 }
 
 .button-light {
@@ -1394,7 +1447,8 @@ h3 {
 }
 
 .input[aria-invalid='true'] {
-  border-color: var(--against-text);
+  border-color: var(--ink);
+  border-width: 2px;
 }
 
 .input:disabled {
@@ -1421,8 +1475,7 @@ select.input,
 .field-error {
   margin: 0;
   font-size: 0.875rem;
-  font-weight: 500;
-  color: var(--against-text);
+  font-weight: 600;
 }
 
 .amount-input {
@@ -1684,7 +1737,7 @@ select.input,
 }
 
 .meter i.is-over {
-  background: var(--against);
+  background: repeating-linear-gradient(135deg, var(--ink) 0 3px, transparent 3px 6px);
 }
 
 .meter:has(+ .closing.tone-even) i {
@@ -1732,8 +1785,8 @@ select.input,
   margin: 0 0 10px;
 }
 
-.notice-against {
-  background: color-mix(in srgb, var(--against) 12%, var(--paper));
+.notice-problem {
+  font-weight: 500;
 }
 
 .divider {
@@ -1945,8 +1998,7 @@ select.input,
 .rejected-reason {
   margin: 0 0 10px 44px;
   font-size: 0.9375rem;
-  font-weight: 500;
-  color: var(--against-text);
+  font-weight: 600;
 }
 
 .rejected .button-row,
@@ -2146,14 +2198,77 @@ select.input,
 }
 
 .code-input.has-error .code-cell {
-  border-color: var(--against-text);
+  border-color: var(--ink);
+  border-width: 2px;
 }
 
-/* Wider screens: the tab bar moves into the top bar. */
+.home-actions {
+  display: none;
+}
+
+/* Wider screens: the tab bar moves into the top bar, Inicio uses the width. */
 
 @media (min-width: 900px) {
   :root {
     --gutter: 24px;
+  }
+
+  .main-wide {
+    max-width: 72rem;
+  }
+
+  .main-wide .full-bleed {
+    width: auto;
+    margin: 28px 0 0;
+  }
+
+  .main-wide .bands {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+    gap: 4px;
+  }
+
+  .main-wide .band + .band {
+    border-top: 0;
+  }
+
+  .main-wide .band-inner,
+  .main-wide .bands:has(.band + .band) .band-inner {
+    max-width: none;
+    margin: 0;
+    padding: 26px 26px 30px;
+  }
+
+  .main-wide .band-amount-compact {
+    font-size: clamp(2.5rem, 3.6vw, 3.25rem);
+    margin-bottom: 14px;
+  }
+
+  .main-wide .install {
+    width: auto;
+    margin-left: 0;
+    padding: 28px;
+  }
+
+  .home-actions {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 20px;
+  }
+
+  .home-lists {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0 56px;
+    align-items: start;
+  }
+
+  .screen-home .dock {
+    display: none;
+  }
+
+  .screen-home.screen-tabbed.screen-docked .main {
+    padding-bottom: 56px;
   }
 
   .tabbar {
