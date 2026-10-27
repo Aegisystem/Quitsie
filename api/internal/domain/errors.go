@@ -17,6 +17,8 @@ var (
 	ErrDuplicateParticipant = errors.New("participant appears twice")
 	// ErrNotActiveMember: a Participant is not an active Member of the ledger.
 	ErrNotActiveMember = errors.New("not an active member of the ledger")
+	// ErrSameMember: a Settlement goes from a Member to themselves.
+	ErrSameMember = errors.New("a settlement needs two different members")
 	// ErrNotGroupCurrency: a record of a Group is not in the Group currency.
 	ErrNotGroupCurrency = errors.New("currency is not the group currency")
 	// ErrFriendshipNotTwoMembers: a Friendship's ledger does not have exactly two Members (ADR 0004).
