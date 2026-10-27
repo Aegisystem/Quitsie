@@ -35,3 +35,70 @@ func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) er
 	)
 	return err
 }
+
+const deleteSession = `-- name: DeleteSession :execrows
+DELETE FROM sessions
+WHERE id = ? AND user_id = ?
+`
+
+type DeleteSessionParams struct {
+	ID     string
+	UserID string
+}
+
+func (q *Queries) DeleteSession(ctx context.Context, arg DeleteSessionParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deleteSession, arg.ID, arg.UserID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const getSessionByTokenHash = `-- name: GetSessionByTokenHash :one
+SELECT sessions.id, sessions.user_id, sessions.token_hash, sessions.device, sessions.created_at, sessions.last_used_at, users.id, users.email, users.name, users.preferred_currency, users.google_sub, users.created_at, users.deleted_at
+FROM sessions
+JOIN users ON users.id = sessions.user_id
+WHERE sessions.token_hash = ? AND users.deleted_at IS NULL
+`
+
+type GetSessionByTokenHashRow struct {
+	Session Session
+	User    User
+}
+
+func (q *Queries) GetSessionByTokenHash(ctx context.Context, tokenHash string) (GetSessionByTokenHashRow, error) {
+	row := q.db.QueryRowContext(ctx, getSessionByTokenHash, tokenHash)
+	var i GetSessionByTokenHashRow
+	err := row.Scan(
+		&i.Session.ID,
+		&i.Session.UserID,
+		&i.Session.TokenHash,
+		&i.Session.Device,
+		&i.Session.CreatedAt,
+		&i.Session.LastUsedAt,
+		&i.User.ID,
+		&i.User.Email,
+		&i.User.Name,
+		&i.User.PreferredCurrency,
+		&i.User.GoogleSub,
+		&i.User.CreatedAt,
+		&i.User.DeletedAt,
+	)
+	return i, err
+}
+
+const touchSession = `-- name: TouchSession :exec
+UPDATE sessions
+SET last_used_at = ?
+WHERE id = ?
+`
+
+type TouchSessionParams struct {
+	LastUsedAt time.Time
+	ID         string
+}
+
+func (q *Queries) TouchSession(ctx context.Context, arg TouchSessionParams) error {
+	_, err := q.db.ExecContext(ctx, touchSession, arg.LastUsedAt, arg.ID)
+	return err
+}
