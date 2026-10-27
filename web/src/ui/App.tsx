@@ -1,58 +1,69 @@
-import { useQuery } from '@tanstack/react-query'
+import { useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
-import { api, type Health } from '../api/client'
-
-async function fetchHealth(): Promise<Health> {
-  const { data, error, response } = await api.GET('/health')
-  if (data) return data
-  // A 503 still carries a Health body that says what is down.
-  if (response.status === 503 && error) return error
-  throw new Error(`HTTP ${response.status}`)
-}
+import { Screen, useOnline } from './components/Shell'
+import { demo, useDemo } from './demo/store'
+import { href, useRoute } from './router'
+import { Account } from './screens/Account'
+import { Activity } from './screens/Activity'
+import { NewExpense } from './screens/ExpenseForm'
+import { Home } from './screens/Home'
+import { Invite, InviteLink } from './screens/Invite'
+import { Ledger } from './screens/Ledger'
+import { Records } from './screens/Records'
+import { SettlementForm } from './screens/SettlementForm'
+import { SignIn } from './screens/SignIn'
 
 export function App() {
-  const { t } = useTranslation()
-  const health = useQuery({ queryKey: ['health'], queryFn: fetchHealth, retry: false })
+  const { signedIn } = useDemo()
+  const route = useRoute()
+  const online = useOnline()
 
-  let tone: 'pending' | 'ok' | 'down' = 'pending'
-  let message = t('health.checking')
-  if (health.isError) {
-    tone = 'down'
-    message = t('health.unreachable')
-  } else if (health.data) {
-    tone = health.data.status === 'ok' ? 'ok' : 'down'
-    message = health.data.status === 'ok' ? t('health.ok') : t('health.unavailable')
+  // The queue empties when the app opens and when the connection comes back
+  // (docs/arquitectura.md).
+  const wasOnline = useRef<boolean | null>(null)
+  useEffect(() => {
+    if (signedIn && online && wasOnline.current !== true) demo.sync()
+    wasOnline.current = online
+  }, [online, signedIn])
+
+  useEffect(() => {
+    window.scrollTo(0, 0)
+  }, [route])
+
+  if (!signedIn) return <SignIn />
+
+  switch (route.name) {
+    case 'home':
+      return <Home />
+    case 'activity':
+      return <Activity />
+    case 'account':
+      return <Account />
+    case 'records':
+      return <Records />
+    case 'ledger':
+      return <Ledger ledgerId={route.ledgerId} tab={route.tab} />
+    case 'newExpense':
+      return <NewExpense ledgerId={route.ledgerId} fromRejected={route.fromRejected} />
+    case 'settle':
+      return <SettlementForm key={`${route.from}-${route.to}`} {...route} />
+    case 'inviteLink':
+      return <InviteLink ledgerId={route.ledgerId} />
+    case 'invite':
+      return <Invite token={route.token} />
+    case 'notFound':
+      return <NotFound />
   }
+}
 
+function NotFound() {
+  const { t } = useTranslation()
   return (
-    <main className="shell">
-      <header>
-        <h1>{t('app.name')}</h1>
-        <p className="tagline">{t('app.tagline')}</p>
-      </header>
-
-      <section className="card" aria-labelledby="health-title">
-        <h2 id="health-title">{t('health.title')}</h2>
-        <p className={`status status-${tone}`} role="status">
-          <span className="dot" aria-hidden="true" />
-          {message}
-        </p>
-        {health.data && (
-          <dl className="details">
-            <dt>{t('health.database')}</dt>
-            <dd>{health.data.database === 'ok' ? t('health.databaseOk') : t('health.databaseUnreachable')}</dd>
-            <dt>{t('health.version')}</dt>
-            <dd>
-              <code>{health.data.version}</code>
-            </dd>
-          </dl>
-        )}
-        {tone === 'down' && (
-          <button type="button" onClick={() => void health.refetch()} disabled={health.isFetching}>
-            {t('health.retry')}
-          </button>
-        )}
-      </section>
-    </main>
+    <Screen back={{ name: 'home' }} title={t('notFound.title')}>
+      <p className="lead">{t('notFound.body')}</p>
+      <a className="button button-primary" href={href({ name: 'home' })}>
+        {t('notFound.home')}
+      </a>
+    </Screen>
   )
 }
