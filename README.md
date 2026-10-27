@@ -33,4 +33,10 @@ Las migraciones son archivos `api/migrations/NNNNN_descripcion.sql` con seccione
 
 ## Despliegue
 
-[deploy/](deploy/) tiene los borradores de las unidades systemd (aplicación, Litestream y `cloudflared`) y de `litestream.yml`. Los secretos solo viven en la VM, en `/etc/quitsie/*.env`. Cada archivo indica dónde se instala.
+Quitsie corre en una VM gratuita de Google Cloud detrás de Cloudflare ([ADR 0007](docs/adr/0007-go-nativo-en-vm-gratuita.md)). El primer despliegue, con los pasos que solo puede hacer su dueño (dominio, cuentas, tokens), lo guía un asistente interactivo:
+
+```bash
+bash deploy/first-deploy-wizard.sh
+```
+
+Después, cada push a `main` que pase la CI se despliega solo (`.github/workflows/deploy.yml`). Los secretos solo viven en la VM, en `/etc/quitsie/*.env`, y en los secretos de GitHub Actions. La instalación, el despliegue continuo, la operación y la prueba de restauración del respaldo están en [docs/despliegue.md](docs/despliegue.md).
