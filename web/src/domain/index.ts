@@ -2,7 +2,7 @@
 // remainder and compute provisional Balances (ADR 0003). The most tested code
 // of the client.
 export { type Balance, type ExpenseRecord, provisionalBalances, type Records, type SettlementRecord } from './balances'
-export { type CurrencyCode, isCurrency, minorUnitDigits } from './currencies'
+export { type CurrencyCode, isCurrency, minorUnitDigits, offeredCurrencies } from './currencies'
 export {
   formatAmount,
   formatAmountInput,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { isCurrency, minorUnitDigits } from './currencies'
+import { isCurrency, minorUnitDigits, offeredCurrencies } from './currencies'
 
 describe('minorUnitDigits', () => {
   it.each([
@@ -31,5 +31,22 @@ describe('isCurrency', () => {
     expect(isCurrency('XAU')).toBe(false)
     expect(isCurrency('XXX')).toBe(false)
     expect(isCurrency('usd')).toBe(false)
+  })
+})
+
+describe('offeredCurrencies', () => {
+  it('offers every current currency in alphabetical order', () => {
+    const offered = offeredCurrencies()
+    expect(offered).toContain('COP')
+    expect(offered).toContain('XCG')
+    expect(offered).toEqual([...offered].sort())
+    expect(offered.every(isCurrency)).toBe(true)
+  })
+
+  it('leaves out the ISO 4217 fund codes, which nobody pays with, though they stay valid', () => {
+    const funds = ['BOV', 'CHE', 'CHW', 'CLF', 'COU', 'MXV', 'USN', 'UYI', 'UYW', 'XAD']
+    expect(offeredCurrencies().filter((code) => funds.includes(code))).toEqual([])
+    expect(offeredCurrencies()).toHaveLength(165 - funds.length)
+    expect(funds.every(isCurrency)).toBe(true)
   })
 })
