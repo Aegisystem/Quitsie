@@ -36,6 +36,10 @@ jobs:
         working-directory: web
         run: npm run typecheck
 
+      - name: Test web
+        working-directory: web
+        run: npm test
+
       - name: Build web into api/cmd/server/dist
         working-directory: web
         run: npm run build
