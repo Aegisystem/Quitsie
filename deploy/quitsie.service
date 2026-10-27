@@ -1,0 +1,39 @@
+# Draft. Install as /etc/systemd/system/quitsie.service on the VM.
+[Unit]
+Description=Quitsie (API + PWA)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=quitsie
+Group=quitsie
+# Creates /var/lib/quitsie owned by the quitsie user.
+StateDirectory=quitsie
+WorkingDirectory=/var/lib/quitsie
+
+# Only cloudflared connects to it: no public port.
+Environment=QUITSIE_ADDR=127.0.0.1:8080
+Environment=QUITSIE_DB_PATH=/var/lib/quitsie/quitsie.db
+# App secrets (Resend, Google OAuth) live only on the VM.
+EnvironmentFile=-/etc/quitsie/quitsie.env
+# R2 credentials, needed by the restore below.
+EnvironmentFile=/etc/quitsie/litestream.env
+
+# On a fresh VM, bring the database back from R2 before the first start.
+# Does nothing when the database already exists or there is no backup yet.
+ExecStartPre=/usr/bin/litestream restore -config /etc/litestream.yml -if-db-not-exists -if-replica-exists /var/lib/quitsie/quitsie.db
+ExecStart=/usr/local/bin/quitsie
+Restart=on-failure
+RestartSec=2
+# The server finishes in-flight requests on SIGTERM; give it time.
+TimeoutStopSec=15
+
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+
+[Install]
+WantedBy=multi-user.target

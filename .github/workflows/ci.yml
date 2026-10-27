@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: api/go.mod
+          cache-dependency-path: api/go.sum
+
+      - name: Install web dependencies
+        working-directory: web
+        run: npm ci
+
+      - name: Type-check web
+        working-directory: web
+        run: npm run typecheck
+
+      - name: Build web into api/cmd/server/dist
+        working-directory: web
+        run: npm run build
+
+      - name: Vet Go
+        working-directory: api
+        run: go vet ./...
+
+      - name: Test Go
+        working-directory: api
+        run: go test ./...
+
+      - name: Build server binary with the PWA embedded
+        working-directory: api
+        env:
+          CGO_ENABLED: "0"
+          GOOS: linux
+          GOARCH: amd64
+        run: go build -trimpath -ldflags "-s -w -X main.version=${{ github.sha }}" -o bin/quitsie ./cmd/server
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: quitsie-linux-amd64
+          path: api/bin/quitsie
+          retention-days: 14

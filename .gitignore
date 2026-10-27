@@ -1,0 +1,33 @@
+# macOS
+.DS_Store
+
+# Secrets: only the *.env.example files are committed
+.env
+*.env
+!*.env.example
+
+# Go
+/api/bin/
+/api/quitsie
+*.test
+*.out
+
+# SQLite databases (Litestream keeps the real copy in R2)
+*.db
+*.db-wal
+*.db-shm
+*.db-litestream/
+
+# Compiled PWA: rebuilt by `npm run build` and embedded into the Go binary.
+# The .gitkeep stays so `go build` works before the first web build.
+/api/cmd/server/dist/*
+!/api/cmd/server/dist/.gitkeep
+
+# Node
+node_modules/
+*.tsbuildinfo
+/web/dev-dist/
+/web/.vite/
+
+# Claude Code
+.claude/settings.local.json

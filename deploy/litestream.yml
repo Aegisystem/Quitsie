@@ -1,0 +1,11 @@
+# Draft for Litestream 0.5. Install as /etc/litestream.yml on the VM.
+#
+# Litestream reads the SQLite WAL and continuously copies it to Cloudflare R2.
+# Credentials come from the environment (/etc/quitsie/litestream.env):
+# LITESTREAM_ACCESS_KEY_ID and LITESTREAM_SECRET_ACCESS_KEY, plus
+# R2_ACCOUNT_ID, which is expanded below. Litestream detects the R2 endpoint
+# and applies the settings R2 needs on its own.
+dbs:
+  - path: /var/lib/quitsie/quitsie.db
+    replica:
+      url: s3://quitsie-backups/quitsie.db?endpoint=https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com

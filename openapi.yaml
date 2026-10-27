@@ -1,0 +1,45 @@
+openapi: 3.0.3
+info:
+  title: Quitsie API
+  version: 0.1.0
+  description: >
+    Contract between the Quitsie PWA (web/) and the Go server (api/).
+    Both sides generate their code from this file: oapi-codegen for Go,
+    openapi-typescript for TypeScript. Vocabulary follows CONTEXT.md.
+servers:
+  - url: /api/v1
+paths:
+  /health:
+    get:
+      operationId: getHealth
+      summary: Reports whether the server and its database are up.
+      tags: [system]
+      responses:
+        "200":
+          description: The server and the database are working.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+        "503":
+          description: The server is up but the database is not reachable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+components:
+  schemas:
+    Health:
+      type: object
+      required: [status, database, version]
+      properties:
+        status:
+          type: string
+          enum: [ok, unavailable]
+        database:
+          type: string
+          enum: [ok, unreachable]
+        version:
+          type: string
+          description: Build version of the server binary (a commit SHA in production, "dev" locally).
+          example: dev

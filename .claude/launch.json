@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "quitsie",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": ["-c", "cd api && go build -o bin/quitsie ./cmd/server && exec ./bin/quitsie"],
+      "port": 8080
+    }
+  ]
+}

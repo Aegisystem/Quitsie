@@ -1,0 +1,25 @@
+# Draft. Install as /etc/systemd/system/litestream.service on the VM; it takes
+# precedence over the unit that the litestream .deb package ships.
+[Unit]
+Description=Litestream: replicates the Quitsie database to Cloudflare R2
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Same user as the app: Litestream writes next to the database and checkpoints the WAL.
+User=quitsie
+Group=quitsie
+EnvironmentFile=/etc/quitsie/litestream.env
+ExecStart=/usr/bin/litestream replicate -config /etc/litestream.yml
+Restart=always
+RestartSec=5
+
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/quitsie
+
+[Install]
+WantedBy=multi-user.target
