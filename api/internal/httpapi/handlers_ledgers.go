@@ -137,6 +137,8 @@ func open(ctx context.Context, q *store.Queries, ledgerID, kind, userID string) 
 	return ledgers.Snapshot{}, store.Member{}, errNotFound
 }
 
+var errNonzeroBalance = &failure{status: http.StatusConflict, code: ProblemCodeNonzeroBalance, title: "Some Balance is not zero."}
+
 // currentUser is the signed-in User, or errUnauthenticated.
 func currentUser(ctx context.Context) (store.User, error) {
 	user, ok := auth.CurrentUser(ctx)
@@ -400,4 +402,33 @@ func precisionLoss(lost *domain.RelabelError) CurrencyPrecisionProblem {
 		p.SettlementIds[i] = uuid.MustParse(id)
 	}
 	return p
+}
+
+func (s *Server) DeleteGroup(ctx context.Context, req DeleteGroupRequestObject) (DeleteGroupResponseObject, error) {
+	respond := func(status int, p Problem) DeleteGroupResponseObject {
+		return DeleteGroupdefaultApplicationProblemPlusJSONResponse{Body: p, StatusCode: status}
+	}
+	user, err := currentUser(ctx)
+	if err != nil {
+		return answer(err, respond)
+	}
+	_, err = store.Write(ctx, s.deps.DB, func(q *store.Queries, version int64) error {
+		snap, _, err := open(ctx, q, req.GroupId.String(), "group", user.ID)
+		if err != nil {
+			return err
+		}
+		// Balances leaves out the zero ones.
+		if len(snap.Balances()) > 0 {
+			return errNonzeroBalance
+		}
+		now := time.Now().UTC()
+		if _, err := q.DeleteLedger(ctx, store.DeleteLedgerParams{ID: snap.Ledger.ID, DeletedAt: &now, Version: version}); err != nil {
+			return fmt.Errorf("delete group: %w", err)
+		}
+		return nil
+	})
+	if err != nil {
+		return answer(err, respond)
+	}
+	return DeleteGroup204Response{}, nil
 }

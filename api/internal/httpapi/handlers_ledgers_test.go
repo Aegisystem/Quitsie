@@ -452,3 +452,36 @@ func TestTheGroupCurrencyCannotChangeIfSomeAmountWouldLoseDecimals(t *testing.T)
 		t.Errorf("the Group was renamed anyway: %+v", changes.Ledgers[0])
 	}
 }
+
+func TestDeleteGroupWhenEveryBalanceIsZero(t *testing.T) {
+	w := newWorld(t)
+	ana := w.signIn("Ana")
+	groupID := ana.createGroup(`{"name":"Casa","currency":"COP","pendingMembers":[{"name":"Beto"}]}`)
+	// Ana paid only her own share: nobody owes anything.
+	ana.expense(groupID, "COP", ana.memberID(groupID, "Ana"), map[string]int64{ana.memberID(groupID, "Ana"): 5000})
+
+	rec := ana.send(http.MethodDelete, "/api/v1/groups/"+groupID, "")
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("code = %d, want 204 (body %q)", rec.Code, rec.Body.String())
+	}
+	if ledgers := ana.pull().Ledgers; len(ledgers) != 1 || ledgers[0].DeletedAt == nil {
+		t.Errorf("ledgers = %+v, want the Group as a deletion", ledgers)
+	}
+	again := ana.send(http.MethodPatch, "/api/v1/groups/"+groupID, `{"name":"Otra"}`)
+	decodeProblem(t, again, http.StatusNotFound, httpapi.ProblemCodeNotFound)
+}
+
+func TestAGroupWithSomeBalanceCannotBeDeleted(t *testing.T) {
+	w := newWorld(t)
+	ana := w.signIn("Ana")
+	groupID := ana.createGroup(`{"name":"Casa","currency":"COP","pendingMembers":[{"name":"Beto"}]}`)
+	ana.expense(groupID, "COP", ana.memberID(groupID, "Ana"), map[string]int64{ana.memberID(groupID, "Beto"): 5000})
+
+	rec := ana.send(http.MethodDelete, "/api/v1/groups/"+groupID, "")
+
+	decodeProblem(t, rec, http.StatusConflict, httpapi.ProblemCodeNonzeroBalance)
+	if ledgers := ana.pull().Ledgers; len(ledgers) != 1 || ledgers[0].DeletedAt != nil {
+		t.Errorf("ledgers = %+v, want the Group alive", ledgers)
+	}
+}
