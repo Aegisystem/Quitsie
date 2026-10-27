@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"regexp"
+	"strings"
 
 	"github.com/google/uuid"
 	openapi_types "github.com/oapi-codegen/runtime/types"
@@ -44,7 +45,7 @@ func (s *Server) VerifyLoginCode(ctx context.Context, req VerifyLoginCodeRequest
 			problem(http.StatusBadRequest, ProblemCodeValidationFailed, "A login code is 6 digits.")), nil
 	}
 	r := requestFrom(ctx)
-	signIn, err := s.deps.Auth.VerifyCode(ctx, string(req.Body.Email), req.Body.Code, r.UserAgent())
+	signIn, err := s.deps.Auth.VerifyCode(ctx, string(req.Body.Email), req.Body.Code, device(r))
 	switch {
 	case err == nil:
 	case errors.Is(err, auth.ErrInvalidEmail):
@@ -81,6 +82,41 @@ func (s *Server) Logout(ctx context.Context, _ LogoutRequestObject) (LogoutRespo
 	return Logout204Response{Headers: Logout204ResponseHeaders{SetCookie: clearSessionCookie()}}, nil
 }
 
+func (s *Server) ListSessions(ctx context.Context, _ ListSessionsRequestObject) (ListSessionsResponseObject, error) {
+	user, _ := auth.CurrentUser(ctx)
+	current, _ := auth.CurrentSession(ctx)
+	sessions, err := s.deps.Auth.Sessions(ctx, user.ID)
+	if err != nil {
+		return nil, err
+	}
+	list := make(ListSessions200JSONResponse, len(sessions))
+	for i, session := range sessions {
+		list[i] = Session{
+			Id:         uuid.MustParse(session.ID),
+			Device:     session.Device,
+			CreatedAt:  session.CreatedAt,
+			LastUsedAt: session.LastUsedAt,
+			Current:    session.ID == current.ID,
+		}
+	}
+	return list, nil
+}
+
+func (s *Server) RevokeSession(ctx context.Context, req RevokeSessionRequestObject) (RevokeSessionResponseObject, error) {
+	user, _ := auth.CurrentUser(ctx)
+	err := s.deps.Auth.EndSession(ctx, user.ID, req.SessionId.String())
+	if errors.Is(err, auth.ErrSessionNotFound) {
+		return RevokeSession404ApplicationProblemPlusJSONResponse{NotFoundApplicationProblemPlusJSONResponse(
+			problem(http.StatusNotFound, ProblemCodeNotFound, "There is no such session."))}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	// Closing the current session signs this device out: its next request
+	// finds no session and deletes the cookie.
+	return RevokeSession204Response{}, nil
+}
+
 // clearSessionCookie is the Set-Cookie header that signs the browser out.
 func clearSessionCookie() *string {
 	c := auth.ClearSessionCookie().String()
@@ -99,6 +135,20 @@ func userFrom(u store.User) User {
 		Name:              u.Name,
 		PreferredCurrency: u.PreferredCurrency,
 	}
+}
+
+// maxDeviceLength bounds what a session keeps of the User-Agent, which the
+// client controls.
+const maxDeviceLength = 256
+
+// device describes the device of a sign-in for the list of sessions. It is
+// the User-Agent; the PWA turns it into something like "Safari en iPhone".
+func device(r *http.Request) string {
+	ua := r.UserAgent()
+	if len(ua) > maxDeviceLength {
+		ua = strings.ToValidUTF8(ua[:maxDeviceLength], "")
+	}
+	return ua
 }
 
 // clientIP is the address the request came from. Behind cloudflared every

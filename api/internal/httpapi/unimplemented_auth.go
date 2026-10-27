@@ -17,14 +17,6 @@ func (s *Server) FinishGoogleLogin(context.Context, FinishGoogleLoginRequestObje
 	return nil, errNotImplemented
 }
 
-func (s *Server) ListSessions(context.Context, ListSessionsRequestObject) (ListSessionsResponseObject, error) {
-	return nil, errNotImplemented
-}
-
-func (s *Server) RevokeSession(context.Context, RevokeSessionRequestObject) (RevokeSessionResponseObject, error) {
-	return nil, errNotImplemented
-}
-
 // --- profile ---
 
 func (s *Server) UpdateMe(context.Context, UpdateMeRequestObject) (UpdateMeResponseObject, error) {

@@ -220,3 +220,43 @@ func TestSigningOutEndsTheSessionOfThatDeviceOnly(t *testing.T) {
 	wantProblem(t, api.withSessionCookie(t, copied).do(http.MethodGet, "/api/v1/me", ""), http.StatusUnauthorized, httpapi.ProblemCodeUnauthenticated)
 	decode[httpapi.User](t, phone.do(http.MethodGet, "/api/v1/me", ""), http.StatusOK)
 }
+
+func TestAUserSeesAndClosesTheirSessions(t *testing.T) {
+	api := newTestAPI(t)
+	laptop := api.newClient(t)
+	laptop.device = "Mozilla/5.0 (X11; Linux x86_64) Firefox/140.0"
+	laptop.signIn("ana@example.com")
+	phone := api.newClient(t)
+	phone.device = "Mozilla/5.0 (iPhone; CPU iPhone OS 19_0 like Mac OS X) Safari/604.1"
+	phone.signIn("ana@example.com")
+	beto, _ := api.signedIn(t, "beto@example.com")
+
+	sessions := decode[[]httpapi.Session](t, laptop.do(http.MethodGet, "/api/v1/auth/sessions", ""), http.StatusOK)
+
+	if len(sessions) != 2 {
+		t.Fatalf("sessions = %+v, want the laptop's and the phone's", sessions)
+	}
+	byDevice := map[string]httpapi.Session{}
+	for _, s := range sessions {
+		byDevice[s.Device] = s
+	}
+	if s, ok := byDevice[laptop.device]; !ok || !s.Current || s.CreatedAt.IsZero() || s.LastUsedAt.IsZero() {
+		t.Errorf("laptop session = %+v, want the current one, with its dates", s)
+	}
+	phoneSession, ok := byDevice[phone.device]
+	if !ok || phoneSession.Current {
+		t.Errorf("phone session = %+v, want one that is not current", phoneSession)
+	}
+
+	// Nobody can close someone else's session, and it looks like it does not exist.
+	wantProblem(t, beto.do(http.MethodDelete, "/api/v1/auth/sessions/"+phoneSession.Id.String(), ""), http.StatusNotFound, httpapi.ProblemCodeNotFound)
+	decode[httpapi.User](t, phone.do(http.MethodGet, "/api/v1/me", ""), http.StatusOK)
+
+	wantStatus(t, laptop.do(http.MethodDelete, "/api/v1/auth/sessions/"+phoneSession.Id.String(), ""), http.StatusNoContent)
+
+	wantProblem(t, phone.do(http.MethodGet, "/api/v1/me", ""), http.StatusUnauthorized, httpapi.ProblemCodeUnauthenticated)
+	wantProblem(t, laptop.do(http.MethodDelete, "/api/v1/auth/sessions/"+phoneSession.Id.String(), ""), http.StatusNotFound, httpapi.ProblemCodeNotFound)
+	if left := decode[[]httpapi.Session](t, laptop.do(http.MethodGet, "/api/v1/auth/sessions", ""), http.StatusOK); len(left) != 1 || !left[0].Current {
+		t.Errorf("sessions after closing the phone's = %+v, want only the laptop's", left)
+	}
+}
