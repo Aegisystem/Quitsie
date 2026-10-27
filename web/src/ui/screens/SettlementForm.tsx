@@ -83,7 +83,18 @@ export function SettlementForm({
       dock={
         <div className="dock-stack">
           {!online && <p className="dock-note">{t('expenseForm.offlineNote')}</p>}
-          <button type="button" className="button button-primary button-block" onClick={save} aria-disabled={!valid}>
+          {!valid && (
+            <p className={`dock-note${touched ? ' tone-problem' : ''}`} id={`${ids}-blocking`}>
+              {errors.people ?? errors.amount}
+            </p>
+          )}
+          <button
+            type="button"
+            className="button button-primary button-block"
+            onClick={save}
+            aria-disabled={!valid}
+            aria-describedby={!valid ? `${ids}-blocking` : undefined}
+          >
             <Icon name="check" />
             {t('settlement.save')}
           </button>

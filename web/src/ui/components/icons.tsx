@@ -9,6 +9,7 @@ export type IconName =
   | 'check'
   | 'close'
   | 'offline'
+  | 'online'
   | 'tray'
   | 'share'
   | 'copy'
@@ -26,6 +27,7 @@ const strokes: Record<IconName, string> = {
   plus: 'M12 5v14M5 12h14',
   check: 'M5 12.5l4.5 4.5L19 7.5',
   close: 'M6 6l12 12M18 6L6 18',
+  online: 'M7 20h10a4.5 4.5 0 0 0 .7-8.95A6 6 0 0 0 6.2 12 4 4 0 0 0 7 20zM9.5 15.5l2 2 3.5-4',
   offline: 'M3 3l18 18M8.5 8.6A6 6 0 0 0 6 13.5 4 4 0 0 0 7 21h10M12.3 7.5A6 6 0 0 1 18 12a4 4 0 0 1 2.6 6.4',
   tray: 'M4 13l2.5-7h11L20 13M4 13v6h16v-6M4 13h4.5l1 2.5h5l1-2.5H20',
   share: 'M12 15V3M7.5 7.5L12 3l4.5 4.5M6 11H5v10h14V11h-1',

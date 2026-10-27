@@ -75,8 +75,9 @@ function NavLinks({ current, className }: { current?: string; className: string 
   )
 }
 
-// A fixed state cell: filled while online, hollow while sending, struck when
-// offline. Next to a screen title it shrinks to the cell alone.
+// Always visible: a cloud while online, the sync arrows while sending, the struck
+// cloud offline. Next to a screen title it shrinks to the icon alone. Icons, not
+// dots, so it never reads as a tally token.
 function ConnectionStatus({ compact }: { compact: boolean }) {
   const { t } = useTranslation()
   const s = useDemo()
@@ -96,7 +97,7 @@ function ConnectionStatus({ compact }: { compact: boolean }) {
   return (
     <div className="status">
       <span className={`status-chip status-${state}${compact ? ' status-compact' : ''}`} title={stateLabel}>
-        <span className={`state-cell state-${state}`} aria-hidden="true" />
+        <Icon name={state === 'offline' ? 'offline' : state === 'syncing' ? 'refresh' : 'online'} size={18} />
         <span className={compact ? 'sr-only' : undefined}>{stateLabel}</span>
       </span>
       <a className="records-button" href={href({ name: 'records' })} aria-label={label ? `${t('nav.records')}: ${label}` : t('nav.records')}>

@@ -184,6 +184,17 @@ function ExpenseForm({ ledger, draft, rejectedId }: { ledger: Ledger; draft?: Ex
   else if (preview.unassigned < 0) closing = { tone: 'problem', text: t('expenseForm.over', { amount: formatMoney(-preview.unassigned, currency) }) }
   else closing = { tone: 'even', text: t('expenseForm.closes') }
 
+  // What stops the save, said next to the button so it never looks dead.
+  const blocking =
+    errors.amount ??
+    errors.description ??
+    (!splitOk ? closing.text : undefined) ??
+    (paidLeft > 0
+      ? t('expenseForm.payersLeft', { amount: formatMoney(paidLeft, currency) })
+      : paidLeft < 0
+        ? t('expenseForm.payersOver', { amount: formatMoney(-paidLeft, currency) })
+        : undefined)
+
   const backRoute = { name: 'ledger' as const, ledgerId: ledger.id }
 
   return (
@@ -193,7 +204,18 @@ function ExpenseForm({ ledger, draft, rejectedId }: { ledger: Ledger; draft?: Ex
       dock={
         <div className="dock-stack">
           {!online && <p className="dock-note">{t('expenseForm.offlineNote')}</p>}
-          <button type="button" className="button button-primary button-block" onClick={save} aria-disabled={!valid}>
+          {blocking && (
+            <p className={`dock-note${touched ? ' tone-problem' : ''}`} id={`${ids}-blocking`}>
+              {blocking}
+            </p>
+          )}
+          <button
+            type="button"
+            className="button button-primary button-block"
+            onClick={save}
+            aria-disabled={!valid}
+            aria-describedby={blocking ? `${ids}-blocking` : undefined}
+          >
             <Icon name="check" />
             {online ? t('expenseForm.save') : t('expenseForm.saveOffline')}
           </button>
