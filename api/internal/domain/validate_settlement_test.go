@@ -26,6 +26,7 @@ func TestValidateSettlementRejects(t *testing.T) {
 	}{
 		{"a zero amount", func(s *domain.Settlement) { s.Amount = 0 }, domain.ErrNonPositiveAmount},
 		{"a negative amount", func(s *domain.Settlement) { s.Amount = -525 }, domain.ErrNonPositiveAmount},
+		{"an amount over 10^15", func(s *domain.Settlement) { s.Amount = domain.MaxAmount + 1 }, domain.ErrAmountTooLarge},
 		{"paying oneself", func(s *domain.Settlement) { s.ToMemberID = "beto" }, domain.ErrSameMember},
 		{"a payer who is not in the Group", func(s *domain.Settlement) { s.FromMemberID = "eva" }, domain.ErrNotActiveMember},
 		{"a payee who is not in the Group", func(s *domain.Settlement) { s.ToMemberID = "eva" }, domain.ErrNotActiveMember},

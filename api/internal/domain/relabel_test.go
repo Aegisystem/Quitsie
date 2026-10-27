@@ -143,6 +143,26 @@ func TestRelabelFailsWhenAnAmountWouldNotFitInInt64(t *testing.T) {
 	}
 }
 
+func TestRelabelFailsWhenAnAmountWouldGoOverTenToTheFifteen(t *testing.T) {
+	// 10^14 yen fit, but as dollars they are 10^16 cents.
+	yacht := domain.Expense{
+		ID: "yacht", Currency: "JPY", Total: 100_000_000_000_000, SplitMethod: domain.SplitExact,
+		PaidShares: []domain.PaidShare{{MemberID: "ana", Amount: 100_000_000_000_000}},
+		OwedShares: []domain.OwedShare{{MemberID: "beto", Amount: 100_000_000_000_000}},
+	}
+	payback := domain.Settlement{ID: "payback", FromMemberID: "beto", ToMemberID: "ana", Amount: 100_000_000_000_000, Currency: "JPY"}
+
+	_, _, err := domain.Relabel([]domain.Expense{yacht}, []domain.Settlement{payback}, "USD")
+
+	var relabelErr *domain.RelabelError
+	if !errors.As(err, &relabelErr) {
+		t.Fatalf("err = %v, want a *RelabelError", err)
+	}
+	if !reflect.DeepEqual(relabelErr.ExpenseIDs, []string{"yacht"}) || !reflect.DeepEqual(relabelErr.SettlementIDs, []string{"payback"}) {
+		t.Errorf("RelabelError = %+v, want yacht and payback", relabelErr)
+	}
+}
+
 func ptr(v int64) *int64 { return &v }
 
 func TestRelabelAlsoRelabelsAdjustmentsButNotPercentagesOrWeights(t *testing.T) {

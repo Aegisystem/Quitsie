@@ -10,6 +10,8 @@ var (
 	// ErrNonPositiveAmount: a total, PaidShare or settlement amount is zero or
 	// negative, or an OwedShare is negative. An OwedShare may be zero.
 	ErrNonPositiveAmount = errors.New("amount must be greater than zero")
+	// ErrAmountTooLarge: an amount is over MaxAmount.
+	ErrAmountTooLarge = errors.New("amount is over 10^15 minor units")
 	// ErrMissingShares: an Expense has no PaidShare or no OwedShare.
 	ErrMissingShares = errors.New("an expense needs at least one paid share and one owed share")
 	// ErrSharesDoNotAddUp: the PaidShares or the OwedShares do not add up to the total.

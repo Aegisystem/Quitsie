@@ -11,6 +11,11 @@ func ValidateExpense(ledger Ledger, e Expense) error {
 	if e.Total <= 0 {
 		return fmt.Errorf("total %d: %w", e.Total, ErrNonPositiveAmount)
 	}
+	// Shares are never negative and add up to the total, so none can be
+	// over MaxAmount either.
+	if e.Total > MaxAmount {
+		return fmt.Errorf("total %d: %w", e.Total, ErrAmountTooLarge)
+	}
 	if len(e.PaidShares) == 0 || len(e.OwedShares) == 0 {
 		return ErrMissingShares
 	}
@@ -78,6 +83,9 @@ func checkSplitValues(method SplitMethod, shares []OwedShare) error {
 			if s.SplitValue == nil {
 				return fmt.Errorf("member %q: missing adjustment: %w", s.MemberID, ErrInvalidSplitValues)
 			}
+			if *s.SplitValue > MaxAmount || *s.SplitValue < -MaxAmount {
+				return fmt.Errorf("member %q: adjustment %d: %w", s.MemberID, *s.SplitValue, ErrAmountTooLarge)
+			}
 		}
 		return nil
 	case SplitEqual, SplitExact:
@@ -91,6 +99,11 @@ func checkSplitValues(method SplitMethod, shares []OwedShare) error {
 		return fmt.Errorf("%w: %q", ErrUnknownSplitMethod, method)
 	}
 }
+
+// MaxAmount is the largest amount of any record, in minor units of its
+// currency: 10^15, so that adding up Balances never overflows an int64
+// (docs/reglas-de-negocio.md).
+const MaxAmount = 1_000_000_000_000_000
 
 // fullPercentage is 100% in hundredths of a percent.
 const fullPercentage = 10000

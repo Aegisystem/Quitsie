@@ -95,6 +95,23 @@ func TestValidateExpenseAcceptsAnOwedShareRoundedToZero(t *testing.T) {
 	}
 }
 
+func TestValidateExpenseCapsTheTotalAtTenToTheFifteen(t *testing.T) {
+	huge := func(total int64) domain.Expense {
+		return domain.Expense{
+			ID: "yacht", Currency: "USD", Total: total, SplitMethod: domain.SplitExact,
+			PaidShares: []domain.PaidShare{{MemberID: "ana", Amount: total}},
+			OwedShares: []domain.OwedShare{{MemberID: "beto", Amount: total}},
+		}
+	}
+
+	if err := domain.ValidateExpense(trip(), huge(1_000_000_000_000_000)); err != nil {
+		t.Errorf("total of 10^15: err = %v, want nil", err)
+	}
+	if err := domain.ValidateExpense(trip(), huge(1_000_000_000_000_001)); !errors.Is(err, domain.ErrAmountTooLarge) {
+		t.Errorf("total over 10^15: err = %v, want ErrAmountTooLarge", err)
+	}
+}
+
 // friendship is the ledger of Ana and her Friend Beto.
 func friendship() domain.Ledger {
 	return domain.Ledger{
@@ -156,6 +173,8 @@ func TestValidateExpenseChecksTheSplitValues(t *testing.T) {
 		{"a zero weight", domain.SplitWeights, []*int64{ptr(1), ptr(0)}, domain.ErrInvalidSplitValues},
 		{"a negative weight", domain.SplitWeights, []*int64{ptr(2), ptr(-1)}, domain.ErrInvalidSplitValues},
 		{"adjustments of any sign", domain.SplitAdjustment, []*int64{ptr(-25), ptr(0)}, nil},
+		{"an adjustment over 10^15", domain.SplitAdjustment, []*int64{ptr(domain.MaxAmount + 1), ptr(0)}, domain.ErrAmountTooLarge},
+		{"an adjustment under -10^15", domain.SplitAdjustment, []*int64{ptr(-domain.MaxAmount - 1), ptr(0)}, domain.ErrAmountTooLarge},
 		{"a missing adjustment", domain.SplitAdjustment, []*int64{ptr(25), nil}, domain.ErrInvalidSplitValues},
 		{"equal parts without values", domain.SplitEqual, []*int64{nil, nil}, nil},
 		{"equal parts with a value", domain.SplitEqual, []*int64{nil, ptr(1)}, domain.ErrInvalidSplitValues},
