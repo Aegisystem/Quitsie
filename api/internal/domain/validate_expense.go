@@ -44,10 +44,10 @@ func ValidateExpense(ledger Ledger, e Expense) error {
 // checkSplitValues checks the format of the SplitMethod's inputs kept to
 // re-edit the Expense. It never recomputes the OwedShares from them.
 //
-// Provisional rule, pending the user's confirmation in docs/reglas-de-negocio.md:
-// percentages have two decimals (hundredths adding up to 10000), weights are
-// positive integers, every OwedShare of a percentage, weights or adjustment split
-// carries its value, and equal and exact splits carry none.
+// Percentages have up to two decimals, so they are hundredths adding up to
+// 10000, and weights are positive integers (docs/reglas-de-negocio.md). Every
+// OwedShare of a percentage, weights or adjustment split carries its value, and
+// equal and exact splits carry none.
 func checkSplitValues(method SplitMethod, shares []OwedShare) error {
 	switch method {
 	case SplitPercentage:
