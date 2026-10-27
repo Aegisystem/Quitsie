@@ -26,3 +26,24 @@ ORDER BY member_id;
 SELECT * FROM owed_shares
 WHERE expense_id = ?
 ORDER BY member_id;
+
+-- name: UpdateExpenseAtVersion :one
+-- Use UpdateExpense, which also replaces the shares.
+UPDATE expenses
+SET description = sqlc.arg(description),
+    date = sqlc.arg(date),
+    currency = sqlc.arg(currency),
+    total = sqlc.arg(total),
+    category = sqlc.narg(category),
+    split_method = sqlc.arg(split_method),
+    version = sqlc.arg(version)
+WHERE id = sqlc.arg(id) AND version = sqlc.arg(expected_version) AND deleted_at IS NULL
+RETURNING *;
+
+-- name: DeletePaidSharesOfExpense :exec
+DELETE FROM paid_shares
+WHERE expense_id = ?;
+
+-- name: DeleteOwedSharesOfExpense :exec
+DELETE FROM owed_shares
+WHERE expense_id = ?;

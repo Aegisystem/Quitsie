@@ -2,8 +2,14 @@ package store
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 )
+
+// ErrVersionConflict means the Expense changed, or was deleted, after the
+// version the editor expected, so the edit was not applied.
+var ErrVersionConflict = errors.New("expense changed since the expected version")
 
 // ExpenseWithShares is an Expense with its PaidShares and OwedShares, which
 // travel with it and have no version of their own.
@@ -74,4 +80,42 @@ func (q *Queries) GetExpenseWithShares(ctx context.Context, id string) (ExpenseW
 		return ExpenseWithShares{}, fmt.Errorf("list owed shares of %s: %w", id, err)
 	}
 	return ExpenseWithShares{Expense: e, PaidShares: paid, OwedShares: owed}, nil
+}
+
+// UpdateExpense replaces the contents and shares of the Expense e.ID, stamping
+// it with e.Version, if it is not deleted and its stored version is still
+// expectedVersion; otherwise it returns ErrVersionConflict, or sql.ErrNoRows
+// if there is no such Expense. Its ledger, author and creation time never
+// change.
+func (q *Queries) UpdateExpense(ctx context.Context, e ExpenseWithShares, expectedVersion int64) (ExpenseWithShares, error) {
+	_, err := q.UpdateExpenseAtVersion(ctx, UpdateExpenseAtVersionParams{
+		ID:              e.ID,
+		ExpectedVersion: expectedVersion,
+		Description:     e.Description,
+		Date:            e.Date,
+		Currency:        e.Currency,
+		Total:           e.Total,
+		Category:        e.Category,
+		SplitMethod:     e.SplitMethod,
+		Version:         e.Version,
+	})
+	if errors.Is(err, sql.ErrNoRows) {
+		if _, err := q.GetExpense(ctx, e.ID); err != nil {
+			return ExpenseWithShares{}, err
+		}
+		return ExpenseWithShares{}, ErrVersionConflict
+	}
+	if err != nil {
+		return ExpenseWithShares{}, fmt.Errorf("update expense %s: %w", e.ID, err)
+	}
+	if err := q.DeletePaidSharesOfExpense(ctx, e.ID); err != nil {
+		return ExpenseWithShares{}, fmt.Errorf("delete paid shares of %s: %w", e.ID, err)
+	}
+	if err := q.DeleteOwedSharesOfExpense(ctx, e.ID); err != nil {
+		return ExpenseWithShares{}, fmt.Errorf("delete owed shares of %s: %w", e.ID, err)
+	}
+	if err := q.insertShares(ctx, e); err != nil {
+		return ExpenseWithShares{}, err
+	}
+	return q.GetExpenseWithShares(ctx, e.ID)
 }

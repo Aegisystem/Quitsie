@@ -10,6 +10,26 @@ import (
 	"time"
 )
 
+const deleteOwedSharesOfExpense = `-- name: DeleteOwedSharesOfExpense :exec
+DELETE FROM owed_shares
+WHERE expense_id = ?
+`
+
+func (q *Queries) DeleteOwedSharesOfExpense(ctx context.Context, expenseID string) error {
+	_, err := q.db.ExecContext(ctx, deleteOwedSharesOfExpense, expenseID)
+	return err
+}
+
+const deletePaidSharesOfExpense = `-- name: DeletePaidSharesOfExpense :exec
+DELETE FROM paid_shares
+WHERE expense_id = ?
+`
+
+func (q *Queries) DeletePaidSharesOfExpense(ctx context.Context, expenseID string) error {
+	_, err := q.db.ExecContext(ctx, deletePaidSharesOfExpense, expenseID)
+	return err
+}
+
 const getExpense = `-- name: GetExpense :one
 SELECT id, ledger_id, description, date, currency, total, category, split_method, created_by, version, created_at, deleted_at FROM expenses
 WHERE id = ?
@@ -176,4 +196,60 @@ func (q *Queries) ListPaidSharesOfExpense(ctx context.Context, expenseID string)
 		return nil, err
 	}
 	return items, nil
+}
+
+const updateExpenseAtVersion = `-- name: UpdateExpenseAtVersion :one
+UPDATE expenses
+SET description = ?1,
+    date = ?2,
+    currency = ?3,
+    total = ?4,
+    category = ?5,
+    split_method = ?6,
+    version = ?7
+WHERE id = ?8 AND version = ?9 AND deleted_at IS NULL
+RETURNING id, ledger_id, description, date, currency, total, category, split_method, created_by, version, created_at, deleted_at
+`
+
+type UpdateExpenseAtVersionParams struct {
+	Description     string
+	Date            time.Time
+	Currency        string
+	Total           int64
+	Category        *string
+	SplitMethod     string
+	Version         int64
+	ID              string
+	ExpectedVersion int64
+}
+
+// Use UpdateExpense, which also replaces the shares.
+func (q *Queries) UpdateExpenseAtVersion(ctx context.Context, arg UpdateExpenseAtVersionParams) (Expense, error) {
+	row := q.db.QueryRowContext(ctx, updateExpenseAtVersion,
+		arg.Description,
+		arg.Date,
+		arg.Currency,
+		arg.Total,
+		arg.Category,
+		arg.SplitMethod,
+		arg.Version,
+		arg.ID,
+		arg.ExpectedVersion,
+	)
+	var i Expense
+	err := row.Scan(
+		&i.ID,
+		&i.LedgerID,
+		&i.Description,
+		&i.Date,
+		&i.Currency,
+		&i.Total,
+		&i.Category,
+		&i.SplitMethod,
+		&i.CreatedBy,
+		&i.Version,
+		&i.CreatedAt,
+		&i.DeletedAt,
+	)
+	return i, err
 }
