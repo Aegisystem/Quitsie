@@ -1,19 +1,62 @@
 openapi: 3.0.3
 info:
   title: Quitsie API
-  version: 0.1.0
-  description: >
+  version: 0.2.0
+  description: |
     Contract between the Quitsie PWA (web/) and the Go server (api/).
     Both sides generate their code from this file: oapi-codegen for Go,
-    openapi-typescript for TypeScript. Vocabulary follows CONTEXT.md.
+    openapi-typescript for TypeScript. Vocabulary follows CONTEXT.md and
+    names follow its "En código" entries (ADR 0009).
+
+    Conventions:
+
+    * **Reads come from sync.** The client keeps a replica of everything the
+      User can see and fills it with `GET /sync`; there are no list
+      endpoints for Groups, Members, Expenses or Settlements. Every other
+      operation is an action, after which the client syncs again.
+    * **Ledgers.** Groups and Friendships are both ledgers (ADR 0008): a
+      Group's or a Friendship's `id` is its ledger id, and Members,
+      Expenses, Settlements and Activities point to it with `ledgerId`.
+    * **Ids** are UUIDs. The client generates the ids of Expenses and
+      Settlements (UUIDv7), so resending them never duplicates anything.
+    * **Amounts** are integers in the minor unit of their currency, as
+      defined by ISO 4217 (cents for USD, units for CLP), and always travel
+      next to a `currency`. Never floats.
+    * **Errors** are `application/problem+json` (RFC 9457) with a stable
+      `code`; clients branch on `code`, never on `title` or `detail`.
+    * **Sessions** travel in an HttpOnly cookie. Requests that change data
+      must carry an `Origin` header of the app's own domain (CSRF);
+      otherwise they get `403 origin_mismatch`.
+    * A ledger the User cannot see answers `404 not_found`, the same as one
+      that does not exist.
 servers:
   - url: /api/v1
+tags:
+  - name: system
+    description: Operation of the server itself.
+  - name: auth
+    description: Sign-in with an emailed code or with Google (ADR 0005), and sessions per device.
+  - name: profile
+    description: The signed-in User.
+  - name: groups
+    description: Groups and their Members.
+  - name: invites
+    description: Invite links of Groups and pending Friends, and Claims.
+  - name: friendships
+    description: Friendships, where Expenses without a Group live (ADR 0004).
+  - name: records
+    description: Expenses and Settlements.
+  - name: sync
+    description: Pulling changes into the device's replica.
+security:
+  - sessionCookie: []
 paths:
   /health:
     get:
       operationId: getHealth
       summary: Reports whether the server and its database are up.
       tags: [system]
+      security: []
       responses:
         "200":
           description: The server and the database are working.
@@ -27,7 +70,1001 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Health"
+
+  /auth/login-code:
+    post:
+      operationId: requestLoginCode
+      summary: Emails a 6-digit sign-in code.
+      description: >
+        Answers 204 whether or not an account exists for the email, so the
+        endpoint does not reveal who has one. The code expires after 10
+        minutes. Sending is limited per email and per IP.
+      tags: [auth]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginCodeRequest"
+      responses:
+        "204":
+          description: The code was sent, if the email can receive one.
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "429":
+          description: Too many codes requested (`rate_limited`).
+          headers:
+            Retry-After:
+              description: Seconds to wait before asking again.
+              schema:
+                type: integer
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  /auth/login-code/verify:
+    post:
+      operationId: verifyLoginCode
+      summary: Exchanges a sign-in code for a session.
+      description: >
+        Creates the User the first time an email signs in (`newUser` is then
+        true and the client asks for a name and a Preferred currency). A code
+        admits 5 attempts at most.
+      tags: [auth]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginCodeVerification"
+      responses:
+        "200":
+          description: Signed in.
+          headers:
+            Set-Cookie:
+              description: The session cookie.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginResult"
+        "400":
+          description: >
+            The code is wrong (`login_code_invalid`) or expired
+            (`login_code_expired`), or the body is invalid.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "429":
+          description: The code used up its attempts (`too_many_attempts`); request a new one.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  /auth/google:
+    get:
+      operationId: startGoogleLogin
+      summary: Redirects to Google to sign in with OpenID Connect.
+      description: >
+        The browser navigates here (it is not called with fetch). The server
+        keeps the OAuth state in a short-lived cookie.
+      tags: [auth]
+      security: []
+      parameters:
+        - name: returnTo
+          in: query
+          description: Path inside the app to go back to afterwards, for example an invite. Must start with `/`.
+          schema:
+            type: string
+            pattern: "^/"
+            maxLength: 512
+      responses:
+        "302":
+          description: Redirect to Google.
+          headers:
+            Location:
+              schema:
+                type: string
+            Set-Cookie:
+              description: Cookie with the OAuth state.
+              schema:
+                type: string
+        default:
+          $ref: "#/components/responses/Problem"
+
+  /auth/google/callback:
+    get:
+      operationId: finishGoogleLogin
+      summary: Google redirects back here; signs in and returns to the app.
+      description: >
+        Always answers with a redirect to the app: to `returnTo` on success,
+        creating the User if needed, or to `/login?error=google` on failure.
+      tags: [auth]
+      security: []
+      parameters:
+        - name: code
+          in: query
+          schema:
+            type: string
+        - name: state
+          in: query
+          schema:
+            type: string
+        - name: error
+          in: query
+          description: Set by Google when the person cancelled or the request failed.
+          schema:
+            type: string
+      responses:
+        "302":
+          description: Redirect to the app.
+          headers:
+            Location:
+              schema:
+                type: string
+            Set-Cookie:
+              description: The session cookie, when sign-in succeeded.
+              schema:
+                type: string
+        default:
+          $ref: "#/components/responses/Problem"
+
+  /auth/logout:
+    post:
+      operationId: logout
+      summary: Closes the current session.
+      tags: [auth]
+      responses:
+        "204":
+          description: Signed out.
+          headers:
+            Set-Cookie:
+              description: Clears the session cookie.
+              schema:
+                type: string
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  /auth/sessions:
+    get:
+      operationId: listSessions
+      summary: Lists the User's open sessions, one per device.
+      tags: [auth]
+      responses:
+        "200":
+          description: Open sessions, the most recently used first.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Session"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  /auth/sessions/{sessionId}:
+    parameters:
+      - $ref: "#/components/parameters/SessionId"
+    delete:
+      operationId: revokeSession
+      summary: Closes a session on one device.
+      description: Closing the current session is the same as signing out.
+      tags: [auth]
+      responses:
+        "204":
+          description: The session is closed.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  /me:
+    get:
+      operationId: getMe
+      summary: Returns the signed-in User.
+      tags: [profile]
+      responses:
+        "200":
+          description: The signed-in User.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        default:
+          $ref: "#/components/responses/Problem"
+    patch:
+      operationId: updateMe
+      summary: Changes the User's name or Preferred currency.
+      tags: [profile]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserUpdate"
+      responses:
+        "200":
+          description: The updated User.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        default:
+          $ref: "#/components/responses/Problem"
+    delete:
+      operationId: deleteMe
+      summary: Deletes the User's account.
+      description: >
+        Closes every session. The User's Members and Friends become pending
+        again, keeping their names, so nobody else's Balances change.
+      tags: [profile]
+      responses:
+        "204":
+          description: The account is deleted.
+          headers:
+            Set-Cookie:
+              description: Clears the session cookie.
+              schema:
+                type: string
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  /groups:
+    post:
+      operationId: createGroup
+      summary: Creates a Group with the User as its first Member.
+      tags: [groups]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NewGroup"
+      responses:
+        "201":
+          description: The new Group. Its Members arrive with the next sync.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Group"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  /groups/{groupId}:
+    parameters:
+      - $ref: "#/components/parameters/GroupId"
+    patch:
+      operationId: updateGroup
+      summary: Renames a Group, turns Debt simplification on or off, or changes the Group currency.
+      description: >
+        Changing `currency` relabels every Expense and Settlement of the
+        Group: same numbers, another currency, never an exchange rate. When
+        the new currency has fewer decimals, the change is only allowed if no
+        amount loses minor units; otherwise it answers
+        `409 currency_precision_loss` with the records to fix. Unsynced
+        records created before the change will be rejected with
+        `currency_mismatch`.
+      tags: [groups]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GroupUpdate"
+      responses:
+        "200":
+          description: The updated Group.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Group"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: Some amounts would lose minor units in the new currency (`currency_precision_loss`).
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/CurrencyPrecisionProblem"
+        default:
+          $ref: "#/components/responses/Problem"
+    delete:
+      operationId: deleteGroup
+      summary: Deletes a Group whose Balances are all zero.
+      tags: [groups]
+      responses:
+        "204":
+          description: The Group is deleted; every Member drops it on the next sync.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: Some Balance is not zero (`nonzero_balance`).
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  /groups/{groupId}/members:
+    parameters:
+      - $ref: "#/components/parameters/GroupId"
+    post:
+      operationId: addPendingMember
+      summary: Adds a pending Member to a Group.
+      tags: [groups]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NewPendingMember"
+      responses:
+        "201":
+          description: The new pending Member.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Member"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  /groups/{groupId}/members/{memberId}:
+    parameters:
+      - $ref: "#/components/parameters/GroupId"
+      - $ref: "#/components/parameters/MemberId"
+    delete:
+      operationId: removeMember
+      summary: Removes a Member whose Balance is zero from a Group.
+      description: >
+        The Member becomes a former member: their name stays on past
+        Expenses, they take part in no new ones, and a linked User loses
+        access to the Group.
+      tags: [groups]
+      responses:
+        "204":
+          description: The Member is now a former member.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: The Member's Balance is not zero (`nonzero_balance`).
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  /groups/{groupId}/members/{memberId}/claim:
+    parameters:
+      - $ref: "#/components/parameters/GroupId"
+      - $ref: "#/components/parameters/MemberId"
+    delete:
+      operationId: undoClaim
+      summary: Undoes a Claim made by mistake.
+      description: >
+        Any Member can do it. The Member becomes pending again with its whole
+        history, the User who had claimed it loses access to the Group, and
+        the change is recorded in the Activity.
+      tags: [groups]
+      responses:
+        "204":
+          description: The Member is pending again.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: The Member is not linked to a User (`member_not_claimed`).
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  /groups/{groupId}/leave:
+    parameters:
+      - $ref: "#/components/parameters/GroupId"
+    post:
+      operationId: leaveGroup
+      summary: The User leaves a Group where their Balance is zero.
+      tags: [groups]
+      responses:
+        "204":
+          description: The User's Member is now a former member; the client drops the Group on the next sync.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: The User's Balance is not zero (`nonzero_balance`).
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  /groups/{groupId}/invite-link:
+    parameters:
+      - $ref: "#/components/parameters/GroupId"
+    post:
+      operationId: regenerateGroupInviteLink
+      summary: Creates a new Invite link for a Group and revokes the previous one.
+      description: >
+        The server only keeps the link's hash, so the token can only be read
+        in this response.
+      tags: [groups]
+      responses:
+        "200":
+          description: The new Invite link.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InviteLink"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  /invites/{token}:
+    parameters:
+      - $ref: "#/components/parameters/InviteToken"
+    get:
+      operationId: getInvite
+      summary: Shows what an Invite link leads to.
+      description: >
+        Works without a session, so the invite page can show the Group before
+        signing in. With a session it also suggests the pending Member whose
+        email matches the User's (never linked automatically), and says
+        whether the User already belongs to the ledger.
+      tags: [invites]
+      security:
+        - {}
+        - sessionCookie: []
+      responses:
+        "200":
+          description: The invite.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Invite"
+        "404":
+          description: The link does not exist or was revoked (`invite_link_invalid`).
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  /invites/{token}/claim:
+    parameters:
+      - $ref: "#/components/parameters/InviteToken"
+    post:
+      operationId: claimMember
+      summary: Claims a pending Member of a Group, or the pending Friend of a Friendship.
+      description: >
+        The User is linked to the Member and inherits its whole history. The
+        next sync brings the whole ledger.
+      tags: [invites]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ClaimRequest"
+      responses:
+        "200":
+          description: The User now holds the Member.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JoinedLedger"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: The link does not exist or was revoked (`invite_link_invalid`), or the Member is not in that ledger (`not_found`).
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "409":
+          description: >
+            The Member is already linked (`member_not_pending`), the User
+            already holds a Member in this Group (`already_member`), or the
+            User already has a Friendship with that person
+            (`friendship_exists`).
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  /invites/{token}/join:
+    parameters:
+      - $ref: "#/components/parameters/InviteToken"
+    post:
+      operationId: joinGroup
+      summary: Joins a Group as a new Member, named after the User.
+      description: Only Group links allow it; a pending Friend's link can only be claimed (`400 validation_failed`).
+      tags: [invites]
+      responses:
+        "201":
+          description: The User's new Member.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JoinedLedger"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: The link does not exist or was revoked (`invite_link_invalid`).
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "409":
+          description: The User already holds a Member in this Group (`already_member`).
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  /friendships:
+    post:
+      operationId: createFriendship
+      summary: Creates a Friendship with a pending Friend or with an existing User.
+      description: >
+        Send `name` (and optionally `email`) for a pending Friend, or
+        `userId` for a User the caller already shares a Group with. Never
+        both. An email never links to a User automatically.
+      tags: [friendships]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NewFriendship"
+      responses:
+        "201":
+          description: The new Friendship. Its two Members arrive with the next sync.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Friendship"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: No User with that `userId` shares a Group with the caller (`not_found`).
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "409":
+          description: There is already a Friendship with that User (`friendship_exists`).
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  /friendships/{friendshipId}/invite-link:
+    parameters:
+      - $ref: "#/components/parameters/FriendshipId"
+    post:
+      operationId: regenerateFriendInviteLink
+      summary: Creates a new Invite link for a pending Friend and revokes the previous one.
+      description: The link only allows claiming the pending Friend. The token can only be read in this response.
+      tags: [friendships]
+      responses:
+        "200":
+          description: The new Invite link.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InviteLink"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: The Friend is already linked to a User (`member_not_pending`).
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  /records:
+    post:
+      operationId: pushRecords
+      summary: Sends a batch of Unsynced records (new Expenses and Settlements).
+      description: >
+        Idempotent: each record carries an id generated by the client
+        (UUIDv7), and a record whose id already exists in the same ledger and
+        by the same author is accepted again without changes. Each record is
+        accepted or rejected on its own, with a reason; rejected records stay
+        on the device as Rejected records until the User fixes or discards
+        them.
+      tags: [records]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RecordBatch"
+      responses:
+        "200":
+          description: One result per record sent, in no particular order.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RecordResults"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  /expenses/{expenseId}:
+    parameters:
+      - $ref: "#/components/parameters/ExpenseId"
+    patch:
+      operationId: updateExpense
+      summary: Edits an Expense if nobody changed it since the client read it.
+      description: >
+        Sends the whole editable content, already split by the client (ADR
+        0003), with the version it was editing. Any linked Member of a Group
+        can edit its Expenses; in a Friendship, either of the two.
+      tags: [records]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ExpenseUpdate"
+      responses:
+        "200":
+          description: The Expense with its new version.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Expense"
+        "400":
+          description: The body is invalid (`validation_failed`) or the shares do not add up to the total (`invalid_amounts`).
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: >
+            The Expense changed since `expectedVersion` (`version_conflict`;
+            sync to see the new version), the currency is not the Group
+            currency (`currency_mismatch`), or a Participant is not an active
+            Member (`invalid_participants`).
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+    delete:
+      operationId: deleteExpense
+      summary: Deletes an Expense; it stops counting in Balances but can be restored.
+      tags: [records]
+      responses:
+        "204":
+          description: The Expense is deleted (or already was).
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  /expenses/{expenseId}/restore:
+    parameters:
+      - $ref: "#/components/parameters/ExpenseId"
+    post:
+      operationId: restoreExpense
+      summary: Restores a deleted Expense, with no time limit.
+      tags: [records]
+      responses:
+        "200":
+          description: The Expense counts again, with a new version.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Expense"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: >
+            A Participant is now a former member, whose Balance must stay at
+            zero (`invalid_participants`).
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  /settlements/{settlementId}:
+    parameters:
+      - $ref: "#/components/parameters/SettlementId"
+    patch:
+      operationId: updateSettlement
+      summary: Edits a Settlement if nobody changed it since the client read it.
+      tags: [records]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SettlementUpdate"
+      responses:
+        "200":
+          description: The Settlement with its new version.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Settlement"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: >
+            The Settlement changed since `expectedVersion`
+            (`version_conflict`), the currency is not the Group currency
+            (`currency_mismatch`), or a person is not an active Member
+            (`invalid_participants`).
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+    delete:
+      operationId: deleteSettlement
+      summary: Deletes a Settlement; it stops counting in Balances but can be restored.
+      tags: [records]
+      responses:
+        "204":
+          description: The Settlement is deleted (or already was).
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  /settlements/{settlementId}/restore:
+    parameters:
+      - $ref: "#/components/parameters/SettlementId"
+    post:
+      operationId: restoreSettlement
+      summary: Restores a deleted Settlement.
+      tags: [records]
+      responses:
+        "200":
+          description: The Settlement counts again, with a new version.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Settlement"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: One of the two people is now a former member (`invalid_participants`).
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  /sync:
+    get:
+      operationId: pullChanges
+      summary: Returns everything that changed since a cursor in the User's Groups and Friendships.
+      description: >
+        Returns every row with a version greater than `since` in the ledgers
+        where the User has an active Member, plus whole ledgers the User
+        joined or claimed since then even if their changes are older. With
+        `since=0` it returns everything, as on the first sign-in on a device.
+        Keep calling with the returned `cursor` while `hasMore` is true.
+      tags: [sync]
+      parameters:
+        - name: since
+          in: query
+          required: true
+          description: The `cursor` of the previous pull, or 0.
+          schema:
+            type: integer
+            format: int64
+            minimum: 0
+      responses:
+        "200":
+          description: The changes and the new cursor.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Changes"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "410":
+          description: >
+            `since` is ahead of the server, for example after restoring a
+            backup (`cursor_invalid`). The client discards its replica, keeps
+            its Unsynced records, and pulls again from 0.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+
 components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: quitsie_session
+      description: >
+        Opaque session token set by verifyLoginCode or finishGoogleLogin.
+        HttpOnly, Secure and SameSite=Lax; it expires after 90 days without
+        use. The server only stores its hash.
+
+  parameters:
+    SessionId:
+      name: sessionId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    GroupId:
+      name: groupId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    MemberId:
+      name: memberId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    FriendshipId:
+      name: friendshipId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    ExpenseId:
+      name: expenseId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    SettlementId:
+      name: settlementId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    InviteToken:
+      name: token
+      in: path
+      required: true
+      description: The secret part of an Invite link.
+      schema:
+        type: string
+        minLength: 16
+        maxLength: 128
+
+  responses:
+    Problem:
+      description: Any other error, such as `origin_mismatch` (403), `rate_limited` (429), `internal_error` (500) or `not_implemented` (501).
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    BadRequest:
+      description: The request is malformed or breaks a rule of the contract (`validation_failed`).
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    Unauthorized:
+      description: There is no valid session (`unauthenticated`).
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    NotFound:
+      description: It does not exist or the User cannot see it (`not_found`).
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+
   schemas:
     Health:
       type: object
@@ -43,3 +1080,923 @@ components:
           type: string
           description: Build version of the server binary (a commit SHA in production, "dev" locally).
           example: dev
+
+    # --- Errors ---------------------------------------------------------
+
+    Problem:
+      type: object
+      description: Error body (RFC 9457, `application/problem+json`).
+      required: [title, status, code]
+      properties:
+        type:
+          type: string
+          description: URI that identifies the problem type; absent means `about:blank`.
+        title:
+          type: string
+          description: Short English summary for logs. The UI shows its own text for each `code`.
+          example: The expense changed since you read it.
+        status:
+          type: integer
+          description: The HTTP status code.
+          example: 409
+        detail:
+          type: string
+          description: Explanation of this occurrence, for logs and debugging.
+        code:
+          $ref: "#/components/schemas/ProblemCode"
+
+    ProblemCode:
+      type: string
+      description: >
+        Stable machine-readable error code. New codes may be added; clients
+        treat an unknown code as a generic error for its status.
+      enum:
+        - validation_failed
+        - unauthenticated
+        - origin_mismatch
+        - not_found
+        - rate_limited
+        - login_code_invalid
+        - login_code_expired
+        - too_many_attempts
+        - invite_link_invalid
+        - version_conflict
+        - nonzero_balance
+        - currency_mismatch
+        - currency_precision_loss
+        - invalid_amounts
+        - invalid_participants
+        - member_not_pending
+        - member_not_claimed
+        - already_member
+        - friendship_exists
+        - cursor_invalid
+        - internal_error
+        - not_implemented
+
+    CurrencyPrecisionProblem:
+      description: The `currency_precision_loss` problem, with the records the User must fix first.
+      allOf:
+        - $ref: "#/components/schemas/Problem"
+        - type: object
+          required: [expenseIds, settlementIds]
+          properties:
+            expenseIds:
+              type: array
+              items:
+                type: string
+                format: uuid
+            settlementIds:
+              type: array
+              items:
+                type: string
+                format: uuid
+
+    # --- Shared values --------------------------------------------------
+
+    Currency:
+      type: string
+      description: ISO 4217 currency code.
+      pattern: "^[A-Z]{3}$"
+      example: USD
+
+    Amount:
+      type: integer
+      format: int64
+      minimum: 1
+      description: Positive amount in the minor unit of its currency (ISO 4217), for example 1050 = 10.50 USD.
+      example: 1050
+
+    Version:
+      type: integer
+      format: int64
+      description: Value of the global version counter when the row last changed.
+      example: 42
+
+    Category:
+      type: string
+      description: What an Expense was spent on. The client translates each value.
+      enum:
+        - food
+        - groceries
+        - transport
+        - lodging
+        - housing
+        - utilities
+        - entertainment
+        - shopping
+        - health
+        - gifts
+        - other
+
+    SplitMethod:
+      type: string
+      description: >
+        How the client computed the OwedShares (ADR 0003). The server stores
+        it only to re-edit the Expense and never recomputes the shares.
+      enum: [equal, exact, percentage, weights, adjustment]
+
+    # --- Auth and profile -----------------------------------------------
+
+    LoginCodeRequest:
+      type: object
+      required: [email]
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 254
+
+    LoginCodeVerification:
+      type: object
+      required: [email, code]
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 254
+        code:
+          type: string
+          pattern: "^[0-9]{6}$"
+          example: "042917"
+
+    LoginResult:
+      type: object
+      required: [user, newUser]
+      properties:
+        user:
+          $ref: "#/components/schemas/User"
+        newUser:
+          type: boolean
+          description: True when this sign-in created the account.
+
+    User:
+      type: object
+      required: [id, email, name, preferredCurrency]
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        name:
+          type: string
+        preferredCurrency:
+          $ref: "#/components/schemas/Currency"
+
+    UserUpdate:
+      type: object
+      minProperties: 1
+      description: Only the fields sent change.
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 80
+        preferredCurrency:
+          $ref: "#/components/schemas/Currency"
+
+    Session:
+      type: object
+      required: [id, device, createdAt, lastUsedAt, current]
+      properties:
+        id:
+          type: string
+          format: uuid
+        device:
+          type: string
+          description: Description of the device, derived from its User-Agent at sign-in.
+          example: Safari en iPhone
+        createdAt:
+          type: string
+          format: date-time
+        lastUsedAt:
+          type: string
+          format: date-time
+        current:
+          type: boolean
+          description: True for the session making this request.
+
+    # --- Groups, Friendships and Members --------------------------------
+
+    Group:
+      type: object
+      required: [id, name, currency, simplifyDebts, createdAt, version]
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: The Group's ledger id.
+        name:
+          type: string
+        currency:
+          $ref: "#/components/schemas/Currency"
+        simplifyDebts:
+          type: boolean
+          description: Whether Debt simplification is on.
+        createdAt:
+          type: string
+          format: date-time
+        version:
+          $ref: "#/components/schemas/Version"
+
+    NewGroup:
+      type: object
+      required: [name, currency]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 80
+        currency:
+          $ref: "#/components/schemas/Currency"
+        simplifyDebts:
+          type: boolean
+          default: true
+        pendingMembers:
+          type: array
+          description: Pending Members to add along with the User.
+          maxItems: 50
+          items:
+            $ref: "#/components/schemas/NewPendingMember"
+
+    GroupUpdate:
+      type: object
+      minProperties: 1
+      description: Only the fields sent change.
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 80
+        simplifyDebts:
+          type: boolean
+        currency:
+          $ref: "#/components/schemas/Currency"
+
+    NewPendingMember:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 80
+        email:
+          type: string
+          format: email
+          maxLength: 254
+          description: Used only to suggest this Member when someone with that email opens the Invite link.
+
+    Friendship:
+      type: object
+      required: [id, createdAt, version]
+      description: A Friendship's ledger. Its two Members (the User and the Friend) arrive in `Changes.members`.
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: The Friendship's ledger id.
+        createdAt:
+          type: string
+          format: date-time
+        version:
+          $ref: "#/components/schemas/Version"
+
+    NewFriendship:
+      type: object
+      description: Either `userId`, or `name` with an optional `email`.
+      properties:
+        userId:
+          type: string
+          format: uuid
+          description: An existing User who shares a Group with the caller.
+        name:
+          type: string
+          minLength: 1
+          maxLength: 80
+          description: Name of the pending Friend.
+        email:
+          type: string
+          format: email
+          maxLength: 254
+          description: Email of the pending Friend, used only to suggest the Claim.
+
+    MemberStatus:
+      type: string
+      description: "`former` is a former member: still named on past Expenses, out of new ones."
+      enum: [active, former]
+
+    Member:
+      type: object
+      required: [id, ledgerId, name, status, version]
+      description: >
+        A person's place in a Group, or one of the two sides of a Friendship
+        (the Friend is a Member too). Without `userId` it is a pending Member
+        or a pending Friend.
+      properties:
+        id:
+          type: string
+          format: uuid
+        ledgerId:
+          type: string
+          format: uuid
+        userId:
+          type: string
+          format: uuid
+          description: The linked User; absent while pending.
+        name:
+          type: string
+        email:
+          type: string
+          format: email
+          description: Only for pending Members, the email given when adding them.
+        status:
+          $ref: "#/components/schemas/MemberStatus"
+        version:
+          $ref: "#/components/schemas/Version"
+
+    # --- Invites --------------------------------------------------------
+
+    InviteLink:
+      type: object
+      required: [token]
+      properties:
+        token:
+          type: string
+          description: Secret to put in the app's invite URL. Only its hash is stored.
+
+    Invite:
+      type: object
+      required: [kind, ledgerId, pendingMembers]
+      properties:
+        kind:
+          type: string
+          description: "`group` links allow claiming or joining; `friendship` links only allow claiming the pending Friend."
+          enum: [group, friendship]
+        ledgerId:
+          type: string
+          format: uuid
+        groupName:
+          type: string
+          description: Only for `group`.
+        invitedBy:
+          type: string
+          description: Only for `friendship`, the name of the User who added the pending Friend.
+        pendingMembers:
+          type: array
+          description: The pending Members that can be claimed; for `friendship`, just the pending Friend.
+          items:
+            $ref: "#/components/schemas/InviteMember"
+        suggestedMemberId:
+          type: string
+          format: uuid
+          description: With a session, the pending Member whose email matches the User's.
+        joinedMemberId:
+          type: string
+          format: uuid
+          description: With a session, the User's Member when they already belong to this ledger.
+
+    InviteMember:
+      type: object
+      required: [id, name]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+
+    ClaimRequest:
+      type: object
+      required: [memberId]
+      properties:
+        memberId:
+          type: string
+          format: uuid
+          description: The pending Member (or pending Friend) to claim.
+
+    JoinedLedger:
+      type: object
+      required: [kind, ledgerId, memberId]
+      properties:
+        kind:
+          type: string
+          enum: [group, friendship]
+        ledgerId:
+          type: string
+          format: uuid
+        memberId:
+          type: string
+          format: uuid
+          description: The User's Member in that ledger.
+
+    # --- Expenses and Settlements ---------------------------------------
+
+    PaidShare:
+      type: object
+      required: [memberId, amount]
+      description: What a Participant paid of an Expense.
+      properties:
+        memberId:
+          type: string
+          format: uuid
+        amount:
+          $ref: "#/components/schemas/Amount"
+
+    OwedShare:
+      type: object
+      required: [memberId, amount]
+      description: What a Participant owes of an Expense, already computed by the client.
+      properties:
+        memberId:
+          type: string
+          format: uuid
+        amount:
+          $ref: "#/components/schemas/Amount"
+        splitValue:
+          type: integer
+          format: int64
+          description: >
+            The Participant's input to the Split method, kept to re-edit the
+            Expense: percentage in hundredths (10000 = 100 %), weight, or
+            adjustment in minor units (may be negative). Absent for `equal`
+            and `exact`.
+
+    Expense:
+      type: object
+      required:
+        - id
+        - ledgerId
+        - description
+        - date
+        - currency
+        - total
+        - splitMethod
+        - paidShares
+        - owedShares
+        - createdBy
+        - createdAt
+        - version
+      properties:
+        id:
+          type: string
+          format: uuid
+        ledgerId:
+          type: string
+          format: uuid
+        description:
+          type: string
+        date:
+          type: string
+          format: date
+        currency:
+          $ref: "#/components/schemas/Currency"
+        total:
+          $ref: "#/components/schemas/Amount"
+        category:
+          $ref: "#/components/schemas/Category"
+        splitMethod:
+          $ref: "#/components/schemas/SplitMethod"
+        paidShares:
+          type: array
+          items:
+            $ref: "#/components/schemas/PaidShare"
+        owedShares:
+          type: array
+          items:
+            $ref: "#/components/schemas/OwedShare"
+        createdBy:
+          type: string
+          format: uuid
+          description: The User who created it.
+        createdAt:
+          type: string
+          format: date-time
+        version:
+          $ref: "#/components/schemas/Version"
+        deletedAt:
+          type: string
+          format: date-time
+          description: Set on a deleted Expense, which no longer counts in Balances but can be restored.
+
+    NewExpense:
+      type: object
+      description: >
+        An Expense created on the device. In a Group, `currency` is the Group
+        currency the client knew; if it no longer matches, the record is
+        rejected with `currency_mismatch`. In a Friendship it is the
+        Expense's own currency.
+      required:
+        - id
+        - ledgerId
+        - description
+        - date
+        - currency
+        - total
+        - splitMethod
+        - paidShares
+        - owedShares
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: UUIDv7 generated by the client.
+        ledgerId:
+          type: string
+          format: uuid
+          description: The Group or Friendship.
+        description:
+          type: string
+          minLength: 1
+          maxLength: 200
+        date:
+          type: string
+          format: date
+        currency:
+          $ref: "#/components/schemas/Currency"
+        total:
+          $ref: "#/components/schemas/Amount"
+        category:
+          $ref: "#/components/schemas/Category"
+        splitMethod:
+          $ref: "#/components/schemas/SplitMethod"
+        paidShares:
+          type: array
+          minItems: 1
+          description: Add up to `total`.
+          items:
+            $ref: "#/components/schemas/PaidShare"
+        owedShares:
+          type: array
+          minItems: 1
+          description: Add up to `total`.
+          items:
+            $ref: "#/components/schemas/OwedShare"
+
+    ExpenseUpdate:
+      type: object
+      description: >
+        The whole editable content of an Expense. Omitting `category` clears
+        it. The same currency rule as in NewExpense applies.
+      required:
+        - expectedVersion
+        - description
+        - date
+        - currency
+        - total
+        - splitMethod
+        - paidShares
+        - owedShares
+      properties:
+        expectedVersion:
+          $ref: "#/components/schemas/Version"
+        description:
+          type: string
+          minLength: 1
+          maxLength: 200
+        date:
+          type: string
+          format: date
+        currency:
+          $ref: "#/components/schemas/Currency"
+        total:
+          $ref: "#/components/schemas/Amount"
+        category:
+          $ref: "#/components/schemas/Category"
+        splitMethod:
+          $ref: "#/components/schemas/SplitMethod"
+        paidShares:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/PaidShare"
+        owedShares:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/OwedShare"
+
+    Settlement:
+      type: object
+      required:
+        - id
+        - ledgerId
+        - fromMemberId
+        - toMemberId
+        - amount
+        - currency
+        - date
+        - createdBy
+        - createdAt
+        - version
+      description: A record that one person paid another back. No real money moves.
+      properties:
+        id:
+          type: string
+          format: uuid
+        ledgerId:
+          type: string
+          format: uuid
+        fromMemberId:
+          type: string
+          format: uuid
+          description: Who paid back.
+        toMemberId:
+          type: string
+          format: uuid
+          description: Who received it.
+        amount:
+          $ref: "#/components/schemas/Amount"
+        currency:
+          $ref: "#/components/schemas/Currency"
+        date:
+          type: string
+          format: date
+        createdBy:
+          type: string
+          format: uuid
+          description: The User who recorded it.
+        createdAt:
+          type: string
+          format: date-time
+        version:
+          $ref: "#/components/schemas/Version"
+        deletedAt:
+          type: string
+          format: date-time
+          description: Set on a deleted Settlement, which no longer counts in Balances but can be restored.
+
+    NewSettlement:
+      type: object
+      description: A Settlement created on the device. `currency` follows the same rule as in NewExpense.
+      required: [id, ledgerId, fromMemberId, toMemberId, amount, currency, date]
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: UUIDv7 generated by the client.
+        ledgerId:
+          type: string
+          format: uuid
+        fromMemberId:
+          type: string
+          format: uuid
+        toMemberId:
+          type: string
+          format: uuid
+        amount:
+          $ref: "#/components/schemas/Amount"
+        currency:
+          $ref: "#/components/schemas/Currency"
+        date:
+          type: string
+          format: date
+
+    SettlementUpdate:
+      type: object
+      description: The whole editable content of a Settlement.
+      required: [expectedVersion, fromMemberId, toMemberId, amount, currency, date]
+      properties:
+        expectedVersion:
+          $ref: "#/components/schemas/Version"
+        fromMemberId:
+          type: string
+          format: uuid
+        toMemberId:
+          type: string
+          format: uuid
+        amount:
+          $ref: "#/components/schemas/Amount"
+        currency:
+          $ref: "#/components/schemas/Currency"
+        date:
+          type: string
+          format: date
+
+    RecordBatch:
+      type: object
+      required: [expenses, settlements]
+      properties:
+        expenses:
+          type: array
+          maxItems: 100
+          items:
+            $ref: "#/components/schemas/NewExpense"
+        settlements:
+          type: array
+          maxItems: 100
+          items:
+            $ref: "#/components/schemas/NewSettlement"
+
+    RecordResults:
+      type: object
+      required: [results]
+      properties:
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/RecordResult"
+
+    RecordResult:
+      type: object
+      required: [id, kind, status]
+      properties:
+        id:
+          type: string
+          format: uuid
+        kind:
+          type: string
+          enum: [expense, settlement]
+        status:
+          type: string
+          enum: [accepted, rejected]
+        reason:
+          type: string
+          description: >
+            Only when rejected. `ledger_unavailable`: the ledger was deleted
+            or the User is no longer an active Member. `currency_mismatch`:
+            the Group currency changed. `invalid_participants`: someone is
+            not an active Member. `invalid_amounts`: the shares do not add up
+            to the total. `id_conflict`: the id belongs to another record.
+            `invalid_record`: any other rule of the contract.
+          enum:
+            - ledger_unavailable
+            - currency_mismatch
+            - invalid_participants
+            - invalid_amounts
+            - id_conflict
+            - invalid_record
+        detail:
+          type: string
+          description: Explanation of the rejection, for logs and debugging.
+        version:
+          $ref: "#/components/schemas/Version"
+
+    # --- Sync -----------------------------------------------------------
+
+    Activity:
+      type: object
+      required: [id, ledgerId, userId, kind, details, createdAt, version]
+      description: Who changed what, and when, in a Group or between Friends.
+      properties:
+        id:
+          type: string
+          format: uuid
+        ledgerId:
+          type: string
+          format: uuid
+        userId:
+          type: string
+          format: uuid
+          description: The User who made the change.
+        kind:
+          type: string
+          description: What changed. New kinds may be added; clients skip the ones they do not know.
+          enum:
+            - group_created
+            - group_renamed
+            - group_currency_changed
+            - debt_simplification_changed
+            - member_added
+            - member_joined
+            - member_claimed
+            - claim_undone
+            - member_removed
+            - member_left
+            - friendship_created
+            - expense_created
+            - expense_updated
+            - expense_deleted
+            - expense_restored
+            - settlement_created
+            - settlement_updated
+            - settlement_deleted
+            - settlement_restored
+        details:
+          type: object
+          additionalProperties: true
+          description: >
+            Data that depends on `kind`, such as the ids involved and the
+            values before and after.
+        createdAt:
+          type: string
+          format: date-time
+        version:
+          $ref: "#/components/schemas/Version"
+
+    Debt:
+      type: object
+      required: [fromMemberId, toMemberId, amount, currency]
+      description: How much one person owes another specific person.
+      properties:
+        fromMemberId:
+          type: string
+          format: uuid
+          description: Who owes.
+        toMemberId:
+          type: string
+          format: uuid
+          description: Who is owed.
+        amount:
+          $ref: "#/components/schemas/Amount"
+        currency:
+          $ref: "#/components/schemas/Currency"
+
+    LedgerDebts:
+      type: object
+      required: [ledgerId, debts]
+      description: >
+        The current Debts of a ledger, computed by the server. In a Group
+        with Debt simplification they are already simplified; in a
+        Friendship there is at most one per currency.
+      properties:
+        ledgerId:
+          type: string
+          format: uuid
+        debts:
+          type: array
+          description: Replaces the ledger's previous Debts; empty when everyone is settled.
+          items:
+            $ref: "#/components/schemas/Debt"
+
+    DroppedLedger:
+      type: object
+      required: [ledgerId, reason]
+      description: >
+        A ledger the User can no longer see. The client deletes it from the
+        replica with everything in it.
+      properties:
+        ledgerId:
+          type: string
+          format: uuid
+        reason:
+          type: string
+          description: >
+            `deleted`: the Group was deleted. `left`: the User left it.
+            `removed`: another Member removed the User. `unclaimed`: someone
+            undid the User's Claim.
+          enum: [deleted, left, removed, unclaimed]
+
+    Changes:
+      type: object
+      description: >
+        Everything with a version greater than the cursor sent. Every list is
+        always present, possibly empty. Rows replace the replica's copy with
+        the same id.
+      required:
+        - cursor
+        - hasMore
+        - groups
+        - friendships
+        - members
+        - expenses
+        - settlements
+        - activities
+        - debts
+        - droppedLedgers
+      properties:
+        cursor:
+          type: integer
+          format: int64
+          description: Send it as `since` in the next pull.
+        hasMore:
+          type: boolean
+          description: True when the server cut the response short; pull again right away with `cursor`.
+        groups:
+          type: array
+          items:
+            $ref: "#/components/schemas/Group"
+        friendships:
+          type: array
+          items:
+            $ref: "#/components/schemas/Friendship"
+        members:
+          type: array
+          description: Includes Members who became former members; the User's own former Members come as `droppedLedgers` instead.
+          items:
+            $ref: "#/components/schemas/Member"
+        expenses:
+          type: array
+          description: Includes deleted Expenses, with `deletedAt`.
+          items:
+            $ref: "#/components/schemas/Expense"
+        settlements:
+          type: array
+          description: Includes deleted Settlements, with `deletedAt`.
+          items:
+            $ref: "#/components/schemas/Settlement"
+        activities:
+          type: array
+          items:
+            $ref: "#/components/schemas/Activity"
+        debts:
+          type: array
+          description: The Debts of every ledger that changed.
+          items:
+            $ref: "#/components/schemas/LedgerDebts"
+        droppedLedgers:
+          type: array
+          items:
+            $ref: "#/components/schemas/DroppedLedger"

@@ -21,6 +21,542 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/auth/login-code": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Emails a 6-digit sign-in code.
+         * @description Answers 204 whether or not an account exists for the email, so the endpoint does not reveal who has one. The code expires after 10 minutes. Sending is limited per email and per IP.
+         */
+        post: operations["requestLoginCode"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/login-code/verify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Exchanges a sign-in code for a session.
+         * @description Creates the User the first time an email signs in (`newUser` is then true and the client asks for a name and a Preferred currency). A code admits 5 attempts at most.
+         */
+        post: operations["verifyLoginCode"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/google": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Redirects to Google to sign in with OpenID Connect.
+         * @description The browser navigates here (it is not called with fetch). The server keeps the OAuth state in a short-lived cookie.
+         */
+        get: operations["startGoogleLogin"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/google/callback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Google redirects back here; signs in and returns to the app.
+         * @description Always answers with a redirect to the app: to `returnTo` on success, creating the User if needed, or to `/login?error=google` on failure.
+         */
+        get: operations["finishGoogleLogin"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/logout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Closes the current session. */
+        post: operations["logout"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Lists the User's open sessions, one per device. */
+        get: operations["listSessions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/sessions/{sessionId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sessionId: components["parameters"]["SessionId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Closes a session on one device.
+         * @description Closing the current session is the same as signing out.
+         */
+        delete: operations["revokeSession"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Returns the signed-in User. */
+        get: operations["getMe"];
+        put?: never;
+        post?: never;
+        /**
+         * Deletes the User's account.
+         * @description Closes every session. The User's Members and Friends become pending again, keeping their names, so nobody else's Balances change.
+         */
+        delete: operations["deleteMe"];
+        options?: never;
+        head?: never;
+        /** Changes the User's name or Preferred currency. */
+        patch: operations["updateMe"];
+        trace?: never;
+    };
+    "/groups": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Creates a Group with the User as its first Member. */
+        post: operations["createGroup"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/groups/{groupId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                groupId: components["parameters"]["GroupId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Deletes a Group whose Balances are all zero. */
+        delete: operations["deleteGroup"];
+        options?: never;
+        head?: never;
+        /**
+         * Renames a Group, turns Debt simplification on or off, or changes the Group currency.
+         * @description Changing `currency` relabels every Expense and Settlement of the Group: same numbers, another currency, never an exchange rate. When the new currency has fewer decimals, the change is only allowed if no amount loses minor units; otherwise it answers `409 currency_precision_loss` with the records to fix. Unsynced records created before the change will be rejected with `currency_mismatch`.
+         */
+        patch: operations["updateGroup"];
+        trace?: never;
+    };
+    "/groups/{groupId}/members": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                groupId: components["parameters"]["GroupId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Adds a pending Member to a Group. */
+        post: operations["addPendingMember"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/groups/{groupId}/members/{memberId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                groupId: components["parameters"]["GroupId"];
+                memberId: components["parameters"]["MemberId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Removes a Member whose Balance is zero from a Group.
+         * @description The Member becomes a former member: their name stays on past Expenses, they take part in no new ones, and a linked User loses access to the Group.
+         */
+        delete: operations["removeMember"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/groups/{groupId}/members/{memberId}/claim": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                groupId: components["parameters"]["GroupId"];
+                memberId: components["parameters"]["MemberId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Undoes a Claim made by mistake.
+         * @description Any Member can do it. The Member becomes pending again with its whole history, the User who had claimed it loses access to the Group, and the change is recorded in the Activity.
+         */
+        delete: operations["undoClaim"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/groups/{groupId}/leave": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                groupId: components["parameters"]["GroupId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** The User leaves a Group where their Balance is zero. */
+        post: operations["leaveGroup"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/groups/{groupId}/invite-link": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                groupId: components["parameters"]["GroupId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Creates a new Invite link for a Group and revokes the previous one.
+         * @description The server only keeps the link's hash, so the token can only be read in this response.
+         */
+        post: operations["regenerateGroupInviteLink"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/invites/{token}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The secret part of an Invite link. */
+                token: components["parameters"]["InviteToken"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Shows what an Invite link leads to.
+         * @description Works without a session, so the invite page can show the Group before signing in. With a session it also suggests the pending Member whose email matches the User's (never linked automatically), and says whether the User already belongs to the ledger.
+         */
+        get: operations["getInvite"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/invites/{token}/claim": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The secret part of an Invite link. */
+                token: components["parameters"]["InviteToken"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Claims a pending Member of a Group, or the pending Friend of a Friendship.
+         * @description The User is linked to the Member and inherits its whole history. The next sync brings the whole ledger.
+         */
+        post: operations["claimMember"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/invites/{token}/join": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The secret part of an Invite link. */
+                token: components["parameters"]["InviteToken"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Joins a Group as a new Member, named after the User.
+         * @description Only Group links allow it; a pending Friend's link can only be claimed (`400 validation_failed`).
+         */
+        post: operations["joinGroup"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/friendships": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Creates a Friendship with a pending Friend or with an existing User.
+         * @description Send `name` (and optionally `email`) for a pending Friend, or `userId` for a User the caller already shares a Group with. Never both. An email never links to a User automatically.
+         */
+        post: operations["createFriendship"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/friendships/{friendshipId}/invite-link": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                friendshipId: components["parameters"]["FriendshipId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Creates a new Invite link for a pending Friend and revokes the previous one.
+         * @description The link only allows claiming the pending Friend. The token can only be read in this response.
+         */
+        post: operations["regenerateFriendInviteLink"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/records": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Sends a batch of Unsynced records (new Expenses and Settlements).
+         * @description Idempotent: each record carries an id generated by the client (UUIDv7), and a record whose id already exists in the same ledger and by the same author is accepted again without changes. Each record is accepted or rejected on its own, with a reason; rejected records stay on the device as Rejected records until the User fixes or discards them.
+         */
+        post: operations["pushRecords"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/expenses/{expenseId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                expenseId: components["parameters"]["ExpenseId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Deletes an Expense; it stops counting in Balances but can be restored. */
+        delete: operations["deleteExpense"];
+        options?: never;
+        head?: never;
+        /**
+         * Edits an Expense if nobody changed it since the client read it.
+         * @description Sends the whole editable content, already split by the client (ADR 0003), with the version it was editing. Any linked Member of a Group can edit its Expenses; in a Friendship, either of the two.
+         */
+        patch: operations["updateExpense"];
+        trace?: never;
+    };
+    "/expenses/{expenseId}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                expenseId: components["parameters"]["ExpenseId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Restores a deleted Expense, with no time limit. */
+        post: operations["restoreExpense"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/settlements/{settlementId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                settlementId: components["parameters"]["SettlementId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Deletes a Settlement; it stops counting in Balances but can be restored. */
+        delete: operations["deleteSettlement"];
+        options?: never;
+        head?: never;
+        /** Edits a Settlement if nobody changed it since the client read it. */
+        patch: operations["updateSettlement"];
+        trace?: never;
+    };
+    "/settlements/{settlementId}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                settlementId: components["parameters"]["SettlementId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Restores a deleted Settlement. */
+        post: operations["restoreSettlement"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Returns everything that changed since a cursor in the User's Groups and Friendships.
+         * @description Returns every row with a version greater than `since` in the ledgers where the User has an active Member, plus whole ledgers the User joined or claimed since then even if their changes are older. With `since=0` it returns everything, as on the first sign-in on a device. Keep calling with the returned `cursor` while `hasMore` is true.
+         */
+        get: operations["pullChanges"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -36,9 +572,539 @@ export interface components {
              */
             version: string;
         };
+        /** @description Error body (RFC 9457, `application/problem+json`). */
+        Problem: {
+            /** @description URI that identifies the problem type; absent means `about:blank`. */
+            type?: string;
+            /**
+             * @description Short English summary for logs. The UI shows its own text for each `code`.
+             * @example The expense changed since you read it.
+             */
+            title: string;
+            /**
+             * @description The HTTP status code.
+             * @example 409
+             */
+            status: number;
+            /** @description Explanation of this occurrence, for logs and debugging. */
+            detail?: string;
+            code: components["schemas"]["ProblemCode"];
+        };
+        /**
+         * @description Stable machine-readable error code. New codes may be added; clients treat an unknown code as a generic error for its status.
+         * @enum {string}
+         */
+        ProblemCode: "validation_failed" | "unauthenticated" | "origin_mismatch" | "not_found" | "rate_limited" | "login_code_invalid" | "login_code_expired" | "too_many_attempts" | "invite_link_invalid" | "version_conflict" | "nonzero_balance" | "currency_mismatch" | "currency_precision_loss" | "invalid_amounts" | "invalid_participants" | "member_not_pending" | "member_not_claimed" | "already_member" | "friendship_exists" | "cursor_invalid" | "internal_error" | "not_implemented";
+        /** @description The `currency_precision_loss` problem, with the records the User must fix first. */
+        CurrencyPrecisionProblem: components["schemas"]["Problem"] & {
+            expenseIds: string[];
+            settlementIds: string[];
+        };
+        /**
+         * @description ISO 4217 currency code.
+         * @example USD
+         */
+        Currency: string;
+        /**
+         * Format: int64
+         * @description Positive amount in the minor unit of its currency (ISO 4217), for example 1050 = 10.50 USD.
+         * @example 1050
+         */
+        Amount: number;
+        /**
+         * Format: int64
+         * @description Value of the global version counter when the row last changed.
+         * @example 42
+         */
+        Version: number;
+        /**
+         * @description What an Expense was spent on. The client translates each value.
+         * @enum {string}
+         */
+        Category: "food" | "groceries" | "transport" | "lodging" | "housing" | "utilities" | "entertainment" | "shopping" | "health" | "gifts" | "other";
+        /**
+         * @description How the client computed the OwedShares (ADR 0003). The server stores it only to re-edit the Expense and never recomputes the shares.
+         * @enum {string}
+         */
+        SplitMethod: "equal" | "exact" | "percentage" | "weights" | "adjustment";
+        LoginCodeRequest: {
+            /** Format: email */
+            email: string;
+        };
+        LoginCodeVerification: {
+            /** Format: email */
+            email: string;
+            /** @example 042917 */
+            code: string;
+        };
+        LoginResult: {
+            user: components["schemas"]["User"];
+            /** @description True when this sign-in created the account. */
+            newUser: boolean;
+        };
+        User: {
+            /** Format: uuid */
+            id: string;
+            /** Format: email */
+            email: string;
+            name: string;
+            preferredCurrency: components["schemas"]["Currency"];
+        };
+        /** @description Only the fields sent change. */
+        UserUpdate: {
+            name?: string;
+            preferredCurrency?: components["schemas"]["Currency"];
+        };
+        Session: {
+            /** Format: uuid */
+            id: string;
+            /**
+             * @description Description of the device, derived from its User-Agent at sign-in.
+             * @example Safari en iPhone
+             */
+            device: string;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            lastUsedAt: string;
+            /** @description True for the session making this request. */
+            current: boolean;
+        };
+        Group: {
+            /**
+             * Format: uuid
+             * @description The Group's ledger id.
+             */
+            id: string;
+            name: string;
+            currency: components["schemas"]["Currency"];
+            /** @description Whether Debt simplification is on. */
+            simplifyDebts: boolean;
+            /** Format: date-time */
+            createdAt: string;
+            version: components["schemas"]["Version"];
+        };
+        NewGroup: {
+            name: string;
+            currency: components["schemas"]["Currency"];
+            /** @default true */
+            simplifyDebts: boolean;
+            /** @description Pending Members to add along with the User. */
+            pendingMembers?: components["schemas"]["NewPendingMember"][];
+        };
+        /** @description Only the fields sent change. */
+        GroupUpdate: {
+            name?: string;
+            simplifyDebts?: boolean;
+            currency?: components["schemas"]["Currency"];
+        };
+        NewPendingMember: {
+            name: string;
+            /**
+             * Format: email
+             * @description Used only to suggest this Member when someone with that email opens the Invite link.
+             */
+            email?: string;
+        };
+        /** @description A Friendship's ledger. Its two Members (the User and the Friend) arrive in `Changes.members`. */
+        Friendship: {
+            /**
+             * Format: uuid
+             * @description The Friendship's ledger id.
+             */
+            id: string;
+            /** Format: date-time */
+            createdAt: string;
+            version: components["schemas"]["Version"];
+        };
+        /** @description Either `userId`, or `name` with an optional `email`. */
+        NewFriendship: {
+            /**
+             * Format: uuid
+             * @description An existing User who shares a Group with the caller.
+             */
+            userId?: string;
+            /** @description Name of the pending Friend. */
+            name?: string;
+            /**
+             * Format: email
+             * @description Email of the pending Friend, used only to suggest the Claim.
+             */
+            email?: string;
+        };
+        /**
+         * @description `former` is a former member: still named on past Expenses, out of new ones.
+         * @enum {string}
+         */
+        MemberStatus: "active" | "former";
+        /** @description A person's place in a Group, or one of the two sides of a Friendship (the Friend is a Member too). Without `userId` it is a pending Member or a pending Friend. */
+        Member: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            ledgerId: string;
+            /**
+             * Format: uuid
+             * @description The linked User; absent while pending.
+             */
+            userId?: string;
+            name: string;
+            /**
+             * Format: email
+             * @description Only for pending Members, the email given when adding them.
+             */
+            email?: string;
+            status: components["schemas"]["MemberStatus"];
+            version: components["schemas"]["Version"];
+        };
+        InviteLink: {
+            /** @description Secret to put in the app's invite URL. Only its hash is stored. */
+            token: string;
+        };
+        Invite: {
+            /**
+             * @description `group` links allow claiming or joining; `friendship` links only allow claiming the pending Friend.
+             * @enum {string}
+             */
+            kind: "group" | "friendship";
+            /** Format: uuid */
+            ledgerId: string;
+            /** @description Only for `group`. */
+            groupName?: string;
+            /** @description Only for `friendship`, the name of the User who added the pending Friend. */
+            invitedBy?: string;
+            /** @description The pending Members that can be claimed; for `friendship`, just the pending Friend. */
+            pendingMembers: components["schemas"]["InviteMember"][];
+            /**
+             * Format: uuid
+             * @description With a session, the pending Member whose email matches the User's.
+             */
+            suggestedMemberId?: string;
+            /**
+             * Format: uuid
+             * @description With a session, the User's Member when they already belong to this ledger.
+             */
+            joinedMemberId?: string;
+        };
+        InviteMember: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+        };
+        ClaimRequest: {
+            /**
+             * Format: uuid
+             * @description The pending Member (or pending Friend) to claim.
+             */
+            memberId: string;
+        };
+        JoinedLedger: {
+            /** @enum {string} */
+            kind: "group" | "friendship";
+            /** Format: uuid */
+            ledgerId: string;
+            /**
+             * Format: uuid
+             * @description The User's Member in that ledger.
+             */
+            memberId: string;
+        };
+        /** @description What a Participant paid of an Expense. */
+        PaidShare: {
+            /** Format: uuid */
+            memberId: string;
+            amount: components["schemas"]["Amount"];
+        };
+        /** @description What a Participant owes of an Expense, already computed by the client. */
+        OwedShare: {
+            /** Format: uuid */
+            memberId: string;
+            amount: components["schemas"]["Amount"];
+            /**
+             * Format: int64
+             * @description The Participant's input to the Split method, kept to re-edit the Expense: percentage in hundredths (10000 = 100 %), weight, or adjustment in minor units (may be negative). Absent for `equal` and `exact`.
+             */
+            splitValue?: number;
+        };
+        Expense: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            ledgerId: string;
+            description: string;
+            /** Format: date */
+            date: string;
+            currency: components["schemas"]["Currency"];
+            total: components["schemas"]["Amount"];
+            category?: components["schemas"]["Category"];
+            splitMethod: components["schemas"]["SplitMethod"];
+            paidShares: components["schemas"]["PaidShare"][];
+            owedShares: components["schemas"]["OwedShare"][];
+            /**
+             * Format: uuid
+             * @description The User who created it.
+             */
+            createdBy: string;
+            /** Format: date-time */
+            createdAt: string;
+            version: components["schemas"]["Version"];
+            /**
+             * Format: date-time
+             * @description Set on a deleted Expense, which no longer counts in Balances but can be restored.
+             */
+            deletedAt?: string;
+        };
+        /** @description An Expense created on the device. In a Group, `currency` is the Group currency the client knew; if it no longer matches, the record is rejected with `currency_mismatch`. In a Friendship it is the Expense's own currency. */
+        NewExpense: {
+            /**
+             * Format: uuid
+             * @description UUIDv7 generated by the client.
+             */
+            id: string;
+            /**
+             * Format: uuid
+             * @description The Group or Friendship.
+             */
+            ledgerId: string;
+            description: string;
+            /** Format: date */
+            date: string;
+            currency: components["schemas"]["Currency"];
+            total: components["schemas"]["Amount"];
+            category?: components["schemas"]["Category"];
+            splitMethod: components["schemas"]["SplitMethod"];
+            /** @description Add up to `total`. */
+            paidShares: components["schemas"]["PaidShare"][];
+            /** @description Add up to `total`. */
+            owedShares: components["schemas"]["OwedShare"][];
+        };
+        /** @description The whole editable content of an Expense. Omitting `category` clears it. The same currency rule as in NewExpense applies. */
+        ExpenseUpdate: {
+            expectedVersion: components["schemas"]["Version"];
+            description: string;
+            /** Format: date */
+            date: string;
+            currency: components["schemas"]["Currency"];
+            total: components["schemas"]["Amount"];
+            category?: components["schemas"]["Category"];
+            splitMethod: components["schemas"]["SplitMethod"];
+            paidShares: components["schemas"]["PaidShare"][];
+            owedShares: components["schemas"]["OwedShare"][];
+        };
+        /** @description A record that one person paid another back. No real money moves. */
+        Settlement: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            ledgerId: string;
+            /**
+             * Format: uuid
+             * @description Who paid back.
+             */
+            fromMemberId: string;
+            /**
+             * Format: uuid
+             * @description Who received it.
+             */
+            toMemberId: string;
+            amount: components["schemas"]["Amount"];
+            currency: components["schemas"]["Currency"];
+            /** Format: date */
+            date: string;
+            /**
+             * Format: uuid
+             * @description The User who recorded it.
+             */
+            createdBy: string;
+            /** Format: date-time */
+            createdAt: string;
+            version: components["schemas"]["Version"];
+            /**
+             * Format: date-time
+             * @description Set on a deleted Settlement, which no longer counts in Balances but can be restored.
+             */
+            deletedAt?: string;
+        };
+        /** @description A Settlement created on the device. `currency` follows the same rule as in NewExpense. */
+        NewSettlement: {
+            /**
+             * Format: uuid
+             * @description UUIDv7 generated by the client.
+             */
+            id: string;
+            /** Format: uuid */
+            ledgerId: string;
+            /** Format: uuid */
+            fromMemberId: string;
+            /** Format: uuid */
+            toMemberId: string;
+            amount: components["schemas"]["Amount"];
+            currency: components["schemas"]["Currency"];
+            /** Format: date */
+            date: string;
+        };
+        /** @description The whole editable content of a Settlement. */
+        SettlementUpdate: {
+            expectedVersion: components["schemas"]["Version"];
+            /** Format: uuid */
+            fromMemberId: string;
+            /** Format: uuid */
+            toMemberId: string;
+            amount: components["schemas"]["Amount"];
+            currency: components["schemas"]["Currency"];
+            /** Format: date */
+            date: string;
+        };
+        RecordBatch: {
+            expenses: components["schemas"]["NewExpense"][];
+            settlements: components["schemas"]["NewSettlement"][];
+        };
+        RecordResults: {
+            results: components["schemas"]["RecordResult"][];
+        };
+        RecordResult: {
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            kind: "expense" | "settlement";
+            /** @enum {string} */
+            status: "accepted" | "rejected";
+            /**
+             * @description Only when rejected. `ledger_unavailable`: the ledger was deleted or the User is no longer an active Member. `currency_mismatch`: the Group currency changed. `invalid_participants`: someone is not an active Member. `invalid_amounts`: the shares do not add up to the total. `id_conflict`: the id belongs to another record. `invalid_record`: any other rule of the contract.
+             * @enum {string}
+             */
+            reason?: "ledger_unavailable" | "currency_mismatch" | "invalid_participants" | "invalid_amounts" | "id_conflict" | "invalid_record";
+            /** @description Explanation of the rejection, for logs and debugging. */
+            detail?: string;
+            version?: components["schemas"]["Version"];
+        };
+        /** @description Who changed what, and when, in a Group or between Friends. */
+        Activity: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            ledgerId: string;
+            /**
+             * Format: uuid
+             * @description The User who made the change.
+             */
+            userId: string;
+            /**
+             * @description What changed. New kinds may be added; clients skip the ones they do not know.
+             * @enum {string}
+             */
+            kind: "group_created" | "group_renamed" | "group_currency_changed" | "debt_simplification_changed" | "member_added" | "member_joined" | "member_claimed" | "claim_undone" | "member_removed" | "member_left" | "friendship_created" | "expense_created" | "expense_updated" | "expense_deleted" | "expense_restored" | "settlement_created" | "settlement_updated" | "settlement_deleted" | "settlement_restored";
+            /** @description Data that depends on `kind`, such as the ids involved and the values before and after. */
+            details: {
+                [key: string]: unknown;
+            };
+            /** Format: date-time */
+            createdAt: string;
+            version: components["schemas"]["Version"];
+        };
+        /** @description How much one person owes another specific person. */
+        Debt: {
+            /**
+             * Format: uuid
+             * @description Who owes.
+             */
+            fromMemberId: string;
+            /**
+             * Format: uuid
+             * @description Who is owed.
+             */
+            toMemberId: string;
+            amount: components["schemas"]["Amount"];
+            currency: components["schemas"]["Currency"];
+        };
+        /** @description The current Debts of a ledger, computed by the server. In a Group with Debt simplification they are already simplified; in a Friendship there is at most one per currency. */
+        LedgerDebts: {
+            /** Format: uuid */
+            ledgerId: string;
+            /** @description Replaces the ledger's previous Debts; empty when everyone is settled. */
+            debts: components["schemas"]["Debt"][];
+        };
+        /** @description A ledger the User can no longer see. The client deletes it from the replica with everything in it. */
+        DroppedLedger: {
+            /** Format: uuid */
+            ledgerId: string;
+            /**
+             * @description `deleted`: the Group was deleted. `left`: the User left it. `removed`: another Member removed the User. `unclaimed`: someone undid the User's Claim.
+             * @enum {string}
+             */
+            reason: "deleted" | "left" | "removed" | "unclaimed";
+        };
+        /** @description Everything with a version greater than the cursor sent. Every list is always present, possibly empty. Rows replace the replica's copy with the same id. */
+        Changes: {
+            /**
+             * Format: int64
+             * @description Send it as `since` in the next pull.
+             */
+            cursor: number;
+            /** @description True when the server cut the response short; pull again right away with `cursor`. */
+            hasMore: boolean;
+            groups: components["schemas"]["Group"][];
+            friendships: components["schemas"]["Friendship"][];
+            /** @description Includes Members who became former members; the User's own former Members come as `droppedLedgers` instead. */
+            members: components["schemas"]["Member"][];
+            /** @description Includes deleted Expenses, with `deletedAt`. */
+            expenses: components["schemas"]["Expense"][];
+            /** @description Includes deleted Settlements, with `deletedAt`. */
+            settlements: components["schemas"]["Settlement"][];
+            activities: components["schemas"]["Activity"][];
+            /** @description The Debts of every ledger that changed. */
+            debts: components["schemas"]["LedgerDebts"][];
+            droppedLedgers: components["schemas"]["DroppedLedger"][];
+        };
     };
-    responses: never;
-    parameters: never;
+    responses: {
+        /** @description Any other error, such as `origin_mismatch` (403), `rate_limited` (429), `internal_error` (500) or `not_implemented` (501). */
+        Problem: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/problem+json": components["schemas"]["Problem"];
+            };
+        };
+        /** @description The request is malformed or breaks a rule of the contract (`validation_failed`). */
+        BadRequest: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/problem+json": components["schemas"]["Problem"];
+            };
+        };
+        /** @description There is no valid session (`unauthenticated`). */
+        Unauthorized: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/problem+json": components["schemas"]["Problem"];
+            };
+        };
+        /** @description It does not exist or the User cannot see it (`not_found`). */
+        NotFound: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/problem+json": components["schemas"]["Problem"];
+            };
+        };
+    };
+    parameters: {
+        SessionId: string;
+        GroupId: string;
+        MemberId: string;
+        FriendshipId: string;
+        ExpenseId: string;
+        SettlementId: string;
+        /** @description The secret part of an Invite link. */
+        InviteToken: string;
+    };
     requestBodies: never;
     headers: never;
     pathItems: never;
@@ -72,6 +1138,993 @@ export interface operations {
                     "application/json": components["schemas"]["Health"];
                 };
             };
+        };
+    };
+    requestLoginCode: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LoginCodeRequest"];
+            };
+        };
+        responses: {
+            /** @description The code was sent, if the email can receive one. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            /** @description Too many codes requested (`rate_limited`). */
+            429: {
+                headers: {
+                    /** @description Seconds to wait before asking again. */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    verifyLoginCode: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LoginCodeVerification"];
+            };
+        };
+        responses: {
+            /** @description Signed in. */
+            200: {
+                headers: {
+                    /** @description The session cookie. */
+                    "Set-Cookie"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoginResult"];
+                };
+            };
+            /** @description The code is wrong (`login_code_invalid`) or expired (`login_code_expired`), or the body is invalid. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The code used up its attempts (`too_many_attempts`); request a new one. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    startGoogleLogin: {
+        parameters: {
+            query?: {
+                /** @description Path inside the app to go back to afterwards, for example an invite. Must start with `/`. */
+                returnTo?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Redirect to Google. */
+            302: {
+                headers: {
+                    Location?: string;
+                    /** @description Cookie with the OAuth state. */
+                    "Set-Cookie"?: string;
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    finishGoogleLogin: {
+        parameters: {
+            query?: {
+                code?: string;
+                state?: string;
+                /** @description Set by Google when the person cancelled or the request failed. */
+                error?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Redirect to the app. */
+            302: {
+                headers: {
+                    Location?: string;
+                    /** @description The session cookie, when sign-in succeeded. */
+                    "Set-Cookie"?: string;
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    logout: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Signed out. */
+            204: {
+                headers: {
+                    /** @description Clears the session cookie. */
+                    "Set-Cookie"?: string;
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    listSessions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Open sessions, the most recently used first. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Session"][];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    revokeSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sessionId: components["parameters"]["SessionId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The session is closed. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    getMe: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The signed-in User. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["User"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    deleteMe: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The account is deleted. */
+            204: {
+                headers: {
+                    /** @description Clears the session cookie. */
+                    "Set-Cookie"?: string;
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    updateMe: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UserUpdate"];
+            };
+        };
+        responses: {
+            /** @description The updated User. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["User"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    createGroup: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NewGroup"];
+            };
+        };
+        responses: {
+            /** @description The new Group. Its Members arrive with the next sync. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Group"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    deleteGroup: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                groupId: components["parameters"]["GroupId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The Group is deleted; every Member drops it on the next sync. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            /** @description Some Balance is not zero (`nonzero_balance`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    updateGroup: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                groupId: components["parameters"]["GroupId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GroupUpdate"];
+            };
+        };
+        responses: {
+            /** @description The updated Group. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Group"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            /** @description Some amounts would lose minor units in the new currency (`currency_precision_loss`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["CurrencyPrecisionProblem"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    addPendingMember: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                groupId: components["parameters"]["GroupId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NewPendingMember"];
+            };
+        };
+        responses: {
+            /** @description The new pending Member. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Member"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    removeMember: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                groupId: components["parameters"]["GroupId"];
+                memberId: components["parameters"]["MemberId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The Member is now a former member. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            /** @description The Member's Balance is not zero (`nonzero_balance`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    undoClaim: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                groupId: components["parameters"]["GroupId"];
+                memberId: components["parameters"]["MemberId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The Member is pending again. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            /** @description The Member is not linked to a User (`member_not_claimed`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    leaveGroup: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                groupId: components["parameters"]["GroupId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The User's Member is now a former member; the client drops the Group on the next sync. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            /** @description The User's Balance is not zero (`nonzero_balance`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    regenerateGroupInviteLink: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                groupId: components["parameters"]["GroupId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The new Invite link. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InviteLink"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    getInvite: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The secret part of an Invite link. */
+                token: components["parameters"]["InviteToken"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The invite. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Invite"];
+                };
+            };
+            /** @description The link does not exist or was revoked (`invite_link_invalid`). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    claimMember: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The secret part of an Invite link. */
+                token: components["parameters"]["InviteToken"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ClaimRequest"];
+            };
+        };
+        responses: {
+            /** @description The User now holds the Member. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JoinedLedger"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            /** @description The link does not exist or was revoked (`invite_link_invalid`), or the Member is not in that ledger (`not_found`). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The Member is already linked (`member_not_pending`), the User already holds a Member in this Group (`already_member`), or the User already has a Friendship with that person (`friendship_exists`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    joinGroup: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The secret part of an Invite link. */
+                token: components["parameters"]["InviteToken"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The User's new Member. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JoinedLedger"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            /** @description The link does not exist or was revoked (`invite_link_invalid`). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The User already holds a Member in this Group (`already_member`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    createFriendship: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NewFriendship"];
+            };
+        };
+        responses: {
+            /** @description The new Friendship. Its two Members arrive with the next sync. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Friendship"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            /** @description No User with that `userId` shares a Group with the caller (`not_found`). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description There is already a Friendship with that User (`friendship_exists`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    regenerateFriendInviteLink: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                friendshipId: components["parameters"]["FriendshipId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The new Invite link. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InviteLink"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            /** @description The Friend is already linked to a User (`member_not_pending`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    pushRecords: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RecordBatch"];
+            };
+        };
+        responses: {
+            /** @description One result per record sent, in no particular order. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecordResults"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    deleteExpense: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                expenseId: components["parameters"]["ExpenseId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The Expense is deleted (or already was). */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    updateExpense: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                expenseId: components["parameters"]["ExpenseId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExpenseUpdate"];
+            };
+        };
+        responses: {
+            /** @description The Expense with its new version. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Expense"];
+                };
+            };
+            /** @description The body is invalid (`validation_failed`) or the shares do not add up to the total (`invalid_amounts`). */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            /** @description The Expense changed since `expectedVersion` (`version_conflict`; sync to see the new version), the currency is not the Group currency (`currency_mismatch`), or a Participant is not an active Member (`invalid_participants`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    restoreExpense: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                expenseId: components["parameters"]["ExpenseId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The Expense counts again, with a new version. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Expense"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            /** @description A Participant is now a former member, whose Balance must stay at zero (`invalid_participants`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    deleteSettlement: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                settlementId: components["parameters"]["SettlementId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The Settlement is deleted (or already was). */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    updateSettlement: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                settlementId: components["parameters"]["SettlementId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SettlementUpdate"];
+            };
+        };
+        responses: {
+            /** @description The Settlement with its new version. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Settlement"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            /** @description The Settlement changed since `expectedVersion` (`version_conflict`), the currency is not the Group currency (`currency_mismatch`), or a person is not an active Member (`invalid_participants`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    restoreSettlement: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                settlementId: components["parameters"]["SettlementId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The Settlement counts again, with a new version. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Settlement"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            /** @description One of the two people is now a former member (`invalid_participants`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    pullChanges: {
+        parameters: {
+            query: {
+                /** @description The `cursor` of the previous pull, or 0. */
+                since: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The changes and the new cursor. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Changes"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            /** @description `since` is ahead of the server, for example after restoring a backup (`cursor_invalid`). The client discards its replica, keeps its Unsynced records, and pulls again from 0. */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            default: components["responses"]["Problem"];
         };
     };
 }
