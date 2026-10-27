@@ -14,6 +14,7 @@ type Pinger interface {
 type Server struct {
 	db      Pinger
 	version string
+	deps    Deps
 }
 
 var _ StrictServerInterface = (*Server)(nil)

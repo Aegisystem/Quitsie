@@ -14,14 +14,21 @@ import (
 
 const someID = "019a2b3c-4d5e-7f60-8a9b-0c1d2e3f4a5b"
 
-// unimplemented lists one request per operation that still answers 501.
-// When an operation is built, move its row to a test of its own.
-var unimplemented = []struct {
+// operationRequest is one request that reaches an operation.
+type operationRequest struct {
 	op     string
 	method string
 	target string
 	body   string
-}{
+}
+
+// The operations that still answer 501, one list per area of the API so that
+// the work on each area does not collide. When an operation is built, move its
+// row to a test of its own and its name to the matching implemented list.
+var unimplemented = slices.Concat(unimplementedAuth, unimplementedLedgers, unimplementedRecords)
+
+// Sign-in, sessions and the profile.
+var unimplementedAuth = []operationRequest{
 	{"RequestLoginCode", http.MethodPost, "/api/v1/auth/login-code", "{}"},
 	{"VerifyLoginCode", http.MethodPost, "/api/v1/auth/login-code/verify", "{}"},
 	{"StartGoogleLogin", http.MethodGet, "/api/v1/auth/google?returnTo=/groups", ""},
@@ -32,6 +39,10 @@ var unimplemented = []struct {
 	{"GetMe", http.MethodGet, "/api/v1/me", ""},
 	{"UpdateMe", http.MethodPatch, "/api/v1/me", "{}"},
 	{"DeleteMe", http.MethodDelete, "/api/v1/me", ""},
+}
+
+// Groups, Members, invitations and Friendships.
+var unimplementedLedgers = []operationRequest{
 	{"CreateGroup", http.MethodPost, "/api/v1/groups", "{}"},
 	{"UpdateGroup", http.MethodPatch, "/api/v1/groups/" + someID, "{}"},
 	{"DeleteGroup", http.MethodDelete, "/api/v1/groups/" + someID, ""},
@@ -45,6 +56,10 @@ var unimplemented = []struct {
 	{"JoinGroup", http.MethodPost, "/api/v1/invites/k3J9xQ2mV7pL8wR4tY6u/join", ""},
 	{"CreateFriendship", http.MethodPost, "/api/v1/friendships", "{}"},
 	{"RegenerateFriendInviteLink", http.MethodPost, "/api/v1/friendships/" + someID + "/invite-link", ""},
+}
+
+// Expenses, Settlements, records and sync.
+var unimplementedRecords = []operationRequest{
 	{"PushRecords", http.MethodPost, "/api/v1/records", `{"expenses":[],"settlements":[]}`},
 	{"UpdateExpense", http.MethodPatch, "/api/v1/expenses/" + someID, "{}"},
 	{"DeleteExpense", http.MethodDelete, "/api/v1/expenses/" + someID, ""},
@@ -55,8 +70,14 @@ var unimplemented = []struct {
 	{"PullChanges", http.MethodGet, "/api/v1/sync?since=0", ""},
 }
 
-// implemented lists the operations that have a real handler.
-var implemented = []string{"GetHealth"}
+// The operations that have a real handler, per area.
+var (
+	implementedBase    = []string{"GetHealth"}
+	implementedAuth    = []string{}
+	implementedLedgers = []string{}
+	implementedRecords = []string{}
+	implemented        = slices.Concat(implementedBase, implementedAuth, implementedLedgers, implementedRecords)
+)
 
 func send(t *testing.T, h http.Handler, method, target, body string) *httptest.ResponseRecorder {
 	t.Helper()

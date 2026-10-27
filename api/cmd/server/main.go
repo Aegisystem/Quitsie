@@ -63,7 +63,7 @@ func run(logger *slog.Logger) error {
 
 	srv := &http.Server{
 		Addr:              addr,
-		Handler:           httpapi.NewHandler(httpapi.NewServer(db, version), pwa),
+		Handler:           httpapi.NewHandler(httpapi.NewServer(db, version).WithDeps(httpapi.Deps{DB: db}), pwa),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 	serveErr := make(chan error, 1)
