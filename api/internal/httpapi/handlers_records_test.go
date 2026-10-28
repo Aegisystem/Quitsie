@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -157,12 +158,16 @@ type trip struct {
 
 func (a *recordsAPI) seedTrip() trip {
 	a.t.Helper()
+	return a.seedTripOf(a.signIn("ana@example.com"), a.signIn("beto@example.com"), a.signIn("eva@example.com"))
+}
+
+// seedTripOf creates another trip for the same people.
+func (a *recordsAPI) seedTripOf(ana, beto, eva person) trip {
+	a.t.Helper()
 	ctx := context.Background()
 	tr := trip{
-		id:   uuid.NewString(),
-		ana:  a.signIn("ana@example.com"),
-		beto: a.signIn("beto@example.com"),
-		eva:  a.signIn("eva@example.com"),
+		id:  uuid.NewString(),
+		ana: ana, beto: beto, eva: eva,
 		anaM: uuid.NewString(), betoM: uuid.NewString(), carlaM: uuid.NewString(), daniM: uuid.NewString(),
 	}
 	usd := "USD"
@@ -244,20 +249,20 @@ func TestPushRecordsAcceptsANewExpense(t *testing.T) {
 }
 
 // push sends batch as p and returns its results.
-func (a *recordsAPI) push(p person, batch httpapi.RecordBatch) []httpapi.RecordResult {
-	a.t.Helper()
-	return decode[httpapi.RecordResults](a.t, a.do(p, http.MethodPost, "/api/v1/records", batch), http.StatusOK).Results
+func (a *recordsAPI) push(t *testing.T, p person, batch httpapi.RecordBatch) []httpapi.RecordResult {
+	t.Helper()
+	return decode[httpapi.RecordResults](t, a.do(p, http.MethodPost, "/api/v1/records", batch), http.StatusOK).Results
 }
 
 func TestPushRecordsAcceptsAResentExpenseWithoutStoringItTwice(t *testing.T) {
 	a := newRecordsAPI(t)
 	tr := a.seedTrip()
 	dinner := tr.dinner()
-	first := a.push(tr.ana, expenses(dinner))[0]
+	first := a.push(t, tr.ana, expenses(dinner))[0]
 
 	resent := dinner
 	resent.Description = "Cena (otra vez)"
-	got := a.push(tr.ana, expenses(resent))[0]
+	got := a.push(t, tr.ana, expenses(resent))[0]
 
 	if got.Status != httpapi.Accepted || got.Version == nil || *got.Version != *first.Version {
 		t.Errorf("resent result = %+v, want accepted with the first version %d", got, *first.Version)
@@ -318,16 +323,96 @@ func TestPushRecordsRejectsAnIDThatBelongsToAnotherRecord(t *testing.T) {
 	tr := a.seedTrip()
 	f := a.seedFriendship(tr.ana, tr.beto)
 	dinner := tr.dinner()
-	a.push(tr.ana, expenses(dinner))
+	a.push(t, tr.ana, expenses(dinner))
 
 	t.Run("by another author", func(t *testing.T) {
-		got := a.push(tr.beto, expenses(dinner))[0]
+		got := a.push(t, tr.beto, expenses(dinner))[0]
 		assertRejected(t, got, dinner.Id, httpapi.RecordResultReasonIdConflict)
 	})
 	t.Run("in another ledger", func(t *testing.T) {
 		lunch := f.lunch()
 		lunch.Id = dinner.Id
-		got := a.push(tr.ana, expenses(lunch))[0]
+		got := a.push(t, tr.ana, expenses(lunch))[0]
 		assertRejected(t, got, dinner.Id, httpapi.RecordResultReasonIdConflict)
 	})
+}
+
+func TestPushRecordsRejectsLedgersTheUserCannotUse(t *testing.T) {
+	a := newRecordsAPI(t)
+	tr := a.seedTrip()
+	deleted := a.seedTripOf(tr.ana, tr.beto, tr.eva)
+	a.write(func(q *store.Queries, version int64) error {
+		_, err := q.DeleteLedger(context.Background(), store.DeleteLedgerParams{ID: deleted.id, DeletedAt: ptr(time.Now()), Version: version})
+		return err
+	})
+
+	t.Run("not a Member", func(t *testing.T) {
+		dinner := tr.dinner()
+		assertRejected(t, a.push(t, tr.eva, expenses(dinner))[0], dinner.Id, httpapi.RecordResultReasonLedgerUnavailable)
+	})
+	t.Run("no such ledger", func(t *testing.T) {
+		dinner := tr.dinner()
+		dinner.LedgerId = id(uuid.NewString())
+		assertRejected(t, a.push(t, tr.ana, expenses(dinner))[0], dinner.Id, httpapi.RecordResultReasonLedgerUnavailable)
+	})
+	t.Run("deleted Group", func(t *testing.T) {
+		dinner := deleted.dinner()
+		assertRejected(t, a.push(t, tr.ana, expenses(dinner))[0], dinner.Id, httpapi.RecordResultReasonLedgerUnavailable)
+	})
+	t.Run("former member", func(t *testing.T) {
+		a.write(func(q *store.Queries, version int64) error {
+			_, err := q.MarkMemberFormer(context.Background(), store.MarkMemberFormerParams{ID: tr.betoM, Version: version})
+			return err
+		})
+		dinner := tr.dinner()
+		dinner.PaidShares[0].MemberId = id(tr.betoM)
+		assertRejected(t, a.push(t, tr.beto, expenses(dinner))[0], dinner.Id, httpapi.RecordResultReasonLedgerUnavailable)
+	})
+}
+
+func ptr[T any](v T) *T { return &v }
+
+func TestPushRecordsRejectsExpensesThatBreakTheRules(t *testing.T) {
+	a := newRecordsAPI(t)
+	tr := a.seedTrip()
+	tests := []struct {
+		name   string
+		change func(e *httpapi.NewExpense)
+		want   httpapi.RecordResultReason
+	}{
+		{"a currency other than the Group's", func(e *httpapi.NewExpense) { e.Currency = "EUR" }, httpapi.RecordResultReasonCurrencyMismatch},
+		{"a former member", func(e *httpapi.NewExpense) { e.OwedShares[2].MemberId = id(tr.daniM) }, httpapi.RecordResultReasonInvalidParticipants},
+		{"someone from outside the Group", func(e *httpapi.NewExpense) { e.OwedShares[2].MemberId = id(uuid.NewString()) }, httpapi.RecordResultReasonInvalidParticipants},
+		{"the same Participant twice", func(e *httpapi.NewExpense) { e.OwedShares[2].MemberId = id(tr.betoM) }, httpapi.RecordResultReasonInvalidParticipants},
+		{"shares that do not add up", func(e *httpapi.NewExpense) { e.OwedShares[2].Amount = 999 }, httpapi.RecordResultReasonInvalidAmounts},
+		{"a total over 10^15", func(e *httpapi.NewExpense) {
+			e.Total, e.PaidShares[0].Amount, e.OwedShares[0].Amount = 1_000_000_000_000_998, 1_000_000_000_000_998, 999_999_999_999_998
+		}, httpapi.RecordResultReasonInvalidAmounts},
+		{"no paid shares", func(e *httpapi.NewExpense) { e.PaidShares = nil }, httpapi.RecordResultReasonInvalidAmounts},
+		{"an unknown split method", func(e *httpapi.NewExpense) { e.SplitMethod = "shares" }, httpapi.RecordResultReasonInvalidRecord},
+		{"percentages missing", func(e *httpapi.NewExpense) { e.SplitMethod = httpapi.Percentage }, httpapi.RecordResultReasonInvalidRecord},
+		{"an empty description", func(e *httpapi.NewExpense) { e.Description = "" }, httpapi.RecordResultReasonInvalidRecord},
+		{"a description over 200 characters", func(e *httpapi.NewExpense) { e.Description = strings.Repeat("ñ", 201) }, httpapi.RecordResultReasonInvalidRecord},
+		{"an unknown category", func(e *httpapi.NewExpense) { e.Category = ptr(httpapi.Category("yachts")) }, httpapi.RecordResultReasonInvalidRecord},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dinner := tr.dinner()
+			tt.change(&dinner)
+			assertRejected(t, a.push(t, tr.ana, expenses(dinner))[0], dinner.Id, tt.want)
+		})
+	}
+}
+
+func TestPushRecordsAcceptsAnOwedShareRoundedToZero(t *testing.T) {
+	a := newRecordsAPI(t)
+	tr := a.seedTrip()
+	gum := tr.dinner()
+	gum.Total, gum.PaidShares[0].Amount = 2, 2
+	gum.OwedShares[0].Amount, gum.OwedShares[1].Amount, gum.OwedShares[2].Amount = 1, 1, 0
+	gum.Category = ptr(httpapi.Category("groceries"))
+
+	if got := a.push(t, tr.ana, expenses(gum))[0]; got.Status != httpapi.Accepted {
+		t.Errorf("result = %+v, want accepted", got)
+	}
 }

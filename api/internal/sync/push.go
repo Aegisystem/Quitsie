@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/Aegisystem/Quitsie/api/internal/domain"
+	"github.com/Aegisystem/Quitsie/api/internal/ledgers"
 	"github.com/Aegisystem/Quitsie/api/internal/store"
 )
 
@@ -43,7 +45,7 @@ func Push(ctx context.Context, db *sql.DB, userID string, batch Batch) ([]Result
 	var results []Result
 	_, err := store.Write(ctx, db, func(q *store.Queries, version int64) error {
 		results = results[:0]
-		p := pusher{q: q, userID: userID, version: version, now: now}
+		p := pusher{q: q, userID: userID, version: version, now: now, ledgers: make(map[string]*ledgers.Snapshot)}
 		for _, e := range batch.Expenses {
 			r, err := p.expense(ctx, e)
 			if err != nil {
@@ -65,6 +67,23 @@ type pusher struct {
 	userID  string
 	version int64
 	now     time.Time
+	// ledgers caches each ledger of the Batch the User can use; nil for one
+	// they cannot.
+	ledgers map[string]*ledgers.Snapshot
+}
+
+// ledger loads the ledger id, or returns nil if it does not exist, was
+// deleted, or the User has no active Member in it.
+func (p pusher) ledger(ctx context.Context, id string) (*ledgers.Snapshot, error) {
+	if l, ok := p.ledgers[id]; ok {
+		return l, nil
+	}
+	l, err := usableLedger(ctx, p.q, p.userID, id)
+	if err != nil {
+		return nil, err
+	}
+	p.ledgers[id] = l
+	return l, nil
 }
 
 func (p pusher) expense(ctx context.Context, e store.ExpenseWithShares) (Result, error) {
@@ -78,8 +97,25 @@ func (p pusher) expense(ctx context.Context, e store.ExpenseWithShares) (Result,
 		// The device sent it again, maybe because it never got the answer.
 		r.Version = stored.Version
 		return r, nil
-	default:
+	}
+	ledger, err := p.ledger(ctx, e.LedgerID)
+	if err != nil {
+		return r, err
+	}
+	if ledger == nil {
+		r.Rejection = &Rejection{ReasonLedgerUnavailable, fmt.Errorf("ledger %s", e.LedgerID)}
+		return r, nil
+	}
+	if stored.ID != "" {
 		r.Rejection = &Rejection{ReasonIDConflict, errors.New("the id belongs to another expense")}
+		return r, nil
+	}
+	if err := checkExpense(e); err != nil {
+		r.Rejection = &Rejection{ReasonInvalidRecord, err}
+		return r, nil
+	}
+	if err := domain.ValidateExpense(ledger.Domain(), ledgers.Expense(e)); err != nil {
+		r.Rejection = rejection(err)
 		return r, nil
 	}
 
