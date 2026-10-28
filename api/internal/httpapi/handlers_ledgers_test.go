@@ -728,3 +728,189 @@ func TestInvalidInviteLinks(t *testing.T) {
 		})
 	}
 }
+
+// join makes p join through the Invite link token.
+func (p *person) join(token string) httpapi.JoinedLedger {
+	p.w.t.Helper()
+	return decode[httpapi.JoinedLedger](p.w.t, p.send(http.MethodPost, "/api/v1/invites/"+token+"/join", ""), http.StatusCreated)
+}
+
+// claim makes p claim memberID through the Invite link token.
+func (p *person) claim(token, memberID string) *httptest.ResponseRecorder {
+	p.w.t.Helper()
+	return p.send(http.MethodPost, "/api/v1/invites/"+token+"/claim", `{"memberId":"`+memberID+`"}`)
+}
+
+func TestJoinGroupAddsTheUserAsANewMember(t *testing.T) {
+	w := newWorld(t)
+	ana := w.signIn("Ana")
+	beto := w.signIn("Beto")
+	groupID := ana.createGroup(`{"name":"Casa","currency":"COP"}`)
+
+	joined := beto.join(ana.groupLink(groupID))
+
+	if joined.Kind != httpapi.JoinedLedgerKindGroup || joined.LedgerId.String() != groupID {
+		t.Errorf("joined = %+v, want the Group", joined)
+	}
+	m := beto.member(groupID, joined.MemberId.String())
+	if m.Name != "Beto" || m.UserID == nil || *m.UserID != beto.id || m.Status != "active" {
+		t.Errorf("Beto's member = %+v, want active, linked and named after him", m)
+	}
+	if kinds := strings.Join(activityKinds(beto.pull(), groupID), ","); kinds != "group_created,member_joined" {
+		t.Errorf("activities = %s, want group_created,member_joined", kinds)
+	}
+}
+
+func TestJoiningAGroupTwiceIsAConflict(t *testing.T) {
+	w := newWorld(t)
+	ana := w.signIn("Ana")
+	groupID := ana.createGroup(`{"name":"Casa","currency":"COP"}`)
+
+	rec := ana.send(http.MethodPost, "/api/v1/invites/"+ana.groupLink(groupID)+"/join", "")
+
+	decodeProblem(t, rec, http.StatusConflict, httpapi.ProblemCodeAlreadyMember)
+}
+
+func TestComingBackToAGroupRecoversTheFormerMember(t *testing.T) {
+	w := newWorld(t)
+	ana := w.signIn("Ana")
+	beto := w.signIn("Beto")
+	groupID := ana.createGroup(`{"name":"Casa","currency":"COP"}`)
+	first := beto.join(ana.groupLink(groupID))
+	beto.send(http.MethodPost, "/api/v1/groups/"+groupID+"/leave", "")
+
+	again := beto.join(ana.groupLink(groupID))
+
+	if again.MemberId != first.MemberId {
+		t.Errorf("Beto came back as %s, want his former member %s", again.MemberId, first.MemberId)
+	}
+	if members := membersOf(ana.pull(), groupID); len(members) != 2 {
+		t.Errorf("members = %+v, want only Ana and Beto", members)
+	}
+	if m := beto.member(groupID, first.MemberId.String()); m.Status != "active" {
+		t.Errorf("Beto's member = %+v, want active again", m)
+	}
+}
+
+func TestJoinGroupNeedsASessionAndALiveLink(t *testing.T) {
+	w := newWorld(t)
+	ana := w.signIn("Ana")
+	beto := w.signIn("Beto")
+	groupID := ana.createGroup(`{"name":"Casa","currency":"COP"}`)
+	revoked := ana.groupLink(groupID)
+	ana.send(http.MethodPost, "/api/v1/groups/"+groupID+"/invite-link", "")
+
+	decodeProblem(t, w.anonymous().send(http.MethodPost, "/api/v1/invites/"+ana.groupLink(groupID)+"/join", ""), http.StatusUnauthorized, httpapi.ProblemCodeUnauthenticated)
+	decodeProblem(t, beto.send(http.MethodPost, "/api/v1/invites/"+revoked+"/join", ""), http.StatusNotFound, httpapi.ProblemCodeInviteLinkInvalid)
+}
+
+func TestClaimAPendingMemberInheritsItsHistory(t *testing.T) {
+	w := newWorld(t)
+	ana := w.signIn("Ana")
+	beto := w.signIn("Beto")
+	groupID := ana.createGroup(`{"name":"Casa","currency":"COP","pendingMembers":[{"name":"Betico"}]}`)
+	beticoID := ana.memberID(groupID, "Betico")
+	spent := ana.expense(groupID, "COP", ana.memberID(groupID, "Ana"), map[string]int64{beticoID: 5000})
+
+	rec := beto.claim(ana.groupLink(groupID), beticoID)
+
+	joined := decode[httpapi.JoinedLedger](t, rec, http.StatusOK)
+	if joined.MemberId.String() != beticoID || joined.LedgerId.String() != groupID {
+		t.Errorf("joined = %+v, want Betico in the Group", joined)
+	}
+	changes := beto.pull()
+	if m := beto.member(groupID, beticoID); m.UserID == nil || *m.UserID != beto.id {
+		t.Errorf("Betico = %+v, want linked to Beto", m)
+	}
+	if _, ok := totals(changes)[spent]; !ok {
+		t.Errorf("Beto's replica lacks the Expense Betico was in: %v", totals(changes))
+	}
+	if kinds := strings.Join(activityKinds(changes, groupID), ","); kinds != "group_created,member_claimed" {
+		t.Errorf("activities = %s, want group_created,member_claimed", kinds)
+	}
+}
+
+func TestClaimRefusals(t *testing.T) {
+	w := newWorld(t)
+	ana := w.signIn("Ana")
+	beto := w.signIn("Beto")
+	carla := w.signIn("Carla")
+	groupID := ana.createGroup(`{"name":"Casa","currency":"COP","pendingMembers":[{"name":"Betico"},{"name":"Dani"},{"name":"Eva"}]}`)
+	otherID := ana.createGroup(`{"name":"Oficina","currency":"COP","pendingMembers":[{"name":"Fede"}]}`)
+	link := ana.groupLink(groupID)
+	ana.send(http.MethodDelete, "/api/v1/groups/"+groupID+"/members/"+ana.memberID(groupID, "Eva"), "")
+	carla.join(link)
+	carla.send(http.MethodPost, "/api/v1/groups/"+groupID+"/leave", "")
+
+	tests := []struct {
+		name     string
+		who      *person
+		memberID string
+		status   int
+		code     httpapi.ProblemCode
+	}{
+		{"a linked Member", beto, ana.memberID(groupID, "Ana"), http.StatusConflict, httpapi.ProblemCodeMemberNotPending},
+		{"while holding a Member of the Group", ana, ana.memberID(groupID, "Betico"), http.StatusConflict, httpapi.ProblemCodeAlreadyMember},
+		{"after leaving the Group", carla, ana.memberID(groupID, "Dani"), http.StatusConflict, httpapi.ProblemCodeAlreadyMember},
+		{"a removed pending Member", beto, ana.memberID(groupID, "Eva"), http.StatusNotFound, httpapi.ProblemCodeNotFound},
+		{"a Member of another Group", beto, ana.memberID(otherID, "Fede"), http.StatusNotFound, httpapi.ProblemCodeNotFound},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rec := tt.who.claim(link, tt.memberID)
+
+			decodeProblem(t, rec, tt.status, tt.code)
+		})
+	}
+}
+
+func TestUndoAClaimMadeByMistake(t *testing.T) {
+	w := newWorld(t)
+	ana := w.signIn("Ana")
+	beto := w.signIn("Beto")
+	groupID := ana.createGroup(`{"name":"Casa","currency":"COP","pendingMembers":[{"name":"Carla"}]}`)
+	carlaID := ana.memberID(groupID, "Carla")
+	decode[httpapi.JoinedLedger](t, beto.claim(ana.groupLink(groupID), carlaID), http.StatusOK)
+
+	rec := ana.send(http.MethodDelete, "/api/v1/groups/"+groupID+"/members/"+carlaID+"/claim", "")
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("code = %d, want 204 (body %q)", rec.Code, rec.Body.String())
+	}
+	if m := ana.member(groupID, carlaID); m.UserID != nil || m.Name != "Carla" || m.Status != "active" {
+		t.Errorf("Carla = %+v, want pending again with her name", m)
+	}
+	// Beto no longer sees the Group.
+	decodeProblem(t, beto.send(http.MethodGet, "/api/v1/groups/"+groupID+"/invite-link", ""), http.StatusNotFound, httpapi.ProblemCodeNotFound)
+	want := "group_created,member_claimed,claim_undone"
+	if kinds := strings.Join(activityKinds(ana.pull(), groupID), ","); kinds != want {
+		t.Errorf("activities = %s, want %s", kinds, want)
+	}
+}
+
+func TestOnlyALinkedMemberHasAClaimToUndo(t *testing.T) {
+	w := newWorld(t)
+	ana := w.signIn("Ana")
+	groupID := ana.createGroup(`{"name":"Casa","currency":"COP","pendingMembers":[{"name":"Carla"}]}`)
+
+	decodeProblem(t, ana.send(http.MethodDelete, "/api/v1/groups/"+groupID+"/members/"+ana.memberID(groupID, "Carla")+"/claim", ""), http.StatusConflict, httpapi.ProblemCodeMemberNotClaimed)
+	decodeProblem(t, ana.send(http.MethodDelete, "/api/v1/groups/"+groupID+"/members/"+someID+"/claim", ""), http.StatusNotFound, httpapi.ProblemCodeNotFound)
+}
+
+func TestARemovedLinkedMemberLosesAccessToTheGroup(t *testing.T) {
+	w := newWorld(t)
+	ana := w.signIn("Ana")
+	beto := w.signIn("Beto")
+	groupID := ana.createGroup(`{"name":"Casa","currency":"COP"}`)
+	joined := beto.join(ana.groupLink(groupID))
+
+	rec := ana.send(http.MethodDelete, "/api/v1/groups/"+groupID+"/members/"+joined.MemberId.String(), "")
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("code = %d, want 204 (body %q)", rec.Code, rec.Body.String())
+	}
+	if dropped := beto.pull().DroppedLedgerIDs; len(dropped) != 1 || dropped[0] != groupID {
+		t.Errorf("Beto's dropped ledgers = %v, want the Group", dropped)
+	}
+	decodeProblem(t, beto.send(http.MethodGet, "/api/v1/groups/"+groupID+"/invite-link", ""), http.StatusNotFound, httpapi.ProblemCodeNotFound)
+}

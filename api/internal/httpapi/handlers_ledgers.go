@@ -739,3 +739,137 @@ func (s *Server) GetInvite(ctx context.Context, req GetInviteRequestObject) (Get
 	}
 	return GetInvite200JSONResponse(invite), nil
 }
+
+var (
+	errAlreadyMember    = &failure{status: http.StatusConflict, code: ProblemCodeAlreadyMember, title: "The User already holds a Member here."}
+	errMemberNotPending = &failure{status: http.StatusConflict, code: ProblemCodeMemberNotPending, title: "The Member is already linked to a User."}
+	errMemberNotClaimed = &failure{status: http.StatusConflict, code: ProblemCodeMemberNotClaimed, title: "The Member is not linked to a User."}
+)
+
+func joinedLedger(m store.Member, kind string) JoinedLedger {
+	return JoinedLedger{Kind: JoinedLedgerKind(kind), LedgerId: uuid.MustParse(m.LedgerID), MemberId: uuid.MustParse(m.ID)}
+}
+
+func (s *Server) JoinGroup(ctx context.Context, req JoinGroupRequestObject) (JoinGroupResponseObject, error) {
+	respond := func(status int, p Problem) JoinGroupResponseObject {
+		return JoinGroupdefaultApplicationProblemPlusJSONResponse{Body: p, StatusCode: status}
+	}
+	user, err := currentUser(ctx)
+	if err != nil {
+		return answer(err, respond)
+	}
+	var member store.Member
+	_, err = store.Write(ctx, s.deps.DB, func(q *store.Queries, version int64) error {
+		snap, err := s.openInvite(ctx, q, req.Token)
+		if err != nil {
+			return err
+		}
+		if snap.Ledger.Kind != "group" {
+			return invalid("a pending Friend's Invite link can only be claimed")
+		}
+		details := map[string]any{}
+		if held, ok := heldBy(snap, user.ID); ok {
+			if held.Status == "active" {
+				return errAlreadyMember
+			}
+			// Whoever comes back recovers their former member and its history.
+			if member, err = q.ReactivateMember(ctx, store.ReactivateMemberParams{ID: held.ID, Version: version}); err != nil {
+				return fmt.Errorf("reactivate member: %w", err)
+			}
+			details["rejoined"] = true
+		} else {
+			member = store.Member{ID: newID(), LedgerID: snap.Ledger.ID, UserID: &user.ID, Name: user.Name}
+			err := q.CreateMember(ctx, store.CreateMemberParams{
+				ID:        member.ID,
+				LedgerID:  member.LedgerID,
+				UserID:    member.UserID,
+				Name:      member.Name,
+				Version:   version,
+				CreatedAt: time.Now().UTC(),
+			})
+			if err != nil {
+				return fmt.Errorf("join group: %w", err)
+			}
+		}
+		details["memberId"] = member.ID
+		return activity(ctx, q, snap.Ledger.ID, user.ID, "member_joined", details, version)
+	})
+	if err != nil {
+		return answer(err, respond)
+	}
+	return JoinGroup201JSONResponse(joinedLedger(member, "group")), nil
+}
+
+func (s *Server) ClaimMember(ctx context.Context, req ClaimMemberRequestObject) (ClaimMemberResponseObject, error) {
+	respond := func(status int, p Problem) ClaimMemberResponseObject {
+		return ClaimMemberdefaultApplicationProblemPlusJSONResponse{Body: p, StatusCode: status}
+	}
+	user, err := currentUser(ctx)
+	if err != nil {
+		return answer(err, respond)
+	}
+	var (
+		claimed store.Member
+		kind    string
+	)
+	_, err = store.Write(ctx, s.deps.DB, func(q *store.Queries, version int64) error {
+		snap, err := s.openInvite(ctx, q, req.Token)
+		if err != nil {
+			return err
+		}
+		kind = snap.Ledger.Kind
+		m, ok := memberOf(snap, req.Body.MemberId.String())
+		if !ok || m.Status != "active" {
+			return errNotFound
+		}
+		if m.UserID != nil {
+			return errMemberNotPending
+		}
+		// One Member per User and ledger, former ones included: whoever left
+		// comes back through JoinGroup.
+		if _, held := heldBy(snap, user.ID); held {
+			return errAlreadyMember
+		}
+		claimed, err = q.ClaimMember(ctx, store.ClaimMemberParams{ID: m.ID, UserID: user.ID, Version: version})
+		if err != nil {
+			return fmt.Errorf("claim member: %w", err)
+		}
+		return activity(ctx, q, snap.Ledger.ID, user.ID, "member_claimed", map[string]any{"memberId": m.ID}, version)
+	})
+	if err != nil {
+		return answer(err, respond)
+	}
+	return ClaimMember200JSONResponse(joinedLedger(claimed, kind)), nil
+}
+
+func (s *Server) UndoClaim(ctx context.Context, req UndoClaimRequestObject) (UndoClaimResponseObject, error) {
+	respond := func(status int, p Problem) UndoClaimResponseObject {
+		return UndoClaimdefaultApplicationProblemPlusJSONResponse{Body: p, StatusCode: status}
+	}
+	user, err := currentUser(ctx)
+	if err != nil {
+		return answer(err, respond)
+	}
+	_, err = store.Write(ctx, s.deps.DB, func(q *store.Queries, version int64) error {
+		snap, _, err := open(ctx, q, req.GroupId.String(), "group", user.ID)
+		if err != nil {
+			return err
+		}
+		m, ok := memberOf(snap, req.MemberId.String())
+		if !ok {
+			return errNotFound
+		}
+		if m.UserID == nil {
+			return errMemberNotClaimed
+		}
+		// The Member keeps its name and history; the User stops seeing the Group.
+		if _, err := q.UnclaimMember(ctx, store.UnclaimMemberParams{ID: m.ID, Version: version}); err != nil {
+			return fmt.Errorf("undo claim: %w", err)
+		}
+		return activity(ctx, q, snap.Ledger.ID, user.ID, "claim_undone", map[string]any{"memberId": m.ID, "userId": *m.UserID}, version)
+	})
+	if err != nil {
+		return answer(err, respond)
+	}
+	return UndoClaim204Response{}, nil
+}

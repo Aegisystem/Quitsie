@@ -51,3 +51,11 @@ SELECT * FROM members
 WHERE ledger_id = sqlc.arg(ledger_id)
   AND user_id = CAST(sqlc.arg(user_id) AS TEXT)
   AND status = 'active';
+
+-- name: ReactivateMember :one
+-- Whoever comes back to a Group they left gets their former member back,
+-- with its whole history, instead of a new one.
+UPDATE members
+SET status = 'active', version = ?
+WHERE id = ? AND status = 'former'
+RETURNING *;

@@ -208,6 +208,36 @@ func (q *Queries) MarkMemberFormer(ctx context.Context, arg MarkMemberFormerPara
 	return i, err
 }
 
+const reactivateMember = `-- name: ReactivateMember :one
+UPDATE members
+SET status = 'active', version = ?
+WHERE id = ? AND status = 'former'
+RETURNING id, ledger_id, user_id, name, email, status, version, created_at
+`
+
+type ReactivateMemberParams struct {
+	Version int64
+	ID      string
+}
+
+// Whoever comes back to a Group they left gets their former member back,
+// with its whole history, instead of a new one.
+func (q *Queries) ReactivateMember(ctx context.Context, arg ReactivateMemberParams) (Member, error) {
+	row := q.db.QueryRowContext(ctx, reactivateMember, arg.Version, arg.ID)
+	var i Member
+	err := row.Scan(
+		&i.ID,
+		&i.LedgerID,
+		&i.UserID,
+		&i.Name,
+		&i.Email,
+		&i.Status,
+		&i.Version,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const unclaimMember = `-- name: UnclaimMember :one
 UPDATE members
 SET user_id = NULL, version = ?

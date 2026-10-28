@@ -9,19 +9,7 @@ import "context"
 
 // --- groups ---
 
-func (s *Server) UndoClaim(context.Context, UndoClaimRequestObject) (UndoClaimResponseObject, error) {
-	return nil, errNotImplemented
-}
-
 // --- invites ---
-
-func (s *Server) ClaimMember(context.Context, ClaimMemberRequestObject) (ClaimMemberResponseObject, error) {
-	return nil, errNotImplemented
-}
-
-func (s *Server) JoinGroup(context.Context, JoinGroupRequestObject) (JoinGroupResponseObject, error) {
-	return nil, errNotImplemented
-}
 
 // --- friendships ---
 

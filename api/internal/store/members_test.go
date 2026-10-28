@@ -185,3 +185,30 @@ func TestGetActiveMemberOfUserFindsWhoTheUserIsInALedger(t *testing.T) {
 		t.Errorf("GetActiveMemberOfUser after leaving: err = %v, want sql.ErrNoRows", err)
 	}
 }
+
+func TestReactivateMemberBringsAFormerMemberBack(t *testing.T) {
+	ctx := context.Background()
+	db := openMigrated(t)
+	seedGroup(t, db)
+	write(t, db, func(q *store.Queries, version int64) error {
+		_, err := q.MarkMemberFormer(ctx, store.MarkMemberFormerParams{ID: "member-beto", Version: version})
+		return err
+	})
+
+	var back store.Member
+	version := write(t, db, func(q *store.Queries, version int64) (err error) {
+		back, err = q.ReactivateMember(ctx, store.ReactivateMemberParams{ID: "member-beto", Version: version})
+		return err
+	})
+
+	if back.Status != "active" || back.UserID == nil || *back.UserID != "beto" || back.Version != version {
+		t.Errorf("reactivated member = %+v, want Beto active again with version %d", back, version)
+	}
+	_, err := store.Write(ctx, db, func(q *store.Queries, version int64) error {
+		_, err := q.ReactivateMember(ctx, store.ReactivateMemberParams{ID: "member-ana", Version: version})
+		return err
+	})
+	if !errors.Is(err, sql.ErrNoRows) {
+		t.Errorf("ReactivateMember on an active member: err = %v, want sql.ErrNoRows", err)
+	}
+}
