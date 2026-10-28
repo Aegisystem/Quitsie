@@ -5,8 +5,8 @@ import type { Observable } from 'dexie'
 import createClient from 'openapi-fetch'
 import { describe, expect, test } from 'vitest'
 import type { paths } from '../api/schema.gen'
-import { liveActivity, liveDebts, liveExpenses, liveHome, liveSettlements, openReplica } from '../local'
-import { fakeServer, type FakeServer } from './fakeServer'
+import { liveActivity, liveDebts, liveExpenses, liveHome, liveRecords, liveSettlements, openReplica } from '../local'
+import { type FakeGroup, fakeServer, type FakeServer, me } from './fakeServer'
 import { createSyncEngine } from '.'
 
 function setup(server: FakeServer) {
@@ -14,6 +14,25 @@ function setup(server: FakeServer) {
   const api = createClient<paths>({ baseUrl: 'http://quitsie.test/api/v1', fetch: server.fetch })
   const engine = createSyncEngine({ replica, api })
   return { replica, engine }
+}
+
+// What the expense form would queue: `paid` and `owed` by Member name.
+function newExpense(
+  group: FakeGroup,
+  { description, currency, paid, owed }: { description: string; currency: string; paid: Record<string, number>; owed: Record<string, number> },
+) {
+  const shares = (amounts: Record<string, number>) =>
+    Object.entries(amounts).map(([name, amount]) => ({ memberId: group.member[name]!, amount }))
+  return {
+    ledgerId: group.id,
+    description,
+    date: '2026-10-27',
+    currency,
+    total: Object.values(paid).reduce((sum, amount) => sum + amount, 0),
+    splitMethod: 'equal' as const,
+    paidShares: shares(paid),
+    owedShares: shares(owed),
+  }
 }
 
 // The first value a live query emits, as a screen would render it.
@@ -188,5 +207,36 @@ describe('410', () => {
     expect(server.pulls).toEqual([0, cursor, 0])
     const expenses = await firstValue(liveExpenses(replica, trip.id))
     expect(expenses.map((e) => e.description).sort()).toEqual(['Taxi', 'Tren'])
+  })
+})
+
+describe('queue', () => {
+  test('an Expense created on the device waits in the queue and already shows in its ledger', async () => {
+    const server = fakeServer()
+    const trip = server.addGroup({ name: 'Viaje a Cusco', currency: 'PEN', members: ['Ana'] })
+    const { replica, engine } = setup(server)
+    await engine.sync()
+
+    const id = await engine.addExpense(newExpense(trip, { description: 'Taxi', currency: 'PEN', paid: { Yo: 2000 }, owed: { Yo: 1000, Ana: 1000 } }))
+
+    const records = await firstValue(liveRecords(replica))
+    expect(records.rejected).toEqual([])
+    expect(records.unsynced).toEqual([expect.objectContaining({ id, kind: 'expense', ledgerId: trip.id, status: 'unsynced' })])
+    const expenses = await firstValue(liveExpenses(replica, trip.id))
+    expect(expenses).toEqual([expect.objectContaining({ id, description: 'Taxi', total: 2000, sync: 'unsynced' })])
+  })
+
+  test('a sync sends the queue: an accepted Expense leaves the inbox and comes back from the server', async () => {
+    const server = fakeServer()
+    const trip = server.addGroup({ name: 'Viaje a Cusco', currency: 'PEN', members: ['Ana'] })
+    const { replica, engine } = setup(server)
+    const id = await engine.addExpense(newExpense(trip, { description: 'Taxi', currency: 'PEN', paid: { Yo: 2000 }, owed: { Yo: 1000, Ana: 1000 } }))
+
+    await engine.sync()
+
+    expect(await firstValue(liveRecords(replica))).toEqual({ rejected: [], unsynced: [] })
+    expect(await firstValue(liveExpenses(replica, trip.id))).toEqual([
+      expect.objectContaining({ id, description: 'Taxi', createdBy: me, sync: 'synced' }),
+    ])
   })
 })

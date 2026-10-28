@@ -35,7 +35,7 @@ async function clearReplica(replica: Replica): Promise<void> {
 
 async function applyChanges(replica: Replica, changes: PulledChanges): Promise<void> {
   const tables = [replica.ledgers, replica.members, replica.expenses, replica.settlements, replica.activities, replica.debts, replica.meta]
-  await replica.transaction('rw', tables, async () => {
+  await replica.transaction('rw', [...tables, replica.queue], async () => {
     await replica.ledgers.bulkPut([
       ...changes.groups.map((group) => ({ ...group, kind: 'group' as const })),
       ...changes.friendships.map((friendship) => ({ ...friendship, kind: 'friendship' as const })),
@@ -52,8 +52,19 @@ async function applyChanges(replica: Replica, changes: PulledChanges): Promise<v
         if (!visible.has(ledgerId)) await dropLedger(replica, ledgerId)
       }
     }
+    await leaveQueueOnceInReplica(replica)
     await replica.meta.put({ key: 'cursor', value: changes.cursor })
   })
+}
+
+// A queued record whose row is now in the replica is on the server: it leaves
+// the table, whether it was accepted or its acceptance never reached the device.
+// Rejected records only leave when the User fixes or discards them.
+async function leaveQueueOnceInReplica(replica: Replica): Promise<void> {
+  for (const record of await replica.queue.where('status').anyOf('unsynced', 'accepted').toArray()) {
+    const row = await (record.kind === 'expense' ? replica.expenses : replica.settlements).get(record.id)
+    if (row?.ledgerId === record.ledgerId) await replica.queue.delete(record.id)
+  }
 }
 
 // Deletes a ledger the User can no longer see, with everything in it.

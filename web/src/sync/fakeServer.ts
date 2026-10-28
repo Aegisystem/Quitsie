@@ -1,4 +1,4 @@
-import type { Activity, DroppedLedger, Expense, Group, LedgerDebts, Member, Problem, Settlement } from '../api/client'
+import type { Activity, DroppedLedger, Expense, Group, LedgerDebts, Member, Problem, RecordBatch, RecordResult, Settlement } from '../api/client'
 import type { PulledChanges } from './pull'
 
 // Test double for the Go server behind `fetch`: it keeps a version counter and
@@ -70,6 +70,27 @@ export function fakeServer({ versionsPerPull = Infinity }: { versionsPerPull?: n
     db.activities.set(id, { id, ledgerId, userId: me, kind, details: {}, createdAt: new Date().toISOString(), version })
   }
 
+  // POST /records: each record is accepted or rejected on its own, and a record
+  // the server already has is accepted again without changes.
+  function push({ expenses, settlements }: RecordBatch): RecordResult[] {
+    const results: RecordResult[] = []
+    for (const expense of expenses) {
+      const known = db.expenses.get(expense.id)
+      if (known) {
+        results.push({ id: expense.id, kind: 'expense', status: 'accepted', version: known.version })
+        continue
+      }
+      const version = ++db.counter
+      db.expenses.set(expense.id, { ...expense, createdBy: me, createdAt: new Date().toISOString(), version })
+      log(expense.ledgerId, 'expense_created', version)
+      results.push({ id: expense.id, kind: 'expense', status: 'accepted', version })
+    }
+    for (const settlement of settlements) {
+      results.push({ id: settlement.id, kind: 'settlement', status: 'rejected', reason: 'invalid_record' })
+    }
+    return results
+  }
+
   // Amounts by Member name, so the tests read like the screens.
   const shares = (group: FakeGroup, amounts: Record<string, number>) =>
     Object.entries(amounts).map(([name, amount]) => ({ memberId: group.member[name] ?? name, amount }))
@@ -86,6 +107,9 @@ export function fakeServer({ versionsPerPull = Infinity }: { versionsPerPull?: n
         pulls.push(since)
         if (since > db.counter) return problem(410, 'cursor_invalid')
         return json(200, pull(since))
+      }
+      if (request.method === 'POST' && url.pathname === '/api/v1/records') {
+        return json(200, { results: push((await request.json()) as RecordBatch) })
       }
       return problem(404, 'not_found')
     },
