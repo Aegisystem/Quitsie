@@ -8,11 +8,13 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	openapi_types "github.com/oapi-codegen/runtime/types"
 
 	"github.com/Aegisystem/Quitsie/api/internal/auth"
+	"github.com/Aegisystem/Quitsie/api/internal/domain"
 	"github.com/Aegisystem/Quitsie/api/internal/store"
 )
 
@@ -126,6 +128,40 @@ func clearSessionCookie() *string {
 func (s *Server) GetMe(ctx context.Context, _ GetMeRequestObject) (GetMeResponseObject, error) {
 	user, _ := auth.CurrentUser(ctx) // requireSession checked there is one
 	return GetMe200JSONResponse(userFrom(user)), nil
+}
+
+// maxNameLength is the longest name a User can have, in characters.
+const maxNameLength = 80
+
+func (s *Server) UpdateMe(ctx context.Context, req UpdateMeRequestObject) (UpdateMeResponseObject, error) {
+	invalid := func(title string) (UpdateMeResponseObject, error) {
+		return UpdateMe400ApplicationProblemPlusJSONResponse{BadRequestApplicationProblemPlusJSONResponse(
+			problem(http.StatusBadRequest, ProblemCodeValidationFailed, title))}, nil
+	}
+	change := store.UpdateUserParams{PreferredCurrency: req.Body.PreferredCurrency}
+	if req.Body.Name == nil && req.Body.PreferredCurrency == nil {
+		return invalid("Send the name, the preferred currency or both.")
+	}
+	if req.Body.Name != nil {
+		name := strings.TrimSpace(*req.Body.Name)
+		if name == "" || utf8.RuneCountInString(name) > maxNameLength {
+			return invalid("The name must have between 1 and 80 characters.")
+		}
+		change.Name = &name
+	}
+	if c := req.Body.PreferredCurrency; c != nil {
+		if _, ok := domain.Currency(*c).Decimals(); !ok {
+			return invalid("The preferred currency is not an ISO 4217 currency.")
+		}
+	}
+
+	user, _ := auth.CurrentUser(ctx)
+	change.ID = user.ID
+	updated, err := store.New(s.deps.DB).UpdateUser(ctx, change)
+	if err != nil {
+		return nil, err
+	}
+	return UpdateMe200JSONResponse(userFrom(updated)), nil
 }
 
 func userFrom(u store.User) User {

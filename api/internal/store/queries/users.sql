@@ -14,3 +14,11 @@ WHERE google_sub = sqlc.arg(google_sub) AND deleted_at IS NULL;
 UPDATE users
 SET google_sub = sqlc.arg(google_sub)
 WHERE id = sqlc.arg(id);
+
+-- name: UpdateUser :one
+-- Changes the fields that are not NULL.
+UPDATE users
+SET name = coalesce(sqlc.narg(name), name),
+    preferred_currency = coalesce(sqlc.narg(preferred_currency), preferred_currency)
+WHERE id = sqlc.arg(id) AND deleted_at IS NULL
+RETURNING *;

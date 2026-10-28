@@ -260,3 +260,34 @@ func TestAUserSeesAndClosesTheirSessions(t *testing.T) {
 		t.Errorf("sessions after closing the phone's = %+v, want only the laptop's", left)
 	}
 }
+
+func TestAUserChangesTheirNameAndPreferredCurrency(t *testing.T) {
+	api := newTestAPI(t)
+	ana, me := api.signedIn(t, "ana@example.com")
+
+	got := decode[httpapi.User](t, ana.do(http.MethodPatch, "/api/v1/me", `{"name":"  Ana Pérez  "}`), http.StatusOK)
+	me.Name = "Ana Pérez"
+	if got != me {
+		t.Errorf("after changing the name: %+v, want %+v", got, me)
+	}
+	got = decode[httpapi.User](t, ana.do(http.MethodPatch, "/api/v1/me", `{"preferredCurrency":"COP"}`), http.StatusOK)
+	me.PreferredCurrency = "COP"
+	if got != me {
+		t.Errorf("after changing the currency: %+v, want %+v", got, me)
+	}
+
+	for _, body := range []string{
+		`{}`,
+		`{"name":null}`,
+		`{"name":"   "}`,
+		`{"name":"` + strings.Repeat("ñ", 81) + `"}`,
+		`{"preferredCurrency":"XYZ"}`,
+		`{"preferredCurrency":"cop"}`,
+		`{"name":"Ana","preferredCurrency":"XAU"}`,
+	} {
+		wantProblem(t, ana.do(http.MethodPatch, "/api/v1/me", body), http.StatusBadRequest, httpapi.ProblemCodeValidationFailed)
+	}
+	if got := decode[httpapi.User](t, ana.do(http.MethodGet, "/api/v1/me", ""), http.StatusOK); got != me {
+		t.Errorf("after invalid changes: %+v, want it unchanged %+v", got, me)
+	}
+}
