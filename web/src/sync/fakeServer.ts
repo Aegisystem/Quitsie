@@ -1,4 +1,4 @@
-import type { Activity, DroppedLedger, Expense, Group, LedgerDebts, Member, Problem, RecordBatch, RecordResult, Settlement } from '../api/client'
+import type { Activity, DroppedLedger, Expense, Friendship, Group, LedgerDebts, Member, Problem, RecordBatch, RecordResult, Settlement } from '../api/client'
 import type { PulledChanges } from './pull'
 
 // Test double for the Go server behind `fetch`: it keeps a version counter and
@@ -16,6 +16,7 @@ function emptyDatabase() {
   return {
     counter: 0,
     groups: new Map<string, Group>(),
+    friendships: new Map<string, Friendship>(),
     members: new Map<string, Member>(),
     expenses: new Map<string, Expense>(),
     settlements: new Map<string, Settlement>(),
@@ -47,7 +48,7 @@ export function fakeServer({ versionsPerPull = Infinity }: { versionsPerPull?: n
       headers: { 'Content-Type': 'application/problem+json' },
     })
 
-  const visible = (ledgerId: string) => db.groups.has(ledgerId) && !db.dropped.has(ledgerId)
+  const visible = (ledgerId: string) => (db.groups.has(ledgerId) || db.friendships.has(ledgerId)) && !db.dropped.has(ledgerId)
 
   function pull(since: number): PulledChanges {
     const cursor = Math.min(db.counter, since + versionsPerPull)
@@ -58,7 +59,7 @@ export function fakeServer({ versionsPerPull = Infinity }: { versionsPerPull?: n
       cursor,
       hasMore: cursor < db.counter,
       groups: newer(db.groups),
-      friendships: [],
+      friendships: newer(db.friendships),
       members: newer(db.members),
       expenses: newer(db.expenses),
       settlements: newer(db.settlements),
@@ -67,7 +68,7 @@ export function fakeServer({ versionsPerPull = Infinity }: { versionsPerPull?: n
       droppedLedgers: [...db.dropped.values()]
         .filter((drop) => drop.announce && inPage(drop))
         .map(({ ledgerId, reason }) => ({ ledgerId, reason })),
-      visibleLedgerIds: [...db.groups.keys()].filter(visible),
+      visibleLedgerIds: [...db.groups.keys(), ...db.friendships.keys()].filter(visible),
     }
   }
 
@@ -78,7 +79,8 @@ export function fakeServer({ versionsPerPull = Infinity }: { versionsPerPull?: n
 
   function rejection({ ledgerId, currency }: { ledgerId: string; currency: string }): RecordResult['reason'] {
     if (!visible(ledgerId)) return 'ledger_unavailable'
-    if (db.groups.get(ledgerId)!.currency !== currency) return 'currency_mismatch'
+    const group = db.groups.get(ledgerId)
+    if (group && group.currency !== currency) return 'currency_mismatch' // in a Friendship each Expense has its own
     return undefined
   }
 
@@ -119,6 +121,16 @@ export function fakeServer({ versionsPerPull = Infinity }: { versionsPerPull?: n
       results.push({ id: settlement.id, kind: 'settlement', status: 'accepted', version })
     }
     return results
+  }
+
+  function addMembers(ledgerId: string, names: string[], version: number): Record<string, string> {
+    const member: Record<string, string> = {}
+    for (const name of ['Yo', ...names]) {
+      const id = crypto.randomUUID()
+      member[name] = id
+      db.members.set(id, { id, ledgerId, name, status: 'active', version, ...(name === 'Yo' ? { userId: me } : {}) })
+    }
+    return member
   }
 
   // Amounts by Member name, so the tests read like the screens.
@@ -204,21 +216,16 @@ export function fakeServer({ versionsPerPull = Infinity }: { versionsPerPull?: n
       const version = ++db.counter
       const id = crypto.randomUUID()
       db.groups.set(id, { id, name, currency, simplifyDebts: true, createdAt: new Date().toISOString(), version })
-      const member: Record<string, string> = {}
-      for (const memberName of ['Yo', ...names]) {
-        const memberId = crypto.randomUUID()
-        member[memberName] = memberId
-        db.members.set(memberId, {
-          id: memberId,
-          ledgerId: id,
-          name: memberName,
-          status: 'active',
-          version,
-          ...(memberName === 'Yo' ? { userId: me } : {}),
-        })
-      }
       log(id, 'group_created', version)
-      return { id, member }
+      return { id, member: addMembers(id, names, version) }
+    },
+
+    addFriendship(friend: string): FakeGroup {
+      const version = ++db.counter
+      const id = crypto.randomUUID()
+      db.friendships.set(id, { id, createdAt: new Date().toISOString(), version })
+      log(id, 'friendship_created', version)
+      return { id, member: addMembers(id, [friend], version) }
     },
 
     addExpense(

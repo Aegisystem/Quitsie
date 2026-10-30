@@ -915,3 +915,34 @@ describe('browserEnvironment', () => {
     expect(browserEnvironment.visible()).toBe(false)
   })
 })
+
+describe('Friendships', () => {
+  test('a Friendship is a ledger too, and each of its Expenses keeps its own currency', async () => {
+    const server = fakeServer()
+    const friend = server.addFriendship('Ana')
+    const { replica, engine, device } = setup(server)
+    await engine.sync()
+
+    const [summary] = await firstValue(liveHome(replica))
+    expect(summary?.ledger).toMatchObject({ kind: 'friendship', id: friend.id })
+    expect(summary?.members.map((m) => m.name).sort()).toEqual(['Ana', 'Yo'])
+
+    device.goOffline()
+    const inEuros = await engine.addExpense(newExpense(friend, { description: 'Café', currency: 'EUR', paid: { Yo: 400 }, owed: { Yo: 200, Ana: 200 } }))
+    const inDollars = await engine.addExpense(newExpense(friend, { description: 'Libro', currency: 'USD', paid: { Ana: 600 }, owed: { Yo: 300, Ana: 300 } }))
+    device.goOnline()
+    await engine.sync()
+
+    expect((await firstValue(liveExpenses(replica, friend.id))).map(({ id, sync }) => [id, sync]).sort()).toEqual(
+      [
+        [inEuros, 'synced'],
+        [inDollars, 'synced'],
+      ].sort(),
+    )
+    const mine = (await firstValue(liveBalances(replica, friend.id))).filter(({ participantId }) => participantId === friend.member.Yo)
+    expect(mine.map(({ currency, amount }) => [currency, amount])).toEqual([
+      ['EUR', 200],
+      ['USD', -300],
+    ])
+  })
+})
