@@ -519,12 +519,14 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        /** Deletes a Settlement; it stops counting in Balances but can be restored. */
+        /**
+         * Deletes a Settlement; it stops counting in Balances but can be restored.
+         * @description Settlements are never edited: to correct one, delete it and record another. One with a former member can be neither deleted nor replaced.
+         */
         delete: operations["deleteSettlement"];
         options?: never;
         head?: never;
-        /** Edits a Settlement if nobody changed it since the client read it. */
-        patch: operations["updateSettlement"];
+        patch?: never;
         trace?: never;
     };
     "/settlements/{settlementId}/restore": {
@@ -616,7 +618,7 @@ export interface components {
         Currency: string;
         /**
          * Format: int64
-         * @description Positive amount in the minor unit of its currency (ISO 4217), for example 1050 = 10.50 USD.
+         * @description Positive amount of a record in the minor unit of its currency (ISO 4217), for example 1050 = 10.50 USD. At most 10^15, so adding up Balances never overflows.
          * @example 1050
          */
         Amount: number;
@@ -837,7 +839,12 @@ export interface components {
         OwedShare: {
             /** Format: uuid */
             memberId: string;
-            amount: components["schemas"]["Amount"];
+            /**
+             * Format: int64
+             * @description Like an Amount, but it may be zero when the split rounds it down (1 cent split in two); it is kept so the split survives re-editing.
+             * @example 525
+             */
+            amount: number;
             /**
              * Format: int64
              * @description The Participant's input to the Split method, kept to re-edit the Expense: percentage in hundredths (10000 = 100 %), weight, or adjustment in minor units (may be negative). Absent for `equal` and `exact`.
@@ -961,18 +968,6 @@ export interface components {
             /** Format: date */
             date: string;
         };
-        /** @description The whole editable content of a Settlement. */
-        SettlementUpdate: {
-            expectedVersion: components["schemas"]["Version"];
-            /** Format: uuid */
-            fromMemberId: string;
-            /** Format: uuid */
-            toMemberId: string;
-            amount: components["schemas"]["Amount"];
-            currency: components["schemas"]["Currency"];
-            /** Format: date */
-            date: string;
-        };
         RecordBatch: {
             expenses: components["schemas"]["NewExpense"][];
             settlements: components["schemas"]["NewSettlement"][];
@@ -988,7 +983,7 @@ export interface components {
             /** @enum {string} */
             status: "accepted" | "rejected";
             /**
-             * @description Only when rejected. `ledger_unavailable`: the ledger was deleted or the User is no longer an active Member. `currency_mismatch`: the Group currency changed. `invalid_participants`: someone is not an active Member. `invalid_amounts`: the shares do not add up to the total. `id_conflict`: the id belongs to another record. `invalid_record`: any other rule of the contract.
+             * @description Only when rejected. `ledger_unavailable`: the ledger was deleted or the User is no longer an active Member. `currency_mismatch`: the Group currency changed. `invalid_participants`: someone is not an active Member. `invalid_amounts`: an amount is out of range or the shares do not add up to the total. `id_conflict`: the id belongs to another record. `invalid_record`: any other rule of the contract.
              * @enum {string}
              */
             reason?: "ledger_unavailable" | "currency_mismatch" | "invalid_participants" | "invalid_amounts" | "id_conflict" | "invalid_record";
@@ -1011,7 +1006,7 @@ export interface components {
              * @description What changed. New kinds may be added; clients skip the ones they do not know.
              * @enum {string}
              */
-            kind: "group_created" | "group_deleted" | "group_renamed" | "group_currency_changed" | "debt_simplification_changed" | "member_added" | "member_updated" | "member_joined" | "member_claimed" | "claim_undone" | "member_removed" | "member_left" | "invite_link_regenerated" | "friendship_created" | "expense_created" | "expense_updated" | "expense_deleted" | "expense_restored" | "settlement_created" | "settlement_updated" | "settlement_deleted" | "settlement_restored";
+            kind: "group_created" | "group_deleted" | "group_renamed" | "group_currency_changed" | "debt_simplification_changed" | "member_added" | "member_updated" | "member_joined" | "member_claimed" | "claim_undone" | "member_removed" | "member_left" | "invite_link_regenerated" | "friendship_created" | "expense_created" | "expense_updated" | "expense_deleted" | "expense_restored" | "settlement_created" | "settlement_deleted" | "settlement_restored";
             /** @description Data that depends on `kind`, such as the ids involved and the values before and after. */
             details: {
                 [key: string]: unknown;
@@ -1032,7 +1027,12 @@ export interface components {
              * @description Who is owed.
              */
             toMemberId: string;
-            amount: components["schemas"]["Amount"];
+            /**
+             * Format: int64
+             * @description Positive amount in the minor unit of its currency. It adds up many records, so unlike an Amount it may be over 10^15.
+             * @example 1050
+             */
+            amount: number;
             currency: components["schemas"]["Currency"];
         };
         /** @description The current Debts of a ledger, computed by the server. In a Group with Debt simplification they are already simplified; in a Friendship there is at most one per currency. */
@@ -1073,6 +1073,8 @@ export interface components {
             /** @description The Debts of every ledger that changed. */
             debts: components["schemas"]["LedgerDebts"][];
             droppedLedgers: components["schemas"]["DroppedLedger"][];
+            /** @description Every Group and Friendship the User can see now, changed or not. The client drops from its replica any other ledger, even one without a `droppedLedgers` entry, for example when someone undid the User's Claim. */
+            visibleLedgerIds: string[];
         };
     };
     responses: {
@@ -2029,6 +2031,15 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
+            /** @description A Participant is a former member, whose Balance must stay at zero (`invalid_participants`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
             default: components["responses"]["Problem"];
         };
     };
@@ -2067,7 +2078,7 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
-            /** @description The Expense changed since `expectedVersion` (`version_conflict`; sync to see the new version), the currency is not the Group currency (`currency_mismatch`), or a Participant is not an active Member (`invalid_participants`). */
+            /** @description The Expense changed since `expectedVersion` (`version_conflict`; sync to see the new version), the currency is not the Group currency (`currency_mismatch`), or a Participant is not an active Member (`invalid_participants`). A former member may stay in the Expense, but their PaidShare and OwedShare cannot change, also `invalid_participants`. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -2133,37 +2144,7 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
-            default: components["responses"]["Problem"];
-        };
-    };
-    updateSettlement: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                settlementId: components["parameters"]["SettlementId"];
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["SettlementUpdate"];
-            };
-        };
-        responses: {
-            /** @description The Settlement with its new version. */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Settlement"];
-                };
-            };
-            400: components["responses"]["BadRequest"];
-            401: components["responses"]["Unauthorized"];
-            404: components["responses"]["NotFound"];
-            /** @description The Settlement changed since `expectedVersion` (`version_conflict`), the currency is not the Group currency (`currency_mismatch`), or a person is not an active Member (`invalid_participants`). */
+            /** @description One of the two people is a former member, whose Balance must stay at zero (`invalid_participants`). */
             409: {
                 headers: {
                     [name: string]: unknown;

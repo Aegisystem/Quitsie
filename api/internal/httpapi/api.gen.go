@@ -41,7 +41,6 @@ const (
 	SettlementCreated         ActivityKind = "settlement_created"
 	SettlementDeleted         ActivityKind = "settlement_deleted"
 	SettlementRestored        ActivityKind = "settlement_restored"
-	SettlementUpdated         ActivityKind = "settlement_updated"
 )
 
 // Valid indicates whether the value is a known member of the ActivityKind enum.
@@ -88,8 +87,6 @@ func (e ActivityKind) Valid() bool {
 	case SettlementDeleted:
 		return true
 	case SettlementRestored:
-		return true
-	case SettlementUpdated:
 		return true
 	default:
 		return false
@@ -450,7 +447,7 @@ type Activity struct {
 // ActivityKind What changed. New kinds may be added; clients skip the ones they do not know.
 type ActivityKind string
 
-// Amount Positive amount in the minor unit of its currency (ISO 4217), for example 1050 = 10.50 USD.
+// Amount Positive amount of a record in the minor unit of its currency (ISO 4217), for example 1050 = 10.50 USD. At most 10^15, so adding up Balances never overflows.
 //
 // Example: 1050
 type Amount = int64
@@ -482,6 +479,9 @@ type Changes struct {
 
 	// Settlements Includes deleted Settlements, with `deletedAt`.
 	Settlements []Settlement `json:"settlements"`
+
+	// VisibleLedgerIds Every Group and Friendship the User can see now, changed or not. The client drops from its replica any other ledger, even one without a `droppedLedgers` entry, for example when someone undid the User's Claim.
+	VisibleLedgerIds []openapi_types.UUID `json:"visibleLedgerIds"`
 }
 
 // ClaimRequest defines model for ClaimRequest.
@@ -521,10 +521,11 @@ type CurrencyPrecisionProblem struct {
 
 // Debt How much one person owes another specific person.
 type Debt struct {
-	// Amount Positive amount in the minor unit of its currency (ISO 4217), for example 1050 = 10.50 USD.
+	// Amount Positive amount in the minor unit of its currency. It adds up many records, so unlike an Amount it may be over 10^15.
+	//
 	//
 	// Example: 1050
-	Amount Amount `json:"amount"`
+	Amount int64 `json:"amount"`
 
 	// Currency ISO 4217 currency code.
 	//
@@ -575,7 +576,8 @@ type Expense struct {
 	// SplitMethod How the client computed the OwedShares (ADR 0003). The server stores it only to re-edit the Expense and never recomputes the shares.
 	SplitMethod SplitMethod `json:"splitMethod"`
 
-	// Total Positive amount in the minor unit of its currency (ISO 4217), for example 1050 = 10.50 USD.
+	// Total Positive amount of a record in the minor unit of its currency (ISO 4217), for example 1050 = 10.50 USD. At most 10^15, so adding up Balances never overflows.
+	//
 	//
 	// Example: 1050
 	Total Amount `json:"total"`
@@ -608,7 +610,8 @@ type ExpenseUpdate struct {
 	// SplitMethod How the client computed the OwedShares (ADR 0003). The server stores it only to re-edit the Expense and never recomputes the shares.
 	SplitMethod SplitMethod `json:"splitMethod"`
 
-	// Total Positive amount in the minor unit of its currency (ISO 4217), for example 1050 = 10.50 USD.
+	// Total Positive amount of a record in the minor unit of its currency (ISO 4217), for example 1050 = 10.50 USD. At most 10^15, so adding up Balances never overflows.
+	//
 	//
 	// Example: 1050
 	Total Amount `json:"total"`
@@ -801,7 +804,8 @@ type NewExpense struct {
 	// SplitMethod How the client computed the OwedShares (ADR 0003). The server stores it only to re-edit the Expense and never recomputes the shares.
 	SplitMethod SplitMethod `json:"splitMethod"`
 
-	// Total Positive amount in the minor unit of its currency (ISO 4217), for example 1050 = 10.50 USD.
+	// Total Positive amount of a record in the minor unit of its currency (ISO 4217), for example 1050 = 10.50 USD. At most 10^15, so adding up Balances never overflows.
+	//
 	//
 	// Example: 1050
 	Total Amount `json:"total"`
@@ -841,7 +845,8 @@ type NewPendingMember struct {
 
 // NewSettlement A Settlement created on the device. `currency` follows the same rule as in NewExpense.
 type NewSettlement struct {
-	// Amount Positive amount in the minor unit of its currency (ISO 4217), for example 1050 = 10.50 USD.
+	// Amount Positive amount of a record in the minor unit of its currency (ISO 4217), for example 1050 = 10.50 USD. At most 10^15, so adding up Balances never overflows.
+	//
 	//
 	// Example: 1050
 	Amount Amount `json:"amount"`
@@ -861,10 +866,11 @@ type NewSettlement struct {
 
 // OwedShare What a Participant owes of an Expense, already computed by the client.
 type OwedShare struct {
-	// Amount Positive amount in the minor unit of its currency (ISO 4217), for example 1050 = 10.50 USD.
+	// Amount Like an Amount, but it may be zero when the split rounds it down (1 cent split in two); it is kept so the split survives re-editing.
 	//
-	// Example: 1050
-	Amount   Amount             `json:"amount"`
+	//
+	// Example: 525
+	Amount   int64              `json:"amount"`
 	MemberId openapi_types.UUID `json:"memberId"`
 
 	// SplitValue The Participant's input to the Split method, kept to re-edit the Expense: percentage in hundredths (10000 = 100 %), weight, or adjustment in minor units (may be negative). Absent for `equal` and `exact`.
@@ -873,7 +879,8 @@ type OwedShare struct {
 
 // PaidShare What a Participant paid of an Expense.
 type PaidShare struct {
-	// Amount Positive amount in the minor unit of its currency (ISO 4217), for example 1050 = 10.50 USD.
+	// Amount Positive amount of a record in the minor unit of its currency (ISO 4217), for example 1050 = 10.50 USD. At most 10^15, so adding up Balances never overflows.
+	//
 	//
 	// Example: 1050
 	Amount   Amount             `json:"amount"`
@@ -925,7 +932,7 @@ type RecordResult struct {
 	Id     openapi_types.UUID `json:"id"`
 	Kind   RecordResultKind   `json:"kind"`
 
-	// Reason Only when rejected. `ledger_unavailable`: the ledger was deleted or the User is no longer an active Member. `currency_mismatch`: the Group currency changed. `invalid_participants`: someone is not an active Member. `invalid_amounts`: the shares do not add up to the total. `id_conflict`: the id belongs to another record. `invalid_record`: any other rule of the contract.
+	// Reason Only when rejected. `ledger_unavailable`: the ledger was deleted or the User is no longer an active Member. `currency_mismatch`: the Group currency changed. `invalid_participants`: someone is not an active Member. `invalid_amounts`: an amount is out of range or the shares do not add up to the total. `id_conflict`: the id belongs to another record. `invalid_record`: any other rule of the contract.
 	Reason *RecordResultReason `json:"reason,omitempty"`
 	Status RecordResultStatus  `json:"status"`
 
@@ -938,7 +945,7 @@ type RecordResult struct {
 // RecordResultKind defines model for RecordResult.Kind.
 type RecordResultKind string
 
-// RecordResultReason Only when rejected. `ledger_unavailable`: the ledger was deleted or the User is no longer an active Member. `currency_mismatch`: the Group currency changed. `invalid_participants`: someone is not an active Member. `invalid_amounts`: the shares do not add up to the total. `id_conflict`: the id belongs to another record. `invalid_record`: any other rule of the contract.
+// RecordResultReason Only when rejected. `ledger_unavailable`: the ledger was deleted or the User is no longer an active Member. `currency_mismatch`: the Group currency changed. `invalid_participants`: someone is not an active Member. `invalid_amounts`: an amount is out of range or the shares do not add up to the total. `id_conflict`: the id belongs to another record. `invalid_record`: any other rule of the contract.
 type RecordResultReason string
 
 // RecordResultStatus defines model for RecordResult.Status.
@@ -967,7 +974,8 @@ type Session struct {
 
 // Settlement A record that one person paid another back. No real money moves.
 type Settlement struct {
-	// Amount Positive amount in the minor unit of its currency (ISO 4217), for example 1050 = 10.50 USD.
+	// Amount Positive amount of a record in the minor unit of its currency (ISO 4217), for example 1050 = 10.50 USD. At most 10^15, so adding up Balances never overflows.
+	//
 	//
 	// Example: 1050
 	Amount    Amount    `json:"amount"`
@@ -997,27 +1005,6 @@ type Settlement struct {
 	//
 	// Example: 42
 	Version Version `json:"version"`
-}
-
-// SettlementUpdate The whole editable content of a Settlement.
-type SettlementUpdate struct {
-	// Amount Positive amount in the minor unit of its currency (ISO 4217), for example 1050 = 10.50 USD.
-	//
-	// Example: 1050
-	Amount Amount `json:"amount"`
-
-	// Currency ISO 4217 currency code.
-	//
-	// Example: USD
-	Currency Currency           `json:"currency"`
-	Date     openapi_types.Date `json:"date"`
-
-	// ExpectedVersion Value of the global version counter when the row last changed.
-	//
-	// Example: 42
-	ExpectedVersion Version            `json:"expectedVersion"`
-	FromMemberId    openapi_types.UUID `json:"fromMemberId"`
-	ToMemberId      openapi_types.UUID `json:"toMemberId"`
 }
 
 // SplitMethod How the client computed the OwedShares (ADR 0003). The server stores it only to re-edit the Expense and never recomputes the shares.
@@ -1134,9 +1121,6 @@ type UpdateMeJSONRequestBody = UserUpdate
 // PushRecordsJSONRequestBody defines body for PushRecords for application/json ContentType.
 type PushRecordsJSONRequestBody = RecordBatch
 
-// UpdateSettlementJSONRequestBody defines body for UpdateSettlement for application/json ContentType.
-type UpdateSettlementJSONRequestBody = SettlementUpdate
-
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
 	// StartGoogleLogin Redirects to Google to sign in with OpenID Connect.
@@ -1235,9 +1219,6 @@ type ServerInterface interface {
 	// DeleteSettlement Deletes a Settlement; it stops counting in Balances but can be restored.
 	// (DELETE /settlements/{settlementId})
 	DeleteSettlement(w http.ResponseWriter, r *http.Request, settlementId SettlementId)
-	// UpdateSettlement Edits a Settlement if nobody changed it since the client read it.
-	// (PATCH /settlements/{settlementId})
-	UpdateSettlement(w http.ResponseWriter, r *http.Request, settlementId SettlementId)
 	// RestoreSettlement Restores a deleted Settlement.
 	// (POST /settlements/{settlementId}/restore)
 	RestoreSettlement(w http.ResponseWriter, r *http.Request, settlementId SettlementId)
@@ -2022,32 +2003,6 @@ func (siw *ServerInterfaceWrapper) DeleteSettlement(w http.ResponseWriter, r *ht
 	handler.ServeHTTP(w, r)
 }
 
-// UpdateSettlement operation middleware
-func (siw *ServerInterfaceWrapper) UpdateSettlement(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "settlementId" -------------
-	var settlementId SettlementId
-
-	err = runtime.BindStyledParameterWithOptions("simple", "settlementId", r.PathValue("settlementId"), &settlementId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "settlementId", Err: err})
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.UpdateSettlement(w, r, settlementId)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
 // RestoreSettlement operation middleware
 func (siw *ServerInterfaceWrapper) RestoreSettlement(w http.ResponseWriter, r *http.Request) {
 
@@ -2259,7 +2214,6 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/expenses/{expenseId}", wrapper.UpdateExpense)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/expenses/{expenseId}/restore", wrapper.RestoreExpense)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/settlements/{settlementId}", wrapper.DeleteSettlement)
-	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/settlements/{settlementId}", wrapper.UpdateSettlement)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/settlements/{settlementId}/restore", wrapper.RestoreSettlement)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/sync", wrapper.PullChanges)
 
@@ -2733,6 +2687,20 @@ func (response DeleteExpense404ApplicationProblemPlusJSONResponse) VisitDeleteEx
 	}
 	w.Header().Set("Content-Type", "application/problem+json")
 	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteExpense409ApplicationProblemPlusJSONResponse Problem
+
+func (response DeleteExpense409ApplicationProblemPlusJSONResponse) VisitDeleteExpenseResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(409)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -4619,97 +4587,9 @@ func (response DeleteSettlement404ApplicationProblemPlusJSONResponse) VisitDelet
 	return err
 }
 
-type DeleteSettlementdefaultApplicationProblemPlusJSONResponse struct {
-	Body       Problem
-	StatusCode int
-}
+type DeleteSettlement409ApplicationProblemPlusJSONResponse Problem
 
-func (response DeleteSettlementdefaultApplicationProblemPlusJSONResponse) VisitDeleteSettlementResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/problem+json")
-	w.WriteHeader(response.StatusCode)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type UpdateSettlementRequestObject struct {
-	SettlementId SettlementId `json:"settlementId"`
-	Body         *UpdateSettlementJSONRequestBody
-}
-
-type UpdateSettlementResponseObject interface {
-	VisitUpdateSettlementResponse(w http.ResponseWriter) error
-}
-
-type UpdateSettlement200JSONResponse Settlement
-
-func (response UpdateSettlement200JSONResponse) VisitUpdateSettlementResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type UpdateSettlement400ApplicationProblemPlusJSONResponse struct {
-	BadRequestApplicationProblemPlusJSONResponse
-}
-
-func (response UpdateSettlement400ApplicationProblemPlusJSONResponse) VisitUpdateSettlementResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/problem+json")
-	w.WriteHeader(400)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type UpdateSettlement401ApplicationProblemPlusJSONResponse struct {
-	UnauthorizedApplicationProblemPlusJSONResponse
-}
-
-func (response UpdateSettlement401ApplicationProblemPlusJSONResponse) VisitUpdateSettlementResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/problem+json")
-	w.WriteHeader(401)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type UpdateSettlement404ApplicationProblemPlusJSONResponse struct {
-	NotFoundApplicationProblemPlusJSONResponse
-}
-
-func (response UpdateSettlement404ApplicationProblemPlusJSONResponse) VisitUpdateSettlementResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/problem+json")
-	w.WriteHeader(404)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type UpdateSettlement409ApplicationProblemPlusJSONResponse Problem
-
-func (response UpdateSettlement409ApplicationProblemPlusJSONResponse) VisitUpdateSettlementResponse(w http.ResponseWriter) error {
+func (response DeleteSettlement409ApplicationProblemPlusJSONResponse) VisitDeleteSettlementResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
@@ -4721,12 +4601,12 @@ func (response UpdateSettlement409ApplicationProblemPlusJSONResponse) VisitUpdat
 	return err
 }
 
-type UpdateSettlementdefaultApplicationProblemPlusJSONResponse struct {
+type DeleteSettlementdefaultApplicationProblemPlusJSONResponse struct {
 	Body       Problem
 	StatusCode int
 }
 
-func (response UpdateSettlementdefaultApplicationProblemPlusJSONResponse) VisitUpdateSettlementResponse(w http.ResponseWriter) error {
+func (response DeleteSettlementdefaultApplicationProblemPlusJSONResponse) VisitDeleteSettlementResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -5006,9 +4886,6 @@ type StrictServerInterface interface {
 	// DeleteSettlement Deletes a Settlement; it stops counting in Balances but can be restored.
 	// (DELETE /settlements/{settlementId})
 	DeleteSettlement(ctx context.Context, request DeleteSettlementRequestObject) (DeleteSettlementResponseObject, error)
-	// UpdateSettlement Edits a Settlement if nobody changed it since the client read it.
-	// (PATCH /settlements/{settlementId})
-	UpdateSettlement(ctx context.Context, request UpdateSettlementRequestObject) (UpdateSettlementResponseObject, error)
 	// RestoreSettlement Restores a deleted Settlement.
 	// (POST /settlements/{settlementId}/restore)
 	RestoreSettlement(ctx context.Context, request RestoreSettlementRequestObject) (RestoreSettlementResponseObject, error)
@@ -5939,39 +5816,6 @@ func (sh *strictHandler) DeleteSettlement(w http.ResponseWriter, r *http.Request
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(DeleteSettlementResponseObject); ok {
 		if err := validResponse.VisitDeleteSettlementResponse(w); err != nil {
-			sh.options.ResponseErrorHandlerFunc(w, r, err)
-		}
-	} else if response != nil {
-		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
-	}
-}
-
-// UpdateSettlement operation middleware
-func (sh *strictHandler) UpdateSettlement(w http.ResponseWriter, r *http.Request, settlementId SettlementId) {
-	var request UpdateSettlementRequestObject
-
-	request.SettlementId = settlementId
-
-	var body UpdateSettlementJSONRequestBody
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
-		return
-	}
-	request.Body = &body
-
-	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
-		return sh.ssi.UpdateSettlement(ctx, request.(UpdateSettlementRequestObject))
-	}
-	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "UpdateSettlement")
-	}
-
-	response, err := handler(r.Context(), w, r, request)
-
-	if err != nil {
-		sh.options.ResponseErrorHandlerFunc(w, r, err)
-	} else if validResponse, ok := response.(UpdateSettlementResponseObject); ok {
-		if err := validResponse.VisitUpdateSettlementResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

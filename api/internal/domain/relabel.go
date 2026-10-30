@@ -2,13 +2,13 @@ package domain
 
 import (
 	"fmt"
-	"math"
 	"strings"
 )
 
 // RelabelError lists the Expenses and Settlements with an amount that cannot be
-// written in the new currency without losing decimals (10.50 USD in JPY), so
-// the Group knows which ones to correct before changing its currency.
+// written in the new currency without losing decimals (10.50 USD in JPY) or
+// going over MaxAmount, so the Group knows which ones to correct before
+// changing its currency.
 type RelabelError struct {
 	To            Currency
 	ExpenseIDs    []string
@@ -17,7 +17,7 @@ type RelabelError struct {
 
 func (e *RelabelError) Error() string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "cannot relabel to %s without losing decimals:", e.To)
+	fmt.Fprintf(&b, "cannot relabel to %s without losing decimals or going over 10^15:", e.To)
 	if len(e.ExpenseIDs) > 0 {
 		fmt.Fprintf(&b, " expenses %s", strings.Join(e.ExpenseIDs, ", "))
 	}
@@ -30,7 +30,8 @@ func (e *RelabelError) Error() string {
 // Relabel moves Expenses and Settlements to the currency to when the Group
 // currency changes. It keeps the same numbers and never applies an exchange
 // rate: 10.50 USD becomes 10.50 EUR, and 10.00 USD becomes 10 JPY. When some
-// amount would lose decimals it changes nothing and returns a *RelabelError.
+// amount would lose decimals or go over MaxAmount it changes nothing and
+// returns a *RelabelError.
 // The inputs are never modified.
 func Relabel(expenses []Expense, settlements []Settlement, to Currency) ([]Expense, []Settlement, error) {
 	toDecimals, ok := to.Decimals()
@@ -97,7 +98,7 @@ func Relabel(expenses []Expense, settlements []Settlement, to Currency) ([]Expen
 
 // relabelAmount writes an amount in minor units with fromDecimals as the same
 // number in minor units with toDecimals. It reports false when that would drop
-// a non-zero decimal or not fit in an int64.
+// a non-zero decimal or go over MaxAmount, either way.
 func relabelAmount(amount int64, fromDecimals, toDecimals int) (int64, bool) {
 	for d := fromDecimals; d > toDecimals; d-- {
 		if amount%10 != 0 {
@@ -106,10 +107,11 @@ func relabelAmount(amount int64, fromDecimals, toDecimals int) (int64, bool) {
 		amount /= 10
 	}
 	for d := fromDecimals; d < toDecimals; d++ {
-		if amount > math.MaxInt64/10 || amount < math.MinInt64/10 {
+		// MaxAmount is a multiple of 10, so this keeps amount within it.
+		if amount > MaxAmount/10 || amount < -MaxAmount/10 {
 			return 0, false
 		}
 		amount *= 10
 	}
-	return amount, true
+	return amount, amount <= MaxAmount && amount >= -MaxAmount
 }

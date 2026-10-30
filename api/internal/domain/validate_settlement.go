@@ -10,6 +10,9 @@ func ValidateSettlement(ledger Ledger, s Settlement) error {
 	if s.Amount <= 0 {
 		return fmt.Errorf("amount %d: %w", s.Amount, ErrNonPositiveAmount)
 	}
+	if s.Amount > MaxAmount {
+		return fmt.Errorf("amount %d: %w", s.Amount, ErrAmountTooLarge)
+	}
 	if s.FromMemberID == s.ToMemberID {
 		return fmt.Errorf("member %q: %w", s.FromMemberID, ErrSameMember)
 	}

@@ -2,14 +2,23 @@ package domain
 
 import "fmt"
 
-// ValidateExpense checks an Expense before it is stored in ledger. It does not
-// recompute the OwedShares from the SplitMethod: the client did (ADR 0003).
+// ValidateExpense checks a new Expense before it is stored in ledger, or a
+// deleted one before it is restored. Every Participant must be an active
+// Member, so restoring an Expense with a former member is rejected: it would
+// change their Balance, which is zero. To check an edit, use
+// ValidateExpenseUpdate. It does not recompute the OwedShares from the
+// SplitMethod: the client did (ADR 0003).
 func ValidateExpense(ledger Ledger, e Expense) error {
 	if err := ledger.checkRecord(e.Currency); err != nil {
 		return err
 	}
 	if e.Total <= 0 {
 		return fmt.Errorf("total %d: %w", e.Total, ErrNonPositiveAmount)
+	}
+	// Shares are never negative and add up to the total, so none can be
+	// over MaxAmount either.
+	if e.Total > MaxAmount {
+		return fmt.Errorf("total %d: %w", e.Total, ErrAmountTooLarge)
 	}
 	if len(e.PaidShares) == 0 || len(e.OwedShares) == 0 {
 		return ErrMissingShares
@@ -20,7 +29,7 @@ func ValidateExpense(ledger Ledger, e Expense) error {
 	for i, s := range e.PaidShares {
 		payers[i], paid[i] = s.MemberID, s.Amount
 	}
-	if err := addUpTo(e.Total, paid); err != nil {
+	if err := addUpTo(e.Total, paid, 1); err != nil {
 		return fmt.Errorf("paid shares: %w", err)
 	}
 	if err := checkParticipants(ledger, payers); err != nil {
@@ -32,7 +41,9 @@ func ValidateExpense(ledger Ledger, e Expense) error {
 	for i, s := range e.OwedShares {
 		debtors[i], owed[i] = s.MemberID, s.Amount
 	}
-	if err := addUpTo(e.Total, owed); err != nil {
+	// An OwedShare may round down to zero (1 cent split in two), and is kept
+	// so the split survives re-editing (docs/reglas-de-negocio.md).
+	if err := addUpTo(e.Total, owed, 0); err != nil {
 		return fmt.Errorf("owed shares: %w", err)
 	}
 	if err := checkParticipants(ledger, debtors); err != nil {
@@ -76,6 +87,9 @@ func checkSplitValues(method SplitMethod, shares []OwedShare) error {
 			if s.SplitValue == nil {
 				return fmt.Errorf("member %q: missing adjustment: %w", s.MemberID, ErrInvalidSplitValues)
 			}
+			if *s.SplitValue > MaxAmount || *s.SplitValue < -MaxAmount {
+				return fmt.Errorf("member %q: adjustment %d: %w", s.MemberID, *s.SplitValue, ErrAmountTooLarge)
+			}
 		}
 		return nil
 	case SplitEqual, SplitExact:
@@ -89,6 +103,11 @@ func checkSplitValues(method SplitMethod, shares []OwedShare) error {
 		return fmt.Errorf("%w: %q", ErrUnknownSplitMethod, method)
 	}
 }
+
+// MaxAmount is the largest amount of any record, in minor units of its
+// currency: 10^15, so that adding up Balances never overflows an int64
+// (docs/reglas-de-negocio.md).
+const MaxAmount = 1_000_000_000_000_000
 
 // fullPercentage is 100% in hundredths of a percent.
 const fullPercentage = 10000
@@ -109,10 +128,10 @@ func checkParticipants(ledger Ledger, memberIDs []string) error {
 	return nil
 }
 
-// addUpTo checks that every amount is positive and that they add up to total.
-func addUpTo(total int64, amounts []int64) error {
+// addUpTo checks that every amount is at least `least` and that they add up to total.
+func addUpTo(total int64, amounts []int64, least int64) error {
 	for _, a := range amounts {
-		if a <= 0 {
+		if a < least {
 			return fmt.Errorf("%d: %w", a, ErrNonPositiveAmount)
 		}
 	}

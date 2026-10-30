@@ -7,8 +7,11 @@ import "errors"
 var (
 	// ErrUnknownCurrency: the code is not a current ISO 4217 currency.
 	ErrUnknownCurrency = errors.New("unknown currency")
-	// ErrNonPositiveAmount: a total, share or settlement amount is zero or negative.
+	// ErrNonPositiveAmount: a total, PaidShare or settlement amount is zero or
+	// negative, or an OwedShare is negative. An OwedShare may be zero.
 	ErrNonPositiveAmount = errors.New("amount must be greater than zero")
+	// ErrAmountTooLarge: an amount is over MaxAmount.
+	ErrAmountTooLarge = errors.New("amount is over 10^15 minor units")
 	// ErrMissingShares: an Expense has no PaidShare or no OwedShare.
 	ErrMissingShares = errors.New("an expense needs at least one paid share and one owed share")
 	// ErrSharesDoNotAddUp: the PaidShares or the OwedShares do not add up to the total.
@@ -17,6 +20,10 @@ var (
 	ErrDuplicateParticipant = errors.New("participant appears twice")
 	// ErrNotActiveMember: a Participant is not an active Member of the ledger.
 	ErrNotActiveMember = errors.New("not an active member of the ledger")
+	// ErrFormerMemberChanged: an edit changes the PaidShare or OwedShare of a
+	// former member, or a deletion removes a record that includes one. Their
+	// Balance must stay at zero.
+	ErrFormerMemberChanged = errors.New("the balance of a former member cannot change")
 	// ErrSameMember: a Settlement goes from a Member to themselves.
 	ErrSameMember = errors.New("a settlement needs two different members")
 	// ErrNotGroupCurrency: a record of a Group is not in the Group currency.

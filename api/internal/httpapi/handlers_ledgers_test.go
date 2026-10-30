@@ -33,10 +33,6 @@ type world struct {
 	h    http.Handler
 }
 
-// testOrigin is the app's own origin in the tests, which requests that change
-// data must come from.
-const testOrigin = "https://quitsie.test"
-
 func newWorld(t *testing.T) *world {
 	t.Helper()
 	ctx := context.Background()

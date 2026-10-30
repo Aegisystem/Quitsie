@@ -66,3 +66,13 @@ SELECT ledger_id FROM members
 WHERE user_id = CAST(sqlc.arg(user_id) AS TEXT) AND status = 'former'
   AND version > sqlc.arg(since)
 ORDER BY ledger_id;
+
+-- name: RemovedFromLedgers :many
+-- The DroppedLedgers where someone removed the User, rather than the User
+-- leaving: the write that removes a Member stamps its member_removed Activity
+-- with the same version.
+SELECT members.ledger_id FROM members
+JOIN activities ON activities.ledger_id = members.ledger_id AND activities.version = members.version
+WHERE members.user_id = CAST(sqlc.arg(user_id) AS TEXT) AND members.status = 'former'
+  AND members.version > sqlc.arg(since) AND activities.kind = 'member_removed'
+ORDER BY members.ledger_id;
