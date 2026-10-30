@@ -1,6 +1,6 @@
 import type { NewExpense, NewSettlement, RecordResult } from '../api/client'
 import type { QueuedRecord, Replica } from '../local'
-import type { Api } from './engine'
+import { type Api, SyncFailure } from './api'
 
 // POST /records takes at most this many Expenses and this many Settlements.
 const batchSize = 100
@@ -15,8 +15,8 @@ export async function push(replica: Replica, api: Api): Promise<void> {
 
   while (expenses.length > 0 || settlements.length > 0) {
     const body = { expenses: expenses.splice(0, batchSize), settlements: settlements.splice(0, batchSize) }
-    const { data, error } = await api.POST('/records', { body })
-    if (error) throw new Error(`push failed: ${error.code}`)
+    const { data, response } = await api.POST('/records', { body })
+    if (!data) throw new SyncFailure(response.status)
     await settle(replica, body, data.results)
   }
 }

@@ -32,6 +32,11 @@ export type Backup = ReturnType<typeof emptyDatabase>
 export function fakeServer({ versionsPerPull = Infinity }: { versionsPerPull?: number } = {}) {
   let db = emptyDatabase()
   const pulls: number[] = []
+  const pushes: RecordBatch[] = []
+  let reachable = true
+  let failure: 401 | 503 | undefined
+  let active = 0
+  let busiest = 0
 
   const json = (status: number, body: unknown) =>
     new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
@@ -106,23 +111,52 @@ export function fakeServer({ versionsPerPull = Infinity }: { versionsPerPull?: n
   const shares = (group: FakeGroup, amounts: Record<string, number>) =>
     Object.entries(amounts).map(([name, amount]) => ({ memberId: group.member[name] ?? name, amount }))
 
+  async function answer(request: Request): Promise<Response> {
+    if (!reachable) throw new TypeError('Failed to fetch')
+    if (failure === 401) return problem(401, 'unauthenticated')
+    if (failure === 503) return new Response('Service Unavailable', { status: 503 })
+    const url = new URL(request.url)
+    if (request.method === 'GET' && url.pathname === '/api/v1/sync') {
+      const since = Number(url.searchParams.get('since'))
+      pulls.push(since)
+      if (since > db.counter) return problem(410, 'cursor_invalid')
+      return json(200, pull(since))
+    }
+    if (request.method === 'POST' && url.pathname === '/api/v1/records') {
+      const batch = (await request.json()) as RecordBatch
+      pushes.push(batch)
+      return json(200, { results: push(batch) })
+    }
+    return problem(404, 'not_found')
+  }
+
   return {
-    // The `since` of every GET /sync, in order.
+    // The `since` of every GET /sync, and the batch of every POST /records, in order.
     pulls,
+    pushes,
     version: () => db.counter,
 
+    // The network fails, as fetch does when there is no route to the server.
+    setReachable(value: boolean) {
+      reachable = value
+    },
+    // Every request answers with this status, or normally again with undefined.
+    failWith(status: 401 | 503 | undefined) {
+      failure = status
+    },
+
+    // The most requests that were ever in flight at once.
+    busiest: () => busiest,
+
     async fetch(request: Request): Promise<Response> {
-      const url = new URL(request.url)
-      if (request.method === 'GET' && url.pathname === '/api/v1/sync') {
-        const since = Number(url.searchParams.get('since'))
-        pulls.push(since)
-        if (since > db.counter) return problem(410, 'cursor_invalid')
-        return json(200, pull(since))
+      active += 1
+      busiest = Math.max(busiest, active)
+      await new Promise((resolve) => setTimeout(resolve))
+      try {
+        return await answer(request)
+      } finally {
+        active -= 1
       }
-      if (request.method === 'POST' && url.pathname === '/api/v1/records') {
-        return json(200, { results: push((await request.json()) as RecordBatch) })
-      }
-      return problem(404, 'not_found')
     },
 
     backup: (): Backup => structuredClone(db),

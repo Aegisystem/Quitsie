@@ -3,17 +3,74 @@ import 'fake-indexeddb/auto'
 import { IDBFactory, IDBKeyRange } from 'fake-indexeddb'
 import type { Observable } from 'dexie'
 import createClient from 'openapi-fetch'
-import { describe, expect, test } from 'vitest'
+import { describe, expect, test, vi } from 'vitest'
 import type { paths } from '../api/schema.gen'
 import { liveActivity, liveDebts, liveExpenses, liveHome, liveRecords, liveSettlements, openReplica } from '../local'
 import { type FakeGroup, fakeServer, type FakeServer, me } from './fakeServer'
-import { createSyncEngine } from '.'
+import { createSyncEngine, type Environment } from '.'
+
+// The browser around the engine, moved by hand: the tests decide when the
+// connection changes and when a timer fires.
+function fakeDevice() {
+  let online = true
+  let visible = true
+  const listeners = new Map<string, Set<() => void>>()
+  const timers: { ms: number; fire: () => void }[] = []
+  const emit = (event: string) => {
+    for (const listener of listeners.get(event) ?? []) listener()
+  }
+  const environment: Environment = {
+    online: () => online,
+    visible: () => visible,
+    listen(event, listener) {
+      const forEvent = listeners.get(event) ?? new Set()
+      listeners.set(event, forEvent.add(listener))
+      return () => forEvent.delete(listener)
+    },
+    after(ms, fire) {
+      const timer = { ms, fire }
+      timers.push(timer)
+      return () => {
+        if (timers.includes(timer)) timers.splice(timers.indexOf(timer), 1)
+      }
+    },
+  }
+  return {
+    environment,
+    timers,
+    goOffline() {
+      online = false
+    },
+    goOnline() {
+      online = true
+      emit('online')
+    },
+    hide() {
+      visible = false
+      emit('visibilitychange')
+    },
+    show() {
+      visible = true
+      emit('visibilitychange')
+    },
+  }
+}
 
 function setup(server: FakeServer) {
   const replica = openReplica('quitsie', { indexedDB: new IDBFactory(), IDBKeyRange })
   const api = createClient<paths>({ baseUrl: 'http://quitsie.test/api/v1', fetch: server.fetch })
-  const engine = createSyncEngine({ replica, api })
-  return { replica, engine }
+  const device = fakeDevice()
+  const engine = createSyncEngine({ replica, api, environment: device.environment })
+
+  // Lets the pending retry fire and waits for it to finish. Returns how long it waited.
+  async function retry(): Promise<number> {
+    const { ms, fire } = device.timers.shift()!
+    fire()
+    await vi.waitFor(() => expect(engine.getStatus()).not.toBe('syncing'))
+    return ms
+  }
+
+  return { replica, engine, device, retry }
 }
 
 // What the expense form would queue: `paid` and `owed` by Member name.
@@ -35,11 +92,12 @@ function newExpense(
   }
 }
 
-// The first value a live query emits, as a screen would render it.
-function firstValue<T>(observable: Observable<T>): Promise<T> {
+// The first value of a live query that meets `done`, as a screen would end up rendering it.
+function until<T>(observable: Observable<T>, done: (value: T) => boolean): Promise<T> {
   return new Promise((resolve, reject) => {
     const subscription = observable.subscribe({
       next(value) {
+        if (!done(value)) return
         resolve(value)
         queueMicrotask(() => subscription.unsubscribe())
       },
@@ -47,6 +105,8 @@ function firstValue<T>(observable: Observable<T>): Promise<T> {
     })
   })
 }
+
+const firstValue = <T>(observable: Observable<T>) => until(observable, () => true)
 
 describe('pull', () => {
   test('the first sync brings the User’s Groups and their Members into the replica', async () => {
@@ -214,9 +274,10 @@ describe('queue', () => {
   test('an Expense created on the device waits in the queue and already shows in its ledger', async () => {
     const server = fakeServer()
     const trip = server.addGroup({ name: 'Viaje a Cusco', currency: 'PEN', members: ['Ana'] })
-    const { replica, engine } = setup(server)
+    const { replica, engine, device } = setup(server)
     await engine.sync()
 
+    device.goOffline()
     const id = await engine.addExpense(newExpense(trip, { description: 'Taxi', currency: 'PEN', paid: { Yo: 2000 }, owed: { Yo: 1000, Ana: 1000 } }))
 
     const records = await firstValue(liveRecords(replica))
@@ -229,9 +290,11 @@ describe('queue', () => {
   test('a sync sends the queue: an accepted Expense leaves the inbox and comes back from the server', async () => {
     const server = fakeServer()
     const trip = server.addGroup({ name: 'Viaje a Cusco', currency: 'PEN', members: ['Ana'] })
-    const { replica, engine } = setup(server)
+    const { replica, engine, device } = setup(server)
+    device.goOffline()
     const id = await engine.addExpense(newExpense(trip, { description: 'Taxi', currency: 'PEN', paid: { Yo: 2000 }, owed: { Yo: 1000, Ana: 1000 } }))
 
+    device.goOnline()
     await engine.sync()
 
     expect(await firstValue(liveRecords(replica))).toEqual({ rejected: [], unsynced: [] })
@@ -243,16 +306,180 @@ describe('queue', () => {
   test('a rejected Expense stays in the inbox with its reason, never dropped', async () => {
     const server = fakeServer()
     const trip = server.addGroup({ name: 'Viaje a Cusco', currency: 'PEN', members: ['Ana'] })
-    const { replica, engine } = setup(server)
+    const { replica, engine, device } = setup(server)
     await engine.sync()
+    device.goOffline()
     const id = await engine.addExpense(newExpense(trip, { description: 'Taxi', currency: 'PEN', paid: { Yo: 2000 }, owed: { Yo: 1000, Ana: 1000 } }))
 
     server.setCurrency(trip, 'USD')
+    device.goOnline()
     await engine.sync()
 
     const records = await firstValue(liveRecords(replica))
     expect(records.unsynced).toEqual([])
     expect(records.rejected).toEqual([expect.objectContaining({ id, status: 'rejected', reason: 'currency_mismatch' })])
     expect(await firstValue(liveExpenses(replica, trip.id))).toEqual([expect.objectContaining({ id, sync: 'rejected' })])
+  })
+})
+
+describe('retries', () => {
+  test('a failed sync retries after a growing wait, and starts over once the server answers', async () => {
+    const server = fakeServer()
+    const trip = server.addGroup({ name: 'Viaje a Cusco', currency: 'PEN', members: ['Ana'] })
+    const { replica, engine, device, retry } = setup(server)
+    server.setReachable(false)
+
+    await engine.sync()
+
+    expect(engine.getStatus()).toBe('retrying')
+    expect(await retry()).toBe(1000)
+    expect(await retry()).toBe(2000)
+    expect(await retry()).toBe(4000)
+
+    server.setReachable(true)
+    expect(await retry()).toBe(8000)
+
+    expect(engine.getStatus()).toBe('idle')
+    expect(device.timers).toEqual([])
+    expect((await firstValue(liveHome(replica))).map(({ ledger }) => ledger.id)).toEqual([trip.id])
+
+    server.setReachable(false)
+    await engine.sync()
+    expect(device.timers.map(({ ms }) => ms)).toEqual([1000])
+  })
+
+  test('the wait stops growing at five minutes', async () => {
+    const server = fakeServer()
+    const { engine, retry } = setup(server)
+    server.setReachable(false)
+    await engine.sync()
+
+    const waits: number[] = []
+    for (let i = 0; i < 11; i++) waits.push(await retry())
+
+    expect(waits).toEqual([1000, 2000, 4000, 8000, 16000, 32000, 64000, 128000, 256000, 300000, 300000])
+  })
+
+  test('a server error retries too', async () => {
+    const server = fakeServer()
+    const { engine, device } = setup(server)
+    server.failWith(503)
+
+    await engine.sync()
+
+    expect(engine.getStatus()).toBe('retrying')
+    expect(device.timers.map(({ ms }) => ms)).toEqual([1000])
+  })
+
+  test('with the session gone it stops retrying until something else starts a sync', async () => {
+    const server = fakeServer()
+    const { engine, device } = setup(server)
+    server.failWith(401)
+
+    await engine.sync()
+
+    expect(engine.getStatus()).toBe('signedOut')
+    expect(device.timers).toEqual([])
+  })
+})
+
+describe('triggers', () => {
+  test('an Expense created offline is accepted after reconnecting', async () => {
+    const server = fakeServer()
+    const trip = server.addGroup({ name: 'Viaje a Cusco', currency: 'PEN', members: ['Ana'] })
+    const { replica, engine, device } = setup(server)
+    engine.start()
+    await until(liveHome(replica), (home) => home.length === 1)
+
+    device.goOffline()
+    server.setReachable(false)
+    const id = await engine.addExpense(newExpense(trip, { description: 'Taxi', currency: 'PEN', paid: { Yo: 2000 }, owed: { Yo: 1000, Ana: 1000 } }))
+
+    expect(engine.getStatus()).toBe('offline')
+    expect(server.pushes).toEqual([])
+    expect(await firstValue(liveExpenses(replica, trip.id))).toEqual([expect.objectContaining({ id, sync: 'unsynced' })])
+
+    server.setReachable(true)
+    device.goOnline()
+
+    const [expense] = await until(liveExpenses(replica, trip.id), ([first]) => first?.version !== undefined)
+    expect(expense).toMatchObject({ id, sync: 'synced', createdBy: me })
+    expect(await firstValue(liveRecords(replica))).toEqual({ rejected: [], unsynced: [] })
+    expect(engine.getStatus()).toBe('idle')
+  })
+
+  test('opening the app syncs', async () => {
+    const server = fakeServer()
+    server.addGroup({ name: 'Viaje a Cusco', currency: 'PEN', members: ['Ana'] })
+    const { replica, engine } = setup(server)
+
+    engine.start()
+
+    expect(await until(liveHome(replica), (home) => home.length === 1)).toHaveLength(1)
+  })
+
+  test('coming back to the app syncs; leaving it does not', async () => {
+    const server = fakeServer()
+    const { replica, engine, device } = setup(server)
+    await engine.sync()
+    engine.start()
+    await vi.waitFor(() => expect(engine.getStatus()).toBe('idle'))
+
+    device.hide()
+    expect(engine.getStatus()).toBe('idle')
+
+    server.addGroup({ name: 'Piso', currency: 'EUR', members: ['Beto'] })
+    device.show()
+
+    expect(await until(liveHome(replica), (home) => home.length === 1)).toHaveLength(1)
+  })
+
+  test('a record created online is sent right away', async () => {
+    const server = fakeServer()
+    const trip = server.addGroup({ name: 'Viaje a Cusco', currency: 'PEN', members: ['Ana'] })
+    const { replica, engine } = setup(server)
+    await engine.sync()
+
+    const id = await engine.addExpense(newExpense(trip, { description: 'Taxi', currency: 'PEN', paid: { Yo: 2000 }, owed: { Yo: 1000, Ana: 1000 } }))
+
+    const [expense] = await until(liveExpenses(replica, trip.id), ([first]) => first?.version !== undefined)
+    expect(expense).toMatchObject({ id, sync: 'synced' })
+  })
+
+  test('after stop, nothing starts a sync', async () => {
+    const server = fakeServer()
+    const { engine, device } = setup(server)
+    server.setReachable(false)
+    engine.start()
+    await vi.waitFor(() => expect(device.timers).toHaveLength(1))
+
+    engine.stop()
+
+    expect(device.timers).toEqual([])
+    device.goOffline()
+    device.goOnline()
+    device.show()
+    expect(engine.getStatus()).toBe('retrying')
+  })
+
+  test('only one sync runs at a time, and those asked for meanwhile become one more', async () => {
+    const server = fakeServer()
+    const { engine } = setup(server)
+
+    await Promise.all([engine.sync(), engine.sync(), engine.sync(), engine.sync()])
+
+    expect(server.busiest()).toBe(1)
+    expect(server.pulls).toHaveLength(2)
+  })
+
+  test('the status tells a listener what the engine is doing', async () => {
+    const server = fakeServer()
+    const { engine } = setup(server)
+    const seen: string[] = []
+    engine.subscribe(() => seen.push(engine.getStatus()))
+
+    await engine.sync()
+
+    expect(seen).toEqual(['syncing', 'idle'])
   })
 })

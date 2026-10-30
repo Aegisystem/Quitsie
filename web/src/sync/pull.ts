@@ -1,6 +1,6 @@
 import type { Changes } from '../api/client'
 import type { Replica } from '../local'
-import type { Api } from './engine'
+import { type Api, SyncFailure } from './api'
 
 // TODO(contract): another session is adding `visibleLedgerIds` to Changes in
 // openapi.yaml. Until `npm run generate` brings it, it is declared here with the
@@ -15,14 +15,14 @@ export type PulledChanges = Changes & {
 export async function pull(replica: Replica, api: Api): Promise<void> {
   for (;;) {
     const since = (await replica.meta.get('cursor'))?.value ?? 0
-    const { data, error, response } = await api.GET('/sync', { params: { query: { since } } })
+    const { data, response } = await api.GET('/sync', { params: { query: { since } } })
     // 410: the cursor is ahead of the server, which restored an older backup.
     // The replica may hold rows the server lost, so it starts over from 0.
     if (response.status === 410 && since > 0) {
       await clearReplica(replica)
       continue
     }
-    if (error) throw new Error(`pull failed: ${error.code}`)
+    if (!data) throw new SyncFailure(response.status)
     await applyChanges(replica, data)
     if (!data.hasMore) return
   }
