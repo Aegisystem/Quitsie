@@ -633,6 +633,18 @@ func claimable(snap ledgers.Snapshot) []store.Member {
 	return out
 }
 
+// linkedMember is the first Member of snap linked to a User. In a Friendship
+// with a pending Friend it is who added them; if there is none, for example
+// after that User deleted their account, nobody is left to be Friends with.
+func linkedMember(snap ledgers.Snapshot) (store.Member, bool) {
+	for _, m := range snap.Members {
+		if m.UserID != nil {
+			return m, true
+		}
+	}
+	return store.Member{}, false
+}
+
 // heldBy is userID's Member in snap, in any status.
 func heldBy(snap ledgers.Snapshot, userID string) (store.Member, bool) {
 	for _, m := range snap.Members {
@@ -717,8 +729,16 @@ func (s *Server) GetInvite(ctx context.Context, req GetInviteRequestObject) (Get
 		invite = Invite{
 			Kind:           InviteKind(snap.Ledger.Kind),
 			LedgerId:       uuid.MustParse(snap.Ledger.ID),
-			GroupName:      &snap.Ledger.Name,
 			PendingMembers: []InviteMember{},
+		}
+		if snap.Ledger.Kind == "group" {
+			invite.GroupName = &snap.Ledger.Name
+		} else {
+			inviter, ok := linkedMember(snap)
+			if !ok {
+				return errInviteLinkInvalid
+			}
+			invite.InvitedBy = &inviter.Name
 		}
 		for _, m := range claimable(snap) {
 			invite.PendingMembers = append(invite.PendingMembers, InviteMember{Id: uuid.MustParse(m.ID), Name: m.Name})
@@ -731,6 +751,11 @@ func (s *Server) GetInvite(ctx context.Context, req GetInviteRequestObject) (Get
 		if m, ok := heldBy(snap, user.ID); signedIn && ok && m.Status == "active" {
 			id := uuid.MustParse(m.ID)
 			invite.JoinedMemberId = &id
+		}
+		// A Friend's link is spent once the Friend is linked; only those
+		// already in the Friendship can still open it.
+		if snap.Ledger.Kind == "friendship" && len(invite.PendingMembers) == 0 && invite.JoinedMemberId == nil {
+			return errInviteLinkInvalid
 		}
 		return nil
 	})
@@ -830,6 +855,15 @@ func (s *Server) ClaimMember(ctx context.Context, req ClaimMemberRequestObject) 
 		// comes back through JoinGroup.
 		if _, held := heldBy(snap, user.ID); held {
 			return errAlreadyMember
+		}
+		if kind == "friendship" {
+			inviter, ok := linkedMember(snap)
+			if !ok {
+				return errInviteLinkInvalid
+			}
+			if err := checkNoFriendship(ctx, q, user.ID, *inviter.UserID); err != nil {
+				return err
+			}
 		}
 		claimed, err = q.ClaimMember(ctx, store.ClaimMemberParams{ID: m.ID, UserID: user.ID, Version: version})
 		if err != nil {
@@ -956,4 +990,63 @@ func checkNoFriendship(ctx context.Context, q *store.Queries, userID, otherID st
 		return fmt.Errorf("find friendship: %w", err)
 	}
 	return nil
+}
+
+func (s *Server) GetFriendInviteLink(ctx context.Context, req GetFriendInviteLinkRequestObject) (GetFriendInviteLinkResponseObject, error) {
+	respond := func(status int, p Problem) GetFriendInviteLinkResponseObject {
+		return GetFriendInviteLinkdefaultApplicationProblemPlusJSONResponse{Body: p, StatusCode: status}
+	}
+	user, err := currentUser(ctx)
+	if err != nil {
+		return answer(err, respond)
+	}
+	var link InviteLink
+	err = s.read(ctx, func(q *store.Queries) error {
+		snap, err := openPendingFriendship(ctx, q, req.FriendshipId.String(), user.ID)
+		if err != nil {
+			return err
+		}
+		link, err = s.inviteLink(snap.Ledger)
+		return err
+	})
+	if err != nil {
+		return answer(err, respond)
+	}
+	return GetFriendInviteLink200JSONResponse(link), nil
+}
+
+func (s *Server) RegenerateFriendInviteLink(ctx context.Context, req RegenerateFriendInviteLinkRequestObject) (RegenerateFriendInviteLinkResponseObject, error) {
+	respond := func(status int, p Problem) RegenerateFriendInviteLinkResponseObject {
+		return RegenerateFriendInviteLinkdefaultApplicationProblemPlusJSONResponse{Body: p, StatusCode: status}
+	}
+	user, err := currentUser(ctx)
+	if err != nil {
+		return answer(err, respond)
+	}
+	var link InviteLink
+	_, err = store.Write(ctx, s.deps.DB, func(q *store.Queries, version int64) error {
+		snap, err := openPendingFriendship(ctx, q, req.FriendshipId.String(), user.ID)
+		if err != nil {
+			return err
+		}
+		link, err = s.regenerate(ctx, q, snap.Ledger.ID, user.ID, version)
+		return err
+	})
+	if err != nil {
+		return answer(err, respond)
+	}
+	return RegenerateFriendInviteLink200JSONResponse(link), nil
+}
+
+// openPendingFriendship is open for a Friendship whose Friend is still
+// pending: the only ones with an Invite link to show.
+func openPendingFriendship(ctx context.Context, q *store.Queries, friendshipID, userID string) (ledgers.Snapshot, error) {
+	snap, _, err := open(ctx, q, friendshipID, "friendship", userID)
+	if err != nil {
+		return ledgers.Snapshot{}, err
+	}
+	if len(claimable(snap)) == 0 {
+		return ledgers.Snapshot{}, errMemberNotPending
+	}
+	return snap, nil
 }

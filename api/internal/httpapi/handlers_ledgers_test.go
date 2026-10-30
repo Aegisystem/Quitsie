@@ -1029,3 +1029,164 @@ func TestCreateFriendshipNeedsASession(t *testing.T) {
 
 	decodeProblem(t, rec, http.StatusUnauthorized, httpapi.ProblemCodeUnauthenticated)
 }
+
+// friendLink is the token of the pending Friend's current Invite link.
+func (p *person) friendLink(friendshipID string) string {
+	p.w.t.Helper()
+	return decode[httpapi.InviteLink](p.w.t, p.send(http.MethodGet, "/api/v1/friendships/"+friendshipID+"/invite-link", ""), http.StatusOK).Token
+}
+
+func TestThePendingFriendLinkCanBeShownAgainUntilRegenerated(t *testing.T) {
+	w := newWorld(t)
+	ana := w.signIn("Ana")
+	friendshipID := ana.createFriendship(`{"name":"Beto"}`)
+	first := ana.friendLink(friendshipID)
+	if again := ana.friendLink(friendshipID); again != first {
+		t.Fatalf("the link changed from %q to %q without regenerating it", first, again)
+	}
+
+	rec := ana.send(http.MethodPost, "/api/v1/friendships/"+friendshipID+"/invite-link", "")
+
+	regenerated := decode[httpapi.InviteLink](t, rec, http.StatusOK).Token
+	if regenerated == first || ana.friendLink(friendshipID) != regenerated {
+		t.Errorf("regenerated %q from %q, and the Friendship now shows %q", regenerated, first, ana.friendLink(friendshipID))
+	}
+	decodeProblem(t, w.anonymous().send(http.MethodGet, "/api/v1/invites/"+first, ""), http.StatusNotFound, httpapi.ProblemCodeInviteLinkInvalid)
+	if kinds := strings.Join(activityKinds(ana.pull(), friendshipID), ","); kinds != "friendship_created,invite_link_regenerated" {
+		t.Errorf("activities = %s, want friendship_created,invite_link_regenerated", kinds)
+	}
+}
+
+func TestOnlyTheFriendshipsMembersSeeItsLink(t *testing.T) {
+	w := newWorld(t)
+	ana := w.signIn("Ana")
+	beto := w.signIn("Beto")
+	friendshipID := ana.createFriendship(`{"name":"Carla"}`)
+	groupID := ana.createGroup(`{"name":"Casa","currency":"COP"}`)
+
+	decodeProblem(t, beto.send(http.MethodGet, "/api/v1/friendships/"+friendshipID+"/invite-link", ""), http.StatusNotFound, httpapi.ProblemCodeNotFound)
+	decodeProblem(t, beto.send(http.MethodPost, "/api/v1/friendships/"+friendshipID+"/invite-link", ""), http.StatusNotFound, httpapi.ProblemCodeNotFound)
+	decodeProblem(t, ana.send(http.MethodGet, "/api/v1/friendships/"+groupID+"/invite-link", ""), http.StatusNotFound, httpapi.ProblemCodeNotFound)
+	decodeProblem(t, ana.send(http.MethodGet, "/api/v1/groups/"+friendshipID+"/invite-link", ""), http.StatusNotFound, httpapi.ProblemCodeNotFound)
+}
+
+func TestAnInviteToAFriendshipShowsWhoInvitesAndThePendingFriend(t *testing.T) {
+	w := newWorld(t)
+	ana := w.signIn("Ana")
+	friendshipID := ana.createFriendship(`{"name":"Betico","email":"beto@example.com"}`)
+	beto := w.signIn("Beto")
+
+	rec := beto.send(http.MethodGet, "/api/v1/invites/"+ana.friendLink(friendshipID), "")
+
+	invite := decode[httpapi.Invite](t, rec, http.StatusOK)
+	if invite.Kind != httpapi.InviteKindFriendship || invite.InvitedBy == nil || *invite.InvitedBy != "Ana" || invite.GroupName != nil {
+		t.Errorf("invite = %+v, want a Friendship invited by Ana, without a Group name", invite)
+	}
+	friendID := ana.memberID(friendshipID, "Betico")
+	if len(invite.PendingMembers) != 1 || invite.PendingMembers[0].Id.String() != friendID {
+		t.Errorf("pending members = %+v, want only Betico", invite.PendingMembers)
+	}
+	if invite.SuggestedMemberId == nil || invite.SuggestedMemberId.String() != friendID {
+		t.Errorf("suggested member = %v, want Betico, whose email is Beto's", invite.SuggestedMemberId)
+	}
+}
+
+func TestClaimAPendingFriendLinksTheFriendship(t *testing.T) {
+	w := newWorld(t)
+	ana := w.signIn("Ana")
+	beto := w.signIn("Beto")
+	friendshipID := ana.createFriendship(`{"name":"Betico"}`)
+	friendID := ana.memberID(friendshipID, "Betico")
+	link := ana.friendLink(friendshipID)
+	spent := ana.expense(friendshipID, "USD", ana.memberID(friendshipID, "Ana"), map[string]int64{friendID: 700})
+
+	rec := beto.claim(link, friendID)
+
+	joined := decode[httpapi.JoinedLedger](t, rec, http.StatusOK)
+	if joined.Kind != httpapi.JoinedLedgerKindFriendship || joined.MemberId.String() != friendID {
+		t.Errorf("joined = %+v, want Betico's Friendship", joined)
+	}
+	changes := beto.pull()
+	if _, ok := totals(changes)[spent]; !ok {
+		t.Errorf("Beto's replica lacks the Expense Betico was in: %v", totals(changes))
+	}
+	if kinds := strings.Join(activityKinds(changes, friendshipID), ","); kinds != "friendship_created,member_claimed" {
+		t.Errorf("activities = %s, want friendship_created,member_claimed", kinds)
+	}
+}
+
+func TestAFriendLinkEndsWhenTheFriendIsLinked(t *testing.T) {
+	w := newWorld(t)
+	ana := w.signIn("Ana")
+	beto := w.signIn("Beto")
+	carla := w.signIn("Carla")
+	friendshipID := ana.createFriendship(`{"name":"Betico"}`)
+	link := ana.friendLink(friendshipID)
+	decode[httpapi.JoinedLedger](t, beto.claim(link, ana.memberID(friendshipID, "Betico")), http.StatusOK)
+
+	target := "/api/v1/friendships/" + friendshipID + "/invite-link"
+	decodeProblem(t, ana.send(http.MethodGet, target, ""), http.StatusConflict, httpapi.ProblemCodeMemberNotPending)
+	decodeProblem(t, ana.send(http.MethodPost, target, ""), http.StatusConflict, httpapi.ProblemCodeMemberNotPending)
+	decodeProblem(t, carla.send(http.MethodGet, "/api/v1/invites/"+link, ""), http.StatusNotFound, httpapi.ProblemCodeInviteLinkInvalid)
+	// Whoever claimed it can reopen the link and is told they are already in.
+	invite := decode[httpapi.Invite](t, beto.send(http.MethodGet, "/api/v1/invites/"+link, ""), http.StatusOK)
+	if invite.JoinedMemberId == nil || len(invite.PendingMembers) != 0 {
+		t.Errorf("invite = %+v, want Beto's Member and nobody pending", invite)
+	}
+}
+
+func TestAFriendLinkOnlyAllowsClaiming(t *testing.T) {
+	w := newWorld(t)
+	ana := w.signIn("Ana")
+	beto := w.signIn("Beto")
+	link := ana.friendLink(ana.createFriendship(`{"name":"Betico"}`))
+
+	rec := beto.send(http.MethodPost, "/api/v1/invites/"+link+"/join", "")
+
+	decodeProblem(t, rec, http.StatusBadRequest, httpapi.ProblemCodeValidationFailed)
+}
+
+func TestWhoAddedAPendingFriendCannotClaimIt(t *testing.T) {
+	w := newWorld(t)
+	ana := w.signIn("Ana")
+	friendshipID := ana.createFriendship(`{"name":"Beto"}`)
+
+	rec := ana.claim(ana.friendLink(friendshipID), ana.memberID(friendshipID, "Beto"))
+
+	decodeProblem(t, rec, http.StatusConflict, httpapi.ProblemCodeAlreadyMember)
+}
+
+func TestClaimingAPendingFriendOfSomeoneAlreadyAFriendIsRefused(t *testing.T) {
+	w := newWorld(t)
+	ana := w.signIn("Ana")
+	beto := w.signIn("Beto")
+	beto.join(ana.groupLink(ana.createGroup(`{"name":"Casa","currency":"COP"}`)))
+	ana.createFriendship(`{"userId":"` + beto.id + `"}`)
+	duplicate := ana.createFriendship(`{"name":"Betico"}`)
+
+	rec := beto.claim(ana.friendLink(duplicate), ana.memberID(duplicate, "Betico"))
+
+	decodeProblem(t, rec, http.StatusConflict, httpapi.ProblemCodeFriendshipExists)
+	if m := ana.member(duplicate, ana.memberID(duplicate, "Betico")); m.UserID != nil {
+		t.Errorf("Betico = %+v, want still pending", m)
+	}
+}
+
+func TestAFriendLinkEndsWhenWhoAddedTheFriendDeletesTheirAccount(t *testing.T) {
+	w := newWorld(t)
+	ana := w.signIn("Ana")
+	beto := w.signIn("Beto")
+	friendshipID := ana.createFriendship(`{"name":"Betico"}`)
+	link := ana.friendLink(friendshipID)
+	friendID := ana.memberID(friendshipID, "Betico")
+	ctx := context.Background()
+	_, err := store.Write(ctx, w.db, func(q *store.Queries, version int64) error {
+		return q.UnlinkMembersOfUser(ctx, store.UnlinkMembersOfUserParams{UserID: ana.id, Version: version})
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	decodeProblem(t, beto.send(http.MethodGet, "/api/v1/invites/"+link, ""), http.StatusNotFound, httpapi.ProblemCodeInviteLinkInvalid)
+	decodeProblem(t, beto.claim(link, friendID), http.StatusNotFound, httpapi.ProblemCodeInviteLinkInvalid)
+}
