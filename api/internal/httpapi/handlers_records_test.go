@@ -874,3 +874,149 @@ func TestPullChangesExposesNothingOfTheInviteLinks(t *testing.T) {
 	wantKeys(body.Groups[0], "createdAt", "currency", "id", "name", "simplifyDebts", "version")
 	wantKeys(body.Friendships[0], "createdAt", "id", "version")
 }
+
+// editOf is the body that edits e, which the client read at version.
+func editOf(e httpapi.NewExpense, version int64) httpapi.ExpenseUpdate {
+	return httpapi.ExpenseUpdate{
+		ExpectedVersion: version, Description: e.Description, Date: e.Date, Currency: e.Currency, Total: e.Total,
+		Category: e.Category, SplitMethod: e.SplitMethod, PaidShares: e.PaidShares, OwedShares: e.OwedShares,
+	}
+}
+
+// update sends the edit of an Expense as p.
+func (a *recordsAPI) update(p signedIn, expenseID openapi_types.UUID, body httpapi.ExpenseUpdate) *httptest.ResponseRecorder {
+	a.t.Helper()
+	return a.do(p, http.MethodPatch, "/api/v1/expenses/"+expenseID.String(), body)
+}
+
+// pushed stores e as p and returns its version.
+func (a *recordsAPI) pushed(t *testing.T, p signedIn, e httpapi.NewExpense) int64 {
+	t.Helper()
+	r := a.push(t, p, expenses(e))[0]
+	if r.Status != httpapi.Accepted {
+		t.Fatalf("push = %+v, want it accepted", r)
+	}
+	return *r.Version
+}
+
+func TestUpdateExpenseReplacesItsContents(t *testing.T) {
+	a := newRecordsAPI(t)
+	tr := a.seedTrip()
+	dinner := tr.dinner()
+	dinner.Category = ptr(httpapi.Category("food"))
+	version := a.pushed(t, tr.ana, dinner)
+
+	edit := editOf(dinner, version)
+	edit.Description, edit.Date, edit.Category = "Cena en el centro", day("2026-10-24"), nil
+	edit.Total, edit.PaidShares[0].Amount = 1500, 1500
+	edit.OwedShares = []httpapi.OwedShare{{MemberId: id(tr.anaM), Amount: 750}, {MemberId: id(tr.betoM), Amount: 750}}
+	got := decodeBody[httpapi.Expense](t, a.update(tr.beto, dinner.Id, edit), http.StatusOK)
+
+	if got.Id != dinner.Id || got.LedgerId != dinner.LedgerId || got.Description != "Cena en el centro" || got.Date != day("2026-10-24") ||
+		got.Total != 1500 || got.Category != nil || got.CreatedBy != id(tr.ana.user.ID) || got.Version <= version {
+		t.Errorf("expense = %+v, want the edit with a new version, still by Ana", got)
+	}
+	if len(got.OwedShares) != 2 || len(got.PaidShares) != 1 || got.PaidShares[0].Amount != 1500 {
+		t.Errorf("shares = %+v and %+v, want the new ones", got.PaidShares, got.OwedShares)
+	}
+	pulled := a.pull(t, tr.ana, version)
+	if len(pulled.Expenses) != 1 || pulled.Expenses[0].Version != got.Version || pulled.Expenses[0].Total != 1500 {
+		t.Errorf("pulled expenses = %+v, want the edit", pulled.Expenses)
+	}
+	if len(pulled.Activities) != 1 {
+		t.Fatalf("activities = %+v, want one for the edit", pulled.Activities)
+	}
+	activity := pulled.Activities[0]
+	wantDetails := map[string]any{
+		"expenseId": dinner.Id.String(),
+		"before":    map[string]any{"description": "Cena", "total": float64(3000), "currency": "USD"},
+		"after":     map[string]any{"description": "Cena en el centro", "total": float64(1500), "currency": "USD"},
+	}
+	if activity.Kind != httpapi.ExpenseUpdated || activity.UserId != id(tr.beto.user.ID) || !reflect.DeepEqual(activity.Details, wantDetails) {
+		t.Errorf("activity = %+v, want Beto's edit with %+v", activity, wantDetails)
+	}
+}
+
+func TestUpdateExpenseRefusesAnEditOfAnOlderVersion(t *testing.T) {
+	a := newRecordsAPI(t)
+	tr := a.seedTrip()
+	dinner := tr.dinner()
+	version := a.pushed(t, tr.ana, dinner)
+	first := editOf(dinner, version)
+	first.Description = "Cena, primera edición"
+	decodeBody[httpapi.Expense](t, a.update(tr.beto, dinner.Id, first), http.StatusOK)
+
+	second := editOf(dinner, version)
+	second.Description = "Cena, segunda edición"
+	decodeProblem(t, a.update(tr.ana, dinner.Id, second), http.StatusConflict, httpapi.ProblemCodeVersionConflict)
+
+	if got := a.pull(t, tr.ana, 0).Expenses[0].Description; got != "Cena, primera edición" {
+		t.Errorf("description = %q, want the first edit: nothing is overwritten silently", got)
+	}
+}
+
+func TestUpdateExpenseHidesWhatTheUserCannotSee(t *testing.T) {
+	a := newRecordsAPI(t)
+	tr := a.seedTrip()
+	dinner := tr.dinner()
+	version := a.pushed(t, tr.ana, dinner)
+
+	t.Run("not a Member", func(t *testing.T) {
+		decodeProblem(t, a.update(tr.eva, dinner.Id, editOf(dinner, version)), http.StatusNotFound, httpapi.ProblemCodeNotFound)
+	})
+	t.Run("no such Expense", func(t *testing.T) {
+		decodeProblem(t, a.update(tr.ana, id(uuid.NewString()), editOf(dinner, version)), http.StatusNotFound, httpapi.ProblemCodeNotFound)
+	})
+	t.Run("no session", func(t *testing.T) {
+		decodeProblem(t, a.update(signedIn{}, dinner.Id, editOf(dinner, version)), http.StatusUnauthorized, httpapi.ProblemCodeUnauthenticated)
+	})
+}
+
+func TestUpdateExpenseRefusesWhatBreaksTheRules(t *testing.T) {
+	a := newRecordsAPI(t)
+	tr := a.seedTrip()
+	dinner := tr.dinner()
+	version := a.pushed(t, tr.ana, dinner)
+	tests := []struct {
+		name   string
+		change func(e *httpapi.ExpenseUpdate)
+		status int
+		code   httpapi.ProblemCode
+	}{
+		{"shares that do not add up", func(e *httpapi.ExpenseUpdate) { e.Total = 1 }, http.StatusBadRequest, httpapi.ProblemCodeInvalidAmounts},
+		{"an empty description", func(e *httpapi.ExpenseUpdate) { e.Description = "" }, http.StatusBadRequest, httpapi.ProblemCodeValidationFailed},
+		{"an unknown category", func(e *httpapi.ExpenseUpdate) { e.Category = ptr(httpapi.Category("yachts")) }, http.StatusBadRequest, httpapi.ProblemCodeValidationFailed},
+		{"an unknown split method", func(e *httpapi.ExpenseUpdate) { e.SplitMethod = "shares" }, http.StatusBadRequest, httpapi.ProblemCodeValidationFailed},
+		{"a currency other than the Group's", func(e *httpapi.ExpenseUpdate) { e.Currency = "EUR" }, http.StatusConflict, httpapi.ProblemCodeCurrencyMismatch},
+		{"a former member joining", func(e *httpapi.ExpenseUpdate) {
+			e.OwedShares = append(slices.Clone(e.OwedShares[:2]), httpapi.OwedShare{MemberId: id(tr.daniM), Amount: 1000})
+		}, http.StatusConflict, httpapi.ProblemCodeInvalidParticipants},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			edit := editOf(dinner, version)
+			tt.change(&edit)
+			decodeProblem(t, a.update(tr.ana, dinner.Id, edit), tt.status, tt.code)
+		})
+	}
+}
+
+func TestUpdateExpenseWithAFormerMemberKeepsTheirShares(t *testing.T) {
+	a := newRecordsAPI(t)
+	tr := a.seedTrip()
+	dinner := tr.dinner()
+	version := a.pushed(t, tr.ana, dinner)
+	a.leave(tr.id, tr.carlaM, "member_removed", tr.ana)
+
+	changed := editOf(dinner, version)
+	changed.OwedShares = []httpapi.OwedShare{{MemberId: id(tr.anaM), Amount: 1000}, {MemberId: id(tr.betoM), Amount: 1500}, {MemberId: id(tr.carlaM), Amount: 500}}
+	decodeProblem(t, a.update(tr.ana, dinner.Id, changed), http.StatusConflict, httpapi.ProblemCodeInvalidParticipants)
+
+	kept := editOf(dinner, version)
+	kept.Description = "Cena con Carla"
+	kept.OwedShares = []httpapi.OwedShare{{MemberId: id(tr.anaM), Amount: 500}, {MemberId: id(tr.betoM), Amount: 1500}, {MemberId: id(tr.carlaM), Amount: 1000}}
+	got := decodeBody[httpapi.Expense](t, a.update(tr.ana, dinner.Id, kept), http.StatusOK)
+	if got.Description != "Cena con Carla" {
+		t.Errorf("expense = %+v, want the edit", got)
+	}
+}

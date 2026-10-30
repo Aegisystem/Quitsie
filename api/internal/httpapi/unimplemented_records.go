@@ -9,10 +9,6 @@ import "context"
 
 // --- records ---
 
-func (s *Server) UpdateExpense(context.Context, UpdateExpenseRequestObject) (UpdateExpenseResponseObject, error) {
-	return nil, errNotImplemented
-}
-
 func (s *Server) DeleteExpense(context.Context, DeleteExpenseRequestObject) (DeleteExpenseResponseObject, error) {
 	return nil, errNotImplemented
 }

@@ -104,6 +104,60 @@ func newExpense(e NewExpense) store.ExpenseWithShares {
 	return out
 }
 
+func (s *Server) UpdateExpense(ctx context.Context, req UpdateExpenseRequestObject) (UpdateExpenseResponseObject, error) {
+	respond := func(p Problem) UpdateExpenseResponseObject {
+		return UpdateExpensedefaultApplicationProblemPlusJSONResponse{Body: p, StatusCode: p.Status}
+	}
+	user, ok := auth.CurrentUser(ctx)
+	if !ok {
+		return respond(unauthenticated), nil
+	}
+	e := newExpense(NewExpense{
+		Id:          req.ExpenseId,
+		Description: req.Body.Description,
+		Date:        req.Body.Date,
+		Currency:    req.Body.Currency,
+		Total:       req.Body.Total,
+		Category:    req.Body.Category,
+		SplitMethod: req.Body.SplitMethod,
+		PaidShares:  req.Body.PaidShares,
+		OwedShares:  req.Body.OwedShares,
+	})
+	updated, err := sync.UpdateExpense(ctx, s.deps.DB, user.ID, e, req.Body.ExpectedVersion)
+	if p, ok := recordFailure(err); ok {
+		return respond(p), nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return UpdateExpense200JSONResponse(pulledExpense(updated)), nil
+}
+
+// recordFailure is the contract's answer to an error of package sync; ok is
+// false for any other error, which the strict handler logs and answers 500.
+func recordFailure(err error) (p Problem, ok bool) {
+	var rejected *sync.Rejection
+	switch {
+	case errors.Is(err, sync.ErrNotFound):
+		return recordProblem(http.StatusNotFound, ProblemCodeNotFound, "Not found.", ""), true
+	case errors.Is(err, store.ErrVersionConflict):
+		return recordProblem(http.StatusConflict, ProblemCodeVersionConflict, "The expense changed since you read it.", ""), true
+	case errors.As(err, &rejected):
+		detail := rejected.Err.Error()
+		switch rejected.Reason {
+		case sync.ReasonCurrencyMismatch:
+			return recordProblem(http.StatusConflict, ProblemCodeCurrencyMismatch, "The currency is not the Group currency.", detail), true
+		case sync.ReasonInvalidParticipants:
+			return recordProblem(http.StatusConflict, ProblemCodeInvalidParticipants, "Someone cannot take part in this record.", detail), true
+		case sync.ReasonInvalidAmounts:
+			return recordProblem(http.StatusBadRequest, ProblemCodeInvalidAmounts, "The amounts are not valid.", detail), true
+		default:
+			return recordProblem(http.StatusBadRequest, ProblemCodeValidationFailed, "The request does not match the API contract.", detail), true
+		}
+	}
+	return Problem{}, false
+}
+
 func (s *Server) PullChanges(ctx context.Context, req PullChangesRequestObject) (PullChangesResponseObject, error) {
 	user, ok := auth.CurrentUser(ctx)
 	if !ok {
