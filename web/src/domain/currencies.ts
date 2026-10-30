@@ -24,6 +24,18 @@ const minorUnits = new Map<CurrencyCode, number>([
   ),
 ])
 
+// Fund codes (IsFund in the ISO 4217 list): units of account such as Chile's
+// Unidad de Fomento. They are valid, but nobody pays a dinner with them, so the
+// interface does not offer them (docs/reglas-de-negocio.md).
+const funds = new Set<CurrencyCode>(['BOV', 'CHE', 'CHW', 'CLF', 'COU', 'MXV', 'USN', 'UYI', 'UYW', 'XAD'])
+
+const offered: readonly CurrencyCode[] = [...minorUnits.keys()].filter((code) => !funds.has(code)).sort()
+
+// The currencies a currency selector offers, in alphabetical order.
+export function offeredCurrencies(): readonly CurrencyCode[] {
+  return offered
+}
+
 export function isCurrency(code: string): code is CurrencyCode {
   return minorUnits.has(code)
 }

@@ -137,12 +137,12 @@ export function createDemoData(now = new Date()): DemoData {
     expense({ id: 'e-l-2', ledgerId: 'g-lisboa', description: 'Cena en el Barrio Alto', category: 'food', ago: 8, currency: 'EUR', total: 9640, paid: [['m-l-sofia', 9640]], split: lisboa }),
     expense({ id: 'e-l-3', ledgerId: 'g-lisboa', description: 'Supermercado', category: 'groceries', ago: 8, currency: 'EUR', total: 6317, paid: [['m-l-sofia', 4000], ['m-l-camila', 2317]], split: lisboa }),
     expense({ id: 'e-l-4', ledgerId: 'g-lisboa', description: 'Tranvía 28 y metro', category: 'transport', ago: 7, currency: 'EUR', total: 5200, method: 'exact', paid: [['m-l-camila', 5200]], split: [['m-l-sofia', 1300], ['m-l-diego', 1300], ['m-l-camila', 1300], ['m-l-tomas', 1300]] }),
-    expense({ id: 'e-l-5', ledgerId: 'g-lisboa', description: 'Oceanário', category: 'leisure', ago: 6, currency: 'EUR', total: 8800, method: 'percentage', paid: [['m-l-sofia', 8800]], split: [['m-l-sofia', 3000], ['m-l-diego', 3000], ['m-l-camila', 2000], ['m-l-tomas', 2000]] }),
+    expense({ id: 'e-l-5', ledgerId: 'g-lisboa', description: 'Oceanário', category: 'entertainment', ago: 6, currency: 'EUR', total: 8800, method: 'percentage', paid: [['m-l-sofia', 8800]], split: [['m-l-sofia', 3000], ['m-l-diego', 3000], ['m-l-camila', 2000], ['m-l-tomas', 2000]] }),
     expense({ id: 'e-l-6', ledgerId: 'g-lisboa', description: 'Taxi al aeropuerto', category: 'transport', ago: 5, currency: 'EUR', total: 3200, paid: [['m-l-diego', 3200]], split: lisboa, deletedAt: stamp(60 * 30) }),
     expense({ id: 'e-l-7', ledgerId: 'g-lisboa', description: 'Pastéis de Belém', category: 'food', ago: 0, currency: 'EUR', total: 960, paid: [['m-l-sofia', 960]], split: lisboa, sync: 'unsynced', createdAt: stamp(22) }),
 
     // Casa Rosales, MXN
-    expense({ id: 'e-c-1', ledgerId: 'g-casa', description: 'Renta de octubre', category: 'home', ago: 26, currency: 'MXN', total: 1800000, method: 'weights', paid: [['m-c-valentina', 1800000]], split: [['m-c-sofia', 2], ['m-c-valentina', 1], ['m-c-andres', 1]] }),
+    expense({ id: 'e-c-1', ledgerId: 'g-casa', description: 'Renta de octubre', category: 'housing', ago: 26, currency: 'MXN', total: 1800000, method: 'weights', paid: [['m-c-valentina', 1800000]], split: [['m-c-sofia', 2], ['m-c-valentina', 1], ['m-c-andres', 1]] }),
     expense({ id: 'e-c-2', ledgerId: 'g-casa', description: 'Gas', category: 'utilities', ago: 24, currency: 'MXN', total: 48000, paid: [['m-c-julia', 48000]], split: [...casa, 'm-c-julia'] }),
     expense({ id: 'e-c-3', ledgerId: 'g-casa', description: 'Internet', category: 'utilities', ago: 12, currency: 'MXN', total: 65000, paid: [['m-c-andres', 65000]], split: casa }),
     expense({ id: 'e-c-4', ledgerId: 'g-casa', description: 'Súper de la semana', category: 'groceries', ago: 3, currency: 'MXN', total: 234050, method: 'adjustment', paid: [['m-c-sofia', 234050]], split: [['m-c-sofia', 0], ['m-c-valentina', 0], ['m-c-andres', 20000]] }),
@@ -157,9 +157,9 @@ export function createDemoData(now = new Date()): DemoData {
     expense({ id: 'e-k-2', ledgerId: 'g-cumple', description: 'Bebidas', category: 'groceries', ago: 2, currency: 'EUR', total: 5400, paid: [['m-k-camila', 5400]], split: ['m-k-diego', 'm-k-camila', 'm-k-sofi', 'm-k-pablo'] }),
 
     // Gastos sin grupo: each carries its own currency
-    expense({ id: 'e-fl-1', ledgerId: 'f-lucia', description: 'Cine', category: 'leisure', ago: 4, currency: 'EUR', total: 2500, paid: [['m-fl-sofia', 2500]], split: ['m-fl-sofia', 'm-fl-lucia'] }),
-    expense({ id: 'e-fl-2', ledgerId: 'f-lucia', description: 'Libro a medias', category: 'other', ago: 15, currency: 'USD', total: 4000, paid: [['m-fl-lucia', 4000]], split: ['m-fl-sofia', 'm-fl-lucia'] }),
-    expense({ id: 'e-fm-1', ledgerId: 'f-martin', description: 'Entradas del concierto', category: 'leisure', ago: 11, currency: 'USD', total: 7000, paid: [['m-fm-sofia', 7000]], split: ['m-fm-sofia', 'm-fm-martin'] }),
+    expense({ id: 'e-fl-1', ledgerId: 'f-lucia', description: 'Cine', category: 'entertainment', ago: 4, currency: 'EUR', total: 2500, paid: [['m-fl-sofia', 2500]], split: ['m-fl-sofia', 'm-fl-lucia'] }),
+    expense({ id: 'e-fl-2', ledgerId: 'f-lucia', description: 'Libro a medias', category: 'shopping', ago: 15, currency: 'USD', total: 4000, paid: [['m-fl-lucia', 4000]], split: ['m-fl-sofia', 'm-fl-lucia'] }),
+    expense({ id: 'e-fm-1', ledgerId: 'f-martin', description: 'Entradas del concierto', category: 'entertainment', ago: 11, currency: 'USD', total: 7000, paid: [['m-fm-sofia', 7000]], split: ['m-fm-sofia', 'm-fm-martin'] }),
     expense({ id: 'e-fa-1', ledgerId: 'f-ana', description: 'Café y medialunas', category: 'food', ago: 6, currency: 'EUR', total: 900, paid: [['m-fa-ana', 900]], split: ['m-fa-sofia', 'm-fa-ana'] }),
   ]
 
@@ -228,7 +228,7 @@ export function createDemoData(now = new Date()): DemoData {
       rejectedAt: stamp(25),
       record: {
         type: 'expense',
-        expense: expense({ id: 'e-c-r1', ledgerId: 'g-casa', description: 'Lavandería', category: 'home', ago: 1, currency: 'USD', total: 1200, paid: [['m-c-sofia', 1200]], split: casa, sync: 'unsynced', createdAt: stamp(60 * 27) }),
+        expense: expense({ id: 'e-c-r1', ledgerId: 'g-casa', description: 'Lavandería', category: 'housing', ago: 1, currency: 'USD', total: 1200, paid: [['m-c-sofia', 1200]], split: casa, sync: 'unsynced', createdAt: stamp(60 * 27) }),
       },
     },
   ]

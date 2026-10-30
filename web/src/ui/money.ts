@@ -1,106 +1,68 @@
-import i18n from 'i18next'
+import {
+  formatAmount,
+  formatAmountInput as formatAmountInputIn,
+  minorUnitDigits,
+  type ParseError,
+  parseAmount as parseAmountIn,
+  parsePercentage,
+  type Result,
+} from '../domain'
 
-// Amounts travel as integers in the currency's minor unit (docs/arquitectura.md).
-// Intl knows how many decimals each ISO 4217 currency has.
-
-const formatters = new Map<string, Intl.NumberFormat>()
-
-// Browsers accept useGrouping: 'always' (ES2023); the ES2022 lib types used here
-// only know booleans.
-type FormatOptions = Omit<Intl.NumberFormatOptions, 'useGrouping'> & { useGrouping?: boolean | 'always' }
-
-function formatter(currency: string, signed: boolean, whole = false): Intl.NumberFormat {
-  const key = `${i18n.language}|${currency}|${signed}|${whole}`
-  let f = formatters.get(key)
-  if (!f) {
-    const options: FormatOptions = {
-      style: 'currency',
-      currency,
-      signDisplay: signed ? 'exceptZero' : 'auto',
-      minimumFractionDigits: whole ? 0 : undefined,
-      // Spanish CLDR only groups from five digits ("7589,67"); amounts read
-      // better grouped every time ("7.589,67").
-      useGrouping: 'always',
-    }
-    f = new Intl.NumberFormat(i18n.language, options as Intl.NumberFormatOptions)
-    formatters.set(key, f)
-  }
-  return f
+// Amounts travel as integers in the currency's minor unit (docs/arquitectura.md)
+// and the domain formats and reads them. Numbers follow the Usuario's region,
+// whatever the language of the interface: 7,589.67 in es-MX, 7.589,67 in es-CO.
+export function regionLocale(): string {
+  return (typeof navigator !== 'undefined' && navigator.language) || 'es'
 }
 
-export function minorDigits(currency: string): number {
-  return formatter(currency, false).resolvedOptions().maximumFractionDigits ?? 2
-}
-
-export function toMajor(minor: number, currency: string): number {
-  return minor / 10 ** minorDigits(currency)
-}
-
-// `trim` drops ",00" from whole amounts, for round figures like a tally's unit.
+// Listings hide the decimals when they are zero ('45 €'); forms pass
+// `trim: false` to always show them ('45,00 €').
 export function formatMoney(minor: number, currency: string, opts: { signed?: boolean; trim?: boolean } = {}): string {
-  const major = toMajor(minor, currency)
-  const whole = (opts.trim ?? false) && Number.isInteger(major)
-  return formatter(currency, opts.signed ?? false, whole).format(major)
+  return formatAmount(minor, currency, regionLocale(), { signed: opts.signed, hideZeroDecimals: opts.trim ?? true })
 }
 
-// Plain number for an input field, without currency symbol or grouping.
+// The number for an input field, as the Usuario would type it; empty for zero.
 export function formatAmountInput(minor: number, currency: string): string {
-  if (minor === 0) return ''
-  const digits = minorDigits(currency)
-  return new Intl.NumberFormat(i18n.language, {
-    minimumFractionDigits: digits,
-    maximumFractionDigits: digits,
-    useGrouping: false,
-  }).format(toMajor(minor, currency))
+  return minor === 0 ? '' : formatAmountInputIn(minor, currency, regionLocale())
 }
 
-// Reads what someone typed ("84,20", "84.20", "1.200", "1 200,5") as minor units.
-// Returns null when it is not a number.
+// Zero with every decimal ('0,00' or '0.00'), which shows the region's decimal
+// separator before anything is typed.
+export function amountPlaceholder(currency: string): string {
+  return formatAmountInputIn(0, currency, regionLocale())
+}
+
+// What the Usuario typed, in minor units, or why it is not an amount.
+export function readAmount(text: string, currency: string): Result<number, ParseError> {
+  return parseAmountIn(text, currency, regionLocale())
+}
+
+// The same for fields that only need the number: null when it is not one.
 export function parseAmount(text: string, currency: string): number | null {
-  const digits = minorDigits(currency)
-  const cleaned = text.replace(/[\s '’]/g, '')
-  if (cleaned === '') return null
-  if (!/^-?[\d.,]+$/.test(cleaned)) return null
-  const negative = cleaned.startsWith('-')
-  const body = negative ? cleaned.slice(1) : cleaned
-
-  let integer = body
-  let fraction = ''
-  const lastSep = Math.max(body.lastIndexOf(','), body.lastIndexOf('.'))
-  if (lastSep >= 0 && digits > 0) {
-    const tail = body.slice(lastSep + 1)
-    const sepCount = body.split(body[lastSep] ?? '').length - 1
-    // A single separator followed by no more digits than the currency allows is the
-    // decimal one ("84,20", "84.2"); otherwise it groups thousands ("1.200").
-    if (sepCount === 1 && tail.length <= digits) {
-      integer = body.slice(0, lastSep)
-      fraction = tail
-    }
-  }
-  integer = integer.replace(/[.,]/g, '')
-  if (integer === '' && fraction === '') return null
-  const value = Number(integer || '0') * 10 ** digits + Number(fraction.padEnd(digits, '0') || '0')
-  if (!Number.isFinite(value)) return null
-  return negative ? -value : value
+  const read = readAmount(text, currency)
+  return read.ok ? read.value : null
 }
 
-// Percentages are stored in hundredths (10000 = 100 %).
+// Percentages are stored in hundredths (10000 = 100 %) and written, like
+// amounts, with Latin digits in the region's separators.
 export function formatPercent(hundredths: number): string {
-  return new Intl.NumberFormat(i18n.language, { maximumFractionDigits: 2 }).format(hundredths / 100) + ' %'
+  return new Intl.NumberFormat(regionLocale(), { maximumFractionDigits: 2, numberingSystem: 'latn' }).format(hundredths / 100) + ' %'
+}
+
+export function formatPercentInput(hundredths: number): string {
+  const options = { maximumFractionDigits: 2, useGrouping: false, numberingSystem: 'latn' }
+  return new Intl.NumberFormat(regionLocale(), options).format(hundredths / 100)
 }
 
 export function parsePercent(text: string): number | null {
-  const cleaned = text.replace(/[\s%]/g, '').replace(',', '.')
-  if (cleaned === '') return null
-  const n = Number(cleaned)
-  if (!Number.isFinite(n)) return null
-  return Math.round(n * 100)
+  const read = parsePercentage(text.replace('%', ''), regionLocale())
+  return read.ok ? read.value : null
 }
 
 // The unit one token stands for in a tally: a round number (1, 2 or 5 × 10ⁿ in
 // the major unit) so that the largest amount needs at most `maxTokens` tokens.
 export function tallyUnit(maxMinor: number, currency: string, maxTokens = 10): number {
-  const scale = 10 ** minorDigits(currency)
+  const scale = 10 ** minorUnitDigits(currency)
   const major = Math.abs(maxMinor) / scale
   if (major === 0) return scale
   // Never smaller than one major unit: half a token reads better than "each = 0.05".

@@ -281,6 +281,8 @@ En modo oscuro las neutras se invierten (los tokens `-dark`) y las tintas de sig
 ### Named Rules
 **The Cifra-Tabular Rule.** Todo importe, contador, fecha de campo y celda de código lleva `font-variant-numeric: tabular-nums lining-nums`. Un importe nunca se parte en dos líneas.
 
+**The Importe-Regional Rule.** Los importes siguen el formato numérico de la región del navegador, sea cual sea el idioma de la interfaz ($7,589.67 en es-MX, 7.589,67 € en es-ES), con cifras latinas y los miles agrupados desde cuatro cifras. En listados, bandas y fichas se ocultan los decimales cuando son cero (45 €); en formularios se muestran siempre (45,00 €), y el campo vacío enseña de ejemplo el cero con los decimales de la moneda («0,00»).
+
 **The Mayúsculas-Solo-Para-Secciones Rule.** Las mayúsculas espaciadas nombran una sección que existe y nada más; no se usan para antetítulos, categorías ni adornos sobre un título.
 
 **The Jerarquía-Por-Escala Rule.** La jerarquía se marca con tamaño y peso (400, 500, 600). No se usan cajas, fondos ni color para subir el rango de un texto.
@@ -314,7 +316,7 @@ La ficha es un círculo lleno del color del texto (`currentColor`), 14px por def
 
 ### Iconos: dos familias
 - **Controles**: trazo de 2px en una rejilla de 24, extremos y uniones redondeados, `fill: none` (volver, añadir, cerrar, compartir, copiar, bandeja, nube en línea, nube tachada, flechas de sincronizar, casa, actividad, cuenta, flecha, chevron, restaurar, descargar). La pestaña activa engrosa el trazo a 2.5.
-- **Contenido**: silueta llena en rejilla de 24 (persona, Grupo de tres figuras, pictogramas de categoría: cubiertos, bolsa, tranvía, cama, casa, rayo, entrada, cuatro cuadros; flecha de Liquidación con su retorno al 55 %). Estado de la enmienda del 2026-10-27, **pendiente de confirmación del usuario**: el contrato original pedía trazo uniforme para las categorías; lo construido son siluetas llenas de la familia de las figuras.
+- **Contenido**: silueta llena en rejilla de 24, con los huecos recortados (`fill-rule: evenodd`) en lugar de dibujados con trazo: persona, Grupo de tres figuras, flecha de Liquidación con su retorno al 55 % y un pictograma por Categoría: cubiertos (comida), bolsa (supermercado), tranvía (transporte), cama (alojamiento), casa (vivienda), rayo (servicios), entrada (ocio), etiqueta de precio con su agujero (compras), botiquín con la cruz recortada (salud), caja de regalo con lazo y la cinta como hueco (regalos) y cuatro cuadros (otros). La enmienda del 2026-10-27 queda aceptada: el contrato original pedía trazo uniforme para las categorías, pero son siluetas llenas de la familia de las figuras, más fieles a Isotype.
 
 ### Figuras de persona
 Llena si el Miembro está vinculado a un Usuario; hueca (trazo de 1.75) si está pendiente; apagada a ink-3 si es antiguo miembro. El estado vive en la figura, no en una etiqueta aparte.

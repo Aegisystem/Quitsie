@@ -110,11 +110,19 @@ const pictograms: Record<Category, string> = {
   // Bed
   lodging: 'M2 5h2.4v8H11V9h8a3 3 0 0 1 3 3v8h-2.4v-3H4.4v3H2zM5.4 9.6h4.4v2.6H5.4z',
   // House
-  home: 'M12 2l10 9h-3v11h-5v-7h-4v7H5V11H2z',
+  housing: 'M12 2l10 9h-3v11h-5v-7h-4v7H5V11H2z',
   // Lightning bolt
   utilities: 'M13.5 1L4 13.5h6.5L9 23l10-13h-6.6z',
   // Ticket
-  leisure: 'M2 6h20v4a2 2 0 0 0 0 4v4H2v-4a2 2 0 0 0 0-4zm11 2.5v2h2v-2zm0 5v2h2v-2z',
+  entertainment: 'M2 6h20v4a2 2 0 0 0 0 4v4H2v-4a2 2 0 0 0 0-4zm11 2.5v2h2v-2zm0 5v2h2v-2z',
+  // Price tag, tip up and to the left, with its hole
+  shopping: 'M3.2 3.2l8.7-1 9.9 9.9-9.7 9.7-9.9-9.9zM6.1 4.4a1.7 1.7 0 1 0 0 3.4 1.7 1.7 0 0 0 0-3.4z',
+  // First-aid kit: a case with its handle and the cross cut out
+  health:
+    'M8 6.5V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2.5h-2V4h-4v2.5zM4 6.5h16a2 2 0 0 1 2 2V20a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8.5a2 2 0 0 1 2-2zm6.5 3.25v3h-3v3h3v3h3v-3h3v-3h-3v-3z',
+  // Gift box with its bow; the ribbon is the gap down the middle
+  gifts:
+    'M2 7h8.6v4H2zm11.4 0H22v4h-8.6zM3.5 12.5h7.1V22H3.5zm9.9 0h7.1V22h-7.1zM11.2 6.2C9 6.2 6 5.6 6 3.6c0-1.2 1-2 2.2-1.8 1.6.3 2.8 2.4 3 4.4zm1.6 0c.2-2 1.4-4.1 3-4.4 1.2-.2 2.2.6 2.2 1.8 0 2-3 2.6-5.2 2.6z',
   // Four squares
   other: 'M3 3h8v8H3zm10 0h8v8h-8zM3 13h8v8H3zm10 0h8v8h-8z',
 }

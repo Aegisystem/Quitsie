@@ -1,4 +1,4 @@
-import { type ParticipantValue, type Split, type SplitError, type SplitMethod, splitExpense } from '../domain'
+import { type OwedShare, type ParticipantValue, type Split, type SplitError, type SplitMethod, splitExpense } from '../domain'
 
 // What the form needs to draw the Cuotas while the Usuario types. The amounts
 // come from the domain's splitExpense (ADR 0003); this file only adds what the
@@ -28,6 +28,9 @@ export interface SplitPreview {
   // What is left to reach the total; negative when the shares go over it.
   unassigned: number
   issue?: SplitIssue
+  // The OwedShares to save, exactly as the domain computed them, including any
+  // that round down to zero. Only once the split closes.
+  owedShares?: OwedShare[]
 }
 
 export function previewOwedShares(
@@ -48,7 +51,7 @@ export function previewOwedShares(
 
   const owed = new Map(result.value.map((s) => [s.participantId, s.amount]))
   const floors = floorParts(BigInt(total), method, splitting)
-  return finish(
+  const preview = finish(
     total,
     included.map((p) => {
       const amount = owed.get(p.memberId) ?? 0
@@ -56,6 +59,7 @@ export function previewOwedShares(
       return { memberId: p.memberId, amount, remainder: floor === undefined ? 0 : Math.max(0, amount - floor) }
     }),
   )
+  return { ...preview, owedShares: result.value }
 }
 
 function toSplit(method: SplitMethod, participants: readonly SplitParticipant[]): Split {

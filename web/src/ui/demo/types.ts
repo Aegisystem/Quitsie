@@ -5,16 +5,31 @@ export type SplitMethod = 'equal' | 'exact' | 'percentage' | 'weights' | 'adjust
 
 export const splitMethods: readonly SplitMethod[] = ['equal', 'exact', 'percentage', 'weights', 'adjustment']
 
-export type Category = 'food' | 'groceries' | 'transport' | 'lodging' | 'home' | 'utilities' | 'leisure' | 'other'
+// The eleven Categories of the contract (openapi.yaml), in its order.
+export type Category =
+  | 'food'
+  | 'groceries'
+  | 'transport'
+  | 'lodging'
+  | 'housing'
+  | 'utilities'
+  | 'entertainment'
+  | 'shopping'
+  | 'health'
+  | 'gifts'
+  | 'other'
 
 export const categories: readonly Category[] = [
   'food',
   'groceries',
   'transport',
   'lodging',
-  'home',
+  'housing',
   'utilities',
-  'leisure',
+  'entertainment',
+  'shopping',
+  'health',
+  'gifts',
   'other',
 ]
 

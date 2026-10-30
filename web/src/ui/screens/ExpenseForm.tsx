@@ -6,10 +6,9 @@ import { previewOwedShares, type SplitParticipant } from '../split'
 import { demo, ledgerById, ledgerMembers, ledgerName, memberById, myLedgers, myMemberId, useDemo } from '../demo/store'
 import { categories, splitMethods, type Category, type Expense, type Ledger, type SplitMethod } from '../demo/types'
 import { todayISO } from '../dates'
-import { formatAmountInput, formatMoney, formatPercent, parseAmount, parsePercent } from '../money'
+import { minorUnitDigits, offeredCurrencies } from '../../domain'
+import { amountPlaceholder, formatAmountInput, formatMoney, formatPercent, formatPercentInput, parseAmount, parsePercent, readAmount } from '../money'
 import { href, navigate } from '../router'
-
-const friendCurrencies = ['EUR', 'USD', 'MXN', 'COP', 'CLP', 'ARS', 'PEN', 'GBP']
 
 export function NewExpense({ ledgerId, fromRejected }: { ledgerId?: string; fromRejected?: string }) {
   const s = useDemo()
@@ -86,7 +85,7 @@ function ExpenseForm({ ledger, draft, rejectedId }: { ledger: Ledger; draft?: Ex
     // Re-editing keeps each Participant's value in the split method.
     for (const o of draft?.owedShares ?? []) {
       if (draft?.splitMethod === 'exact') initial.exact[o.memberId] = formatAmountInput(o.amount, draft.currency)
-      if (draft?.splitMethod === 'percentage' && o.splitValue !== undefined) initial.percentage[o.memberId] = String(o.splitValue / 100)
+      if (draft?.splitMethod === 'percentage' && o.splitValue !== undefined) initial.percentage[o.memberId] = formatPercentInput(o.splitValue)
       if (draft?.splitMethod === 'weights' && o.splitValue !== undefined) initial.weights[o.memberId] = String(o.splitValue)
       if (draft?.splitMethod === 'adjustment' && o.splitValue) initial.adjustment[o.memberId] = formatAmountInput(o.splitValue, draft.currency)
     }
@@ -94,7 +93,23 @@ function ExpenseForm({ ledger, draft, rejectedId }: { ledger: Ledger; draft?: Ex
   })
   const [touched, setTouched] = useState(false)
 
-  const total = parseAmount(amountText, currency) ?? 0
+  const read = readAmount(amountText, currency)
+  const total = read.ok ? read.value : 0
+  const amountError = (): string | undefined => {
+    if (read.ok) return read.value > 0 ? undefined : t('expenseForm.amountRequired')
+    switch (read.error) {
+      case 'empty':
+        return t('expenseForm.amountRequired')
+      case 'invalid':
+        return t('expenseForm.amountInvalid', { example: formatAmountInput(123450, currency) })
+      case 'too-many-decimals':
+        return t('expenseForm.amountDecimals', { count: minorUnitDigits(currency), currency })
+      case 'too-large':
+        return t('expenseForm.amountTooLarge')
+    }
+  }
+  // A form always shows every decimal of the currency.
+  const money = (minor: number) => formatMoney(minor, currency, { trim: false })
   const rejected = rejectedId ? s.rejected.find((r) => r.id === rejectedId) : undefined
 
   const participants: SplitParticipant[] = members.map((m) => {
@@ -129,7 +144,7 @@ function ExpenseForm({ ledger, draft, rejectedId }: { ledger: Ledger; draft?: Ex
 
   const percentSum = participants.reduce((sum, p) => sum + (method === 'percentage' ? p.value : 0), 0)
   const errors = {
-    amount: total <= 0 ? t('expenseForm.amountRequired') : undefined,
+    amount: amountError(),
     description: description.trim() === '' ? t('expenseForm.descriptionRequired') : undefined,
   }
   const splitOk = !preview.issue && preview.unassigned === 0
@@ -150,13 +165,13 @@ function ExpenseForm({ ledger, draft, rejectedId }: { ledger: Ledger; draft?: Ex
         category,
         splitMethod: method,
         paidShares,
-        owedShares: preview.shares
-          .filter((x) => x.amount !== 0)
-          .map((x) => ({
-            memberId: x.memberId,
-            amount: x.amount,
-            splitValue: method === 'equal' || method === 'exact' ? undefined : participants.find((p) => p.memberId === x.memberId)?.value,
-          })),
+        // The Cuotas as the domain computed them, including those that round
+        // down to zero, so that re-editing keeps the split.
+        owedShares: (preview.owedShares ?? []).map((o) => ({
+          memberId: o.participantId,
+          amount: o.amount,
+          splitValue: o.splitValue ?? undefined,
+        })),
         sync: online ? 'synced' : 'unsynced',
       },
       rejectedId,
@@ -171,7 +186,7 @@ function ExpenseForm({ ledger, draft, rejectedId }: { ledger: Ledger; draft?: Ex
   const remainderTotal = remainderShares.reduce((sum, x) => sum + x.remainder, 0)
 
   let closing: { tone: 'even' | 'problem' | 'quiet'; text: string }
-  if (total <= 0) closing = { tone: 'quiet', text: t('expenseForm.amountRequired') }
+  if (total <= 0) closing = { tone: 'quiet', text: errors.amount ?? t('expenseForm.amountRequired') }
   else if (preview.issue === 'noParticipants') closing = { tone: 'problem', text: t('expenseForm.noParticipants') }
   else if (preview.issue === 'noWeights') closing = { tone: 'problem', text: t('expenseForm.noWeights') }
   else if (preview.issue === 'negativeShare') closing = { tone: 'problem', text: t('expenseForm.negativeShare') }
@@ -181,8 +196,8 @@ function ExpenseForm({ ledger, draft, rejectedId }: { ledger: Ledger; draft?: Ex
       percentSum < 10000
         ? { tone: 'problem', text: t('expenseForm.percentMissing', { value: formatPercent(10000 - percentSum) }) }
         : { tone: 'problem', text: t('expenseForm.percentOver', { value: formatPercent(percentSum - 10000) }) }
-  else if (preview.unassigned > 0) closing = { tone: 'problem', text: t('expenseForm.missing', { amount: formatMoney(preview.unassigned, currency) }) }
-  else if (preview.unassigned < 0) closing = { tone: 'problem', text: t('expenseForm.over', { amount: formatMoney(-preview.unassigned, currency) }) }
+  else if (preview.unassigned > 0) closing = { tone: 'problem', text: t('expenseForm.missing', { amount: money(preview.unassigned) }) }
+  else if (preview.unassigned < 0) closing = { tone: 'problem', text: t('expenseForm.over', { amount: money(-preview.unassigned) }) }
   else closing = { tone: 'even', text: t('expenseForm.closes') }
 
   // What stops the save, said next to the button so it never looks dead.
@@ -191,9 +206,9 @@ function ExpenseForm({ ledger, draft, rejectedId }: { ledger: Ledger; draft?: Ex
     errors.description ??
     (!splitOk ? closing.text : undefined) ??
     (paidLeft > 0
-      ? t('expenseForm.payersLeft', { amount: formatMoney(paidLeft, currency) })
+      ? t('expenseForm.payersLeft', { amount: money(paidLeft) })
       : paidLeft < 0
-        ? t('expenseForm.payersOver', { amount: formatMoney(-paidLeft, currency) })
+        ? t('expenseForm.payersOver', { amount: money(-paidLeft) })
         : undefined)
 
   const backRoute = { name: 'ledger' as const, ledgerId: ledger.id }
@@ -249,7 +264,7 @@ function ExpenseForm({ ledger, draft, rejectedId }: { ledger: Ledger; draft?: Ex
               id={`${ids}-amount`}
               inputMode="decimal"
               autoComplete="off"
-              placeholder={formatAmountInput(0, currency) || '0'}
+              placeholder={amountPlaceholder(currency)}
               value={amountText}
               onChange={(e) => setAmountText(e.target.value)}
               aria-invalid={touched && !!errors.amount}
@@ -262,7 +277,7 @@ function ExpenseForm({ ledger, draft, rejectedId }: { ledger: Ledger; draft?: Ex
               </span>
             ) : (
               <select className="currency-select" aria-label={t('expenseForm.currency')} value={currency} onChange={(e) => setCurrency(e.target.value)}>
-                {friendCurrencies.map((c) => (
+                {offeredCurrencies().map((c) => (
                   <option key={c}>{c}</option>
                 ))}
               </select>
@@ -351,8 +366,8 @@ function ExpenseForm({ ledger, draft, rejectedId }: { ledger: Ledger; draft?: Ex
                   {paidLeft === 0
                     ? t('expenseForm.payersOk')
                     : paidLeft > 0
-                      ? t('expenseForm.payersLeft', { amount: formatMoney(paidLeft, currency) })
-                      : t('expenseForm.payersOver', { amount: formatMoney(-paidLeft, currency) })}
+                      ? t('expenseForm.payersLeft', { amount: money(paidLeft) })
+                      : t('expenseForm.payersOver', { amount: money(-paidLeft) })}
                 </p>
                 <button type="button" className="button button-small button-quiet" onClick={() => setManyPayers(false)}>
                   {t('expenseForm.onePayer')}
@@ -378,7 +393,9 @@ function ExpenseForm({ ledger, draft, rejectedId }: { ledger: Ledger; draft?: Ex
             {members.map((m) => {
               const share = shareOf(m.id)
               const checkable = method === 'equal' || method === 'adjustment'
-              const on = checkable ? (included[m.id] ?? false) : !!share && share.amount !== 0
+              const on = participants.find((p) => p.memberId === m.id)?.included ?? false
+              // Once the split closes, a Cuota of zero is real (1 cent among three).
+              const owes = !!share && on && (share.amount !== 0 || !!preview.owedShares)
               return (
                 <li key={m.id} className={`p-row${on ? '' : ' is-out'}`}>
                   {checkable ? (
@@ -412,8 +429,8 @@ function ExpenseForm({ ledger, draft, rejectedId }: { ledger: Ledger; draft?: Ex
                     </span>
                   )}
                   <span className="p-share" aria-label={t('expenseForm.shareFor', { name: nameOf(m.id) })}>
-                    {share && share.amount !== 0 ? formatMoney(share.amount, currency) : '—'}
-                    {share && share.remainder > 0 && <sup className="p-remainder">+{formatMoney(share.remainder, currency)}</sup>}
+                    {owes ? money(share.amount) : '—'}
+                    {share && share.remainder > 0 && <sup className="p-remainder">+{money(share.remainder)}</sup>}
                   </span>
                 </li>
               )
@@ -429,12 +446,12 @@ function ExpenseForm({ ledger, draft, rejectedId }: { ledger: Ledger; draft?: Ex
             {closing.tone === 'even' && <Icon name="check" size={18} />}
             {closing.text}
             {total > 0 && !preview.issue && (
-              <span className="closing-sub">{t('expenseForm.assigned', { assigned: formatMoney(preview.assigned, currency), total: formatMoney(total, currency) })}</span>
+              <span className="closing-sub">{t('expenseForm.assigned', { assigned: money(preview.assigned), total: money(total) })}</span>
             )}
           </p>
           {remainderTotal > 0 && !preview.issue && (
             <p className="hint">
-              {t('expenseForm.remainder', { count: remainderShares.length, amount: formatMoney(remainderTotal, currency) })}
+              {t('expenseForm.remainder', { count: remainderShares.length, amount: money(remainderTotal) })}
             </p>
           )}
         </fieldset>
