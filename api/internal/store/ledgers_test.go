@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/Aegisystem/Quitsie/api/internal/store"
@@ -60,52 +61,123 @@ func TestDeleteLedgerKeepsItAsAVersionedDeletion(t *testing.T) {
 	}
 }
 
-func TestInviteLinkFindsItsLedgerUntilRegeneratedOrRevoked(t *testing.T) {
+func TestRegenerateInviteLinkMovesToTheNextGeneration(t *testing.T) {
 	ctx := context.Background()
 	db := openMigrated(t)
-	q := store.New(db)
-	setInviteLink := func(hash *string) {
-		t.Helper()
-		write(t, db, func(q *store.Queries, version int64) error {
-			_, err := q.SetLedgerInviteLink(ctx, store.SetLedgerInviteLinkParams{ID: "ledger-1", InviteLinkHash: hash, Version: version})
-			return err
-		})
-	}
 	write(t, db, func(q *store.Queries, version int64) error {
 		return q.CreateLedger(ctx, newGroup("ledger-1", version))
 	})
 
-	setInviteLink(ptr("hash-1"))
-	if ledger, err := q.GetLedgerByInviteLink(ctx, "hash-1"); err != nil || ledger.ID != "ledger-1" {
-		t.Errorf("GetLedgerByInviteLink(hash-1) = %q, %v; want ledger-1", ledger.ID, err)
-	}
+	var regenerated store.Ledger
+	version := write(t, db, func(q *store.Queries, version int64) (err error) {
+		regenerated, err = q.RegenerateInviteLink(ctx, store.RegenerateInviteLinkParams{ID: "ledger-1", Version: version})
+		return err
+	})
 
-	setInviteLink(ptr("hash-2"))
-	if _, err := q.GetLedgerByInviteLink(ctx, "hash-1"); !errors.Is(err, sql.ErrNoRows) {
-		t.Errorf("regenerated link still works: err = %v, want sql.ErrNoRows", err)
-	}
-
-	setInviteLink(nil)
-	if _, err := q.GetLedgerByInviteLink(ctx, "hash-2"); !errors.Is(err, sql.ErrNoRows) {
-		t.Errorf("revoked link still works: err = %v, want sql.ErrNoRows", err)
+	if regenerated.InviteLinkGeneration != 1 || regenerated.Version != version {
+		t.Errorf("regenerated ledger = %+v, want generation 1 with version %d", regenerated, version)
 	}
 }
 
-func TestInviteLinkOfADeletedLedgerFindsNothing(t *testing.T) {
+func TestRegenerateInviteLinkOfADeletedLedgerChangesNothing(t *testing.T) {
 	ctx := context.Background()
 	db := openMigrated(t)
 	write(t, db, func(q *store.Queries, version int64) error {
 		if err := q.CreateLedger(ctx, newGroup("ledger-1", version)); err != nil {
 			return err
 		}
-		if _, err := q.SetLedgerInviteLink(ctx, store.SetLedgerInviteLinkParams{ID: "ledger-1", InviteLinkHash: ptr("hash-1"), Version: version}); err != nil {
-			return err
-		}
 		_, err := q.DeleteLedger(ctx, store.DeleteLedgerParams{ID: "ledger-1", DeletedAt: &now, Version: version})
 		return err
 	})
 
-	if _, err := store.New(db).GetLedgerByInviteLink(ctx, "hash-1"); !errors.Is(err, sql.ErrNoRows) {
-		t.Errorf("GetLedgerByInviteLink on a deleted ledger: err = %v, want sql.ErrNoRows", err)
+	_, err := store.Write(ctx, db, func(q *store.Queries, version int64) error {
+		_, err := q.RegenerateInviteLink(ctx, store.RegenerateInviteLinkParams{ID: "ledger-1", Version: version})
+		return err
+	})
+
+	if !errors.Is(err, sql.ErrNoRows) {
+		t.Errorf("RegenerateInviteLink on a deleted ledger: err = %v, want sql.ErrNoRows", err)
+	}
+}
+
+func TestScaleLedgerAmountsRewritesEveryAmountOfTheLedgerInOtherMinorUnits(t *testing.T) {
+	ctx := context.Background()
+	db := openMigrated(t)
+	q := store.New(db)
+	seedGroup(t, db)
+	createDinner(t, db, "weights")
+	write(t, db, func(q *store.Queries, version int64) error {
+		adjusted := dinner("adjusted")
+		adjusted.SplitMethod = "adjustment"
+		adjusted.OwedShares[0].SplitValue = ptr[int64](1500)
+		adjusted.OwedShares[1].SplitValue = ptr[int64](-1500)
+		adjusted.Version = version
+		if _, _, err := q.CreateExpense(ctx, adjusted); err != nil {
+			return err
+		}
+		if _, err := q.DeleteExpense(ctx, store.DeleteExpenseParams{ID: "adjusted", DeletedAt: &now, Version: version}); err != nil {
+			return err
+		}
+		s := cashBack("settlement-1")
+		s.Version = version
+		_, _, err := q.CreateSettlement(ctx, s)
+		return err
+	})
+	// Another ledger with the same amounts must stay as it is.
+	write(t, db, func(q *store.Queries, version int64) error {
+		if err := q.CreateLedger(ctx, newGroup("ledger-2", version)); err != nil {
+			return err
+		}
+		other := dinner("other")
+		other.LedgerID = "ledger-2"
+		other.Version = version
+		_, _, err := q.CreateExpense(ctx, other)
+		return err
+	})
+
+	write(t, db, func(q *store.Queries, version int64) error {
+		return q.ScaleLedgerAmounts(ctx, "ledger-1", 2, 0)
+	})
+
+	for id, want := range map[string]string{
+		"weights":  "90 paid[90] owed[60:2 30:1]",
+		"adjusted": "90 paid[90] owed[60:15 30:-15]",
+		"other":    "9000 paid[9000] owed[6000:2 3000:1]",
+	} {
+		e, err := q.GetExpenseWithShares(ctx, id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := fmt.Sprintf("%d paid[%d] owed[%d:%d %d:%d]", e.Total, e.PaidShares[0].Amount,
+			e.OwedShares[0].Amount, *e.OwedShares[0].SplitValue, e.OwedShares[1].Amount, *e.OwedShares[1].SplitValue)
+		if got != want {
+			t.Errorf("Expense %s = %s, want %s", id, got, want)
+		}
+	}
+	s, err := q.GetSettlement(ctx, "settlement-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Amount != 30 {
+		t.Errorf("Settlement amount = %d, want 30", s.Amount)
+	}
+}
+
+func TestScaleLedgerAmountsAddsMinorUnitsForACurrencyWithMoreDecimals(t *testing.T) {
+	ctx := context.Background()
+	db := openMigrated(t)
+	seedGroup(t, db)
+	createDinner(t, db, "dinner")
+
+	write(t, db, func(q *store.Queries, version int64) error {
+		return q.ScaleLedgerAmounts(ctx, "ledger-1", 2, 3)
+	})
+
+	e, err := store.New(db).GetExpenseWithShares(ctx, "dinner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if e.Total != 90000 || e.PaidShares[0].Amount != 90000 || e.OwedShares[0].Amount != 60000 {
+		t.Errorf("Expense = %+v, want every amount times 10", e)
 	}
 }

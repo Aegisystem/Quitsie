@@ -34,15 +34,15 @@ type Expense struct {
 }
 
 type Ledger struct {
-	ID             string
-	Kind           string
-	Name           string
-	Currency       *string
-	SimplifyDebts  bool
-	InviteLinkHash *string
-	Version        int64
-	CreatedAt      time.Time
-	DeletedAt      *time.Time
+	ID                   string
+	Kind                 string
+	Name                 string
+	Currency             *string
+	SimplifyDebts        bool
+	InviteLinkGeneration int64
+	Version              int64
+	CreatedAt            time.Time
+	DeletedAt            *time.Time
 }
 
 type LoginCode struct {

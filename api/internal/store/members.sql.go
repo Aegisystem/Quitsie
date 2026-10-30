@@ -98,8 +98,73 @@ func (q *Queries) GetActiveMemberOfUser(ctx context.Context, arg GetActiveMember
 	return i, err
 }
 
+const getFriendshipBetween = `-- name: GetFriendshipBetween :one
+SELECT ledgers.id, ledgers.kind, ledgers.name, ledgers.currency, ledgers.simplify_debts, ledgers.invite_link_generation, ledgers.version, ledgers.created_at, ledgers.deleted_at FROM ledgers
+JOIN members mine ON mine.ledger_id = ledgers.id
+JOIN members theirs ON theirs.ledger_id = ledgers.id
+WHERE mine.user_id = CAST(?1 AS TEXT)
+  AND theirs.user_id = CAST(?2 AS TEXT)
+  AND ledgers.kind = 'friendship'
+  AND ledgers.deleted_at IS NULL
+LIMIT 1
+`
+
+type GetFriendshipBetweenParams struct {
+	UserID      string
+	OtherUserID string
+}
+
+// The live Friendship between two Users, if any.
+func (q *Queries) GetFriendshipBetween(ctx context.Context, arg GetFriendshipBetweenParams) (Ledger, error) {
+	row := q.db.QueryRowContext(ctx, getFriendshipBetween, arg.UserID, arg.OtherUserID)
+	var i Ledger
+	err := row.Scan(
+		&i.ID,
+		&i.Kind,
+		&i.Name,
+		&i.Currency,
+		&i.SimplifyDebts,
+		&i.InviteLinkGeneration,
+		&i.Version,
+		&i.CreatedAt,
+		&i.DeletedAt,
+	)
+	return i, err
+}
+
+const getUserSharingAGroup = `-- name: GetUserSharingAGroup :one
+SELECT users.id, users.name FROM users
+JOIN members theirs ON theirs.user_id = users.id AND theirs.status = 'active'
+JOIN members mine ON mine.ledger_id = theirs.ledger_id AND mine.status = 'active'
+JOIN ledgers ON ledgers.id = mine.ledger_id
+WHERE users.id = CAST(?1 AS TEXT)
+  AND mine.user_id = CAST(?2 AS TEXT)
+  AND ledgers.kind = 'group'
+  AND ledgers.deleted_at IS NULL
+LIMIT 1
+`
+
+type GetUserSharingAGroupParams struct {
+	OtherUserID string
+	UserID      string
+}
+
+type GetUserSharingAGroupRow struct {
+	ID   string
+	Name string
+}
+
+// The User other_user_id, if they and user_id have an active Member in the same
+// live Group: the only way to start a Friendship directly with an existing User.
+func (q *Queries) GetUserSharingAGroup(ctx context.Context, arg GetUserSharingAGroupParams) (GetUserSharingAGroupRow, error) {
+	row := q.db.QueryRowContext(ctx, getUserSharingAGroup, arg.OtherUserID, arg.UserID)
+	var i GetUserSharingAGroupRow
+	err := row.Scan(&i.ID, &i.Name)
+	return i, err
+}
+
 const listLedgersOfUser = `-- name: ListLedgersOfUser :many
-SELECT ledgers.id, ledgers.kind, ledgers.name, ledgers.currency, ledgers.simplify_debts, ledgers.invite_link_hash, ledgers.version, ledgers.created_at, ledgers.deleted_at FROM ledgers
+SELECT ledgers.id, ledgers.kind, ledgers.name, ledgers.currency, ledgers.simplify_debts, ledgers.invite_link_generation, ledgers.version, ledgers.created_at, ledgers.deleted_at FROM ledgers
 JOIN members ON members.ledger_id = ledgers.id
 WHERE members.user_id = CAST(?1 AS TEXT)
   AND members.status = 'active'
@@ -122,7 +187,7 @@ func (q *Queries) ListLedgersOfUser(ctx context.Context, userID string) ([]Ledge
 			&i.Name,
 			&i.Currency,
 			&i.SimplifyDebts,
-			&i.InviteLinkHash,
+			&i.InviteLinkGeneration,
 			&i.Version,
 			&i.CreatedAt,
 			&i.DeletedAt,
@@ -208,6 +273,36 @@ func (q *Queries) MarkMemberFormer(ctx context.Context, arg MarkMemberFormerPara
 	return i, err
 }
 
+const reactivateMember = `-- name: ReactivateMember :one
+UPDATE members
+SET status = 'active', version = ?
+WHERE id = ? AND status = 'former'
+RETURNING id, ledger_id, user_id, name, email, status, version, created_at
+`
+
+type ReactivateMemberParams struct {
+	Version int64
+	ID      string
+}
+
+// Whoever comes back to a Group they left gets their former member back,
+// with its whole history, instead of a new one.
+func (q *Queries) ReactivateMember(ctx context.Context, arg ReactivateMemberParams) (Member, error) {
+	row := q.db.QueryRowContext(ctx, reactivateMember, arg.Version, arg.ID)
+	var i Member
+	err := row.Scan(
+		&i.ID,
+		&i.LedgerID,
+		&i.UserID,
+		&i.Name,
+		&i.Email,
+		&i.Status,
+		&i.Version,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const unclaimMember = `-- name: UnclaimMember :one
 UPDATE members
 SET user_id = NULL, version = ?
@@ -253,4 +348,40 @@ type UnlinkMembersOfUserParams struct {
 func (q *Queries) UnlinkMembersOfUser(ctx context.Context, arg UnlinkMembersOfUserParams) error {
 	_, err := q.db.ExecContext(ctx, unlinkMembersOfUser, arg.Version, arg.UserID)
 	return err
+}
+
+const updatePendingMember = `-- name: UpdatePendingMember :one
+UPDATE members
+SET name = ?, email = ?, version = ?
+WHERE id = ? AND user_id IS NULL AND status = 'active'
+RETURNING id, ledger_id, user_id, name, email, status, version, created_at
+`
+
+type UpdatePendingMemberParams struct {
+	Name    string
+	Email   *string
+	Version int64
+	ID      string
+}
+
+// Only a pending Member: a linked one is whoever their User is.
+func (q *Queries) UpdatePendingMember(ctx context.Context, arg UpdatePendingMemberParams) (Member, error) {
+	row := q.db.QueryRowContext(ctx, updatePendingMember,
+		arg.Name,
+		arg.Email,
+		arg.Version,
+		arg.ID,
+	)
+	var i Member
+	err := row.Scan(
+		&i.ID,
+		&i.LedgerID,
+		&i.UserID,
+		&i.Name,
+		&i.Email,
+		&i.Status,
+		&i.Version,
+		&i.CreatedAt,
+	)
+	return i, err
 }

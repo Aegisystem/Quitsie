@@ -31,21 +31,7 @@ var unimplemented = slices.Concat(unimplementedAuth, unimplementedLedgers, unimp
 var unimplementedAuth = []operationRequest{}
 
 // Groups, Members, invitations and Friendships.
-var unimplementedLedgers = []operationRequest{
-	{"CreateGroup", http.MethodPost, "/api/v1/groups", "{}"},
-	{"UpdateGroup", http.MethodPatch, "/api/v1/groups/" + someID, "{}"},
-	{"DeleteGroup", http.MethodDelete, "/api/v1/groups/" + someID, ""},
-	{"AddPendingMember", http.MethodPost, "/api/v1/groups/" + someID + "/members", "{}"},
-	{"RemoveMember", http.MethodDelete, "/api/v1/groups/" + someID + "/members/" + someID, ""},
-	{"UndoClaim", http.MethodDelete, "/api/v1/groups/" + someID + "/members/" + someID + "/claim", ""},
-	{"LeaveGroup", http.MethodPost, "/api/v1/groups/" + someID + "/leave", ""},
-	{"RegenerateGroupInviteLink", http.MethodPost, "/api/v1/groups/" + someID + "/invite-link", ""},
-	{"GetInvite", http.MethodGet, "/api/v1/invites/k3J9xQ2mV7pL8wR4tY6u", ""},
-	{"ClaimMember", http.MethodPost, "/api/v1/invites/k3J9xQ2mV7pL8wR4tY6u/claim", "{}"},
-	{"JoinGroup", http.MethodPost, "/api/v1/invites/k3J9xQ2mV7pL8wR4tY6u/join", ""},
-	{"CreateFriendship", http.MethodPost, "/api/v1/friendships", "{}"},
-	{"RegenerateFriendInviteLink", http.MethodPost, "/api/v1/friendships/" + someID + "/invite-link", ""},
-}
+var unimplementedLedgers = []operationRequest{}
 
 // Expenses, Settlements, records and sync.
 var unimplementedRecords = []operationRequest{
@@ -63,7 +49,10 @@ var unimplementedRecords = []operationRequest{
 var (
 	implementedBase    = []string{"GetHealth"}
 	implementedAuth    = []string{"RequestLoginCode", "VerifyLoginCode", "GetMe", "Logout", "ListSessions", "RevokeSession", "UpdateMe", "DeleteMe", "StartGoogleLogin", "FinishGoogleLogin"}
-	implementedLedgers = []string{}
+	implementedLedgers = []string{"CreateGroup", "UpdateGroup", "DeleteGroup", "AddPendingMember", "UpdatePendingMember", "RemoveMember", "LeaveGroup",
+		"GetGroupInviteLink", "RegenerateGroupInviteLink", "GetInvite",
+		"JoinGroup", "ClaimMember", "UndoClaim",
+		"CreateFriendship", "GetFriendInviteLink", "RegenerateFriendInviteLink"}
 	implementedRecords = []string{}
 	implemented        = slices.Concat(implementedBase, implementedAuth, implementedLedgers, implementedRecords)
 )

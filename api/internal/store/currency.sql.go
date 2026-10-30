@@ -50,7 +50,7 @@ const setGroupCurrency = `-- name: SetGroupCurrency :one
 UPDATE ledgers
 SET currency = CAST(?1 AS TEXT), version = ?2
 WHERE id = ?3 AND kind = 'group' AND deleted_at IS NULL
-RETURNING id, kind, name, currency, simplify_debts, invite_link_hash, version, created_at, deleted_at
+RETURNING id, kind, name, currency, simplify_debts, invite_link_generation, version, created_at, deleted_at
 `
 
 type SetGroupCurrencyParams struct {
@@ -69,7 +69,7 @@ func (q *Queries) SetGroupCurrency(ctx context.Context, arg SetGroupCurrencyPara
 		&i.Name,
 		&i.Currency,
 		&i.SimplifyDebts,
-		&i.InviteLinkHash,
+		&i.InviteLinkGeneration,
 		&i.Version,
 		&i.CreatedAt,
 		&i.DeletedAt,

@@ -214,7 +214,7 @@ export interface paths {
         head?: never;
         /**
          * Renames a Group, turns Debt simplification on or off, or changes the Group currency.
-         * @description Changing `currency` relabels every Expense and Settlement of the Group: same numbers, another currency, never an exchange rate. When the new currency has fewer decimals, the change is only allowed if no amount loses minor units; otherwise it answers `409 currency_precision_loss` with the records to fix. Unsynced records created before the change will be rejected with `currency_mismatch`.
+         * @description Changing `currency` relabels every Expense and Settlement of the Group, deleted ones included: same numbers, another currency, never an exchange rate. When the new currency has fewer decimals, the change is only allowed if no amount loses minor units; otherwise it answers `409 currency_precision_loss` with the records to fix. Unsynced records created before the change will be rejected with `currency_mismatch`.
          */
         patch: operations["updateGroup"];
         trace?: never;
@@ -249,7 +249,11 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
-        put?: never;
+        /**
+         * Replaces the name and the email of a pending Member.
+         * @description The body replaces both values, so leaving `email` out removes it. Former members are not found, like in the other Member operations.
+         */
+        put: operations["updatePendingMember"];
         post?: never;
         /**
          * Removes a Member whose Balance is zero from a Group.
@@ -312,12 +316,13 @@ export interface paths {
             };
             cookie?: never;
         };
-        get?: never;
-        put?: never;
         /**
-         * Creates a new Invite link for a Group and revokes the previous one.
-         * @description The server only keeps the link's hash, so the token can only be read in this response.
+         * Shows the Group's current Invite link.
+         * @description The token is derived from the Group, so it can be shown as many times as needed and stays the same until someone regenerates it (ADR 0010).
          */
+        get: operations["getGroupInviteLink"];
+        put?: never;
+        /** Creates a new Invite link for a Group and revokes the previous one. */
         post: operations["regenerateGroupInviteLink"];
         delete?: never;
         options?: never;
@@ -330,7 +335,7 @@ export interface paths {
             query?: never;
             header?: never;
             path: {
-                /** @description The secret part of an Invite link. */
+                /** @description The token of an Invite link. It carries the ledger id and a signature of the server (ADR 0010). */
                 token: components["parameters"]["InviteToken"];
             };
             cookie?: never;
@@ -353,7 +358,7 @@ export interface paths {
             query?: never;
             header?: never;
             path: {
-                /** @description The secret part of an Invite link. */
+                /** @description The token of an Invite link. It carries the ledger id and a signature of the server (ADR 0010). */
                 token: components["parameters"]["InviteToken"];
             };
             cookie?: never;
@@ -376,7 +381,7 @@ export interface paths {
             query?: never;
             header?: never;
             path: {
-                /** @description The secret part of an Invite link. */
+                /** @description The token of an Invite link. It carries the ledger id and a signature of the server (ADR 0010). */
                 token: components["parameters"]["InviteToken"];
             };
             cookie?: never;
@@ -385,7 +390,7 @@ export interface paths {
         put?: never;
         /**
          * Joins a Group as a new Member, named after the User.
-         * @description Only Group links allow it; a pending Friend's link can only be claimed (`400 validation_failed`).
+         * @description A User who left the Group recovers their former member instead, with its whole history. Only Group links allow it; a pending Friend's link can only be claimed (`400 validation_failed`).
          */
         post: operations["joinGroup"];
         delete?: never;
@@ -405,7 +410,7 @@ export interface paths {
         put?: never;
         /**
          * Creates a Friendship with a pending Friend or with an existing User.
-         * @description Send `name` (and optionally `email`) for a pending Friend, or `userId` for a User the caller already shares a Group with. Never both. An email never links to a User automatically.
+         * @description Send `name` (and optionally `email`) for a pending Friend, or `userId` for another User the caller already shares a Group with. Never both. An email never links to a User automatically.
          */
         post: operations["createFriendship"];
         delete?: never;
@@ -423,11 +428,15 @@ export interface paths {
             };
             cookie?: never;
         };
-        get?: never;
+        /**
+         * Shows the current Invite link of a pending Friend.
+         * @description The link only allows claiming the pending Friend. Like a Group's, it can be shown as many times as needed (ADR 0010).
+         */
+        get: operations["getFriendInviteLink"];
         put?: never;
         /**
          * Creates a new Invite link for a pending Friend and revokes the previous one.
-         * @description The link only allows claiming the pending Friend. The token can only be read in this response.
+         * @description The link only allows claiming the pending Friend.
          */
         post: operations["regenerateFriendInviteLink"];
         delete?: never;
@@ -706,6 +715,15 @@ export interface components {
              */
             email?: string;
         };
+        /** @description Both values of a pending Member; without `email`, it has none. */
+        PendingMemberUpdate: {
+            name: string;
+            /**
+             * Format: email
+             * @description Used only to suggest this Member when someone with that email opens the Invite link.
+             */
+            email?: string;
+        };
         /** @description A Friendship's ledger. Its two Members (the User and the Friend) arrive in `Changes.members`. */
         Friendship: {
             /**
@@ -758,7 +776,7 @@ export interface components {
             version: components["schemas"]["Version"];
         };
         InviteLink: {
-            /** @description Secret to put in the app's invite URL. Only its hash is stored. */
+            /** @description Secret to put in the app's invite URL. It is derived, not stored, so it stays the same until the link is regenerated (ADR 0010). */
             token: string;
         };
         Invite: {
@@ -993,7 +1011,7 @@ export interface components {
              * @description What changed. New kinds may be added; clients skip the ones they do not know.
              * @enum {string}
              */
-            kind: "group_created" | "group_renamed" | "group_currency_changed" | "debt_simplification_changed" | "member_added" | "member_joined" | "member_claimed" | "claim_undone" | "member_removed" | "member_left" | "friendship_created" | "expense_created" | "expense_updated" | "expense_deleted" | "expense_restored" | "settlement_created" | "settlement_updated" | "settlement_deleted" | "settlement_restored";
+            kind: "group_created" | "group_deleted" | "group_renamed" | "group_currency_changed" | "debt_simplification_changed" | "member_added" | "member_updated" | "member_joined" | "member_claimed" | "claim_undone" | "member_removed" | "member_left" | "invite_link_regenerated" | "friendship_created" | "expense_created" | "expense_updated" | "expense_deleted" | "expense_restored" | "settlement_created" | "settlement_updated" | "settlement_deleted" | "settlement_restored";
             /** @description Data that depends on `kind`, such as the ids involved and the values before and after. */
             details: {
                 [key: string]: unknown;
@@ -1102,7 +1120,7 @@ export interface components {
         FriendshipId: string;
         ExpenseId: string;
         SettlementId: string;
-        /** @description The secret part of an Invite link. */
+        /** @description The token of an Invite link. It carries the ledger id and a signature of the server (ADR 0010). */
         InviteToken: string;
     };
     requestBodies: never;
@@ -1538,6 +1556,46 @@ export interface operations {
             default: components["responses"]["Problem"];
         };
     };
+    updatePendingMember: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                groupId: components["parameters"]["GroupId"];
+                memberId: components["parameters"]["MemberId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PendingMemberUpdate"];
+            };
+        };
+        responses: {
+            /** @description The Member with its new name and email. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Member"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            /** @description The Member is linked to a User (`member_not_pending`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
     removeMember: {
         parameters: {
             query?: never;
@@ -1636,6 +1694,31 @@ export interface operations {
             default: components["responses"]["Problem"];
         };
     };
+    getGroupInviteLink: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                groupId: components["parameters"]["GroupId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The current Invite link. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InviteLink"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            default: components["responses"]["Problem"];
+        };
+    };
     regenerateGroupInviteLink: {
         parameters: {
             query?: never;
@@ -1666,7 +1749,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The secret part of an Invite link. */
+                /** @description The token of an Invite link. It carries the ledger id and a signature of the server (ADR 0010). */
                 token: components["parameters"]["InviteToken"];
             };
             cookie?: never;
@@ -1682,7 +1765,7 @@ export interface operations {
                     "application/json": components["schemas"]["Invite"];
                 };
             };
-            /** @description The link does not exist or was revoked (`invite_link_invalid`). */
+            /** @description The link does not exist or was revoked (`invite_link_invalid`). A pending Friend's link also ends once the Friend is linked, except for those already in the Friendship. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -1699,7 +1782,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The secret part of an Invite link. */
+                /** @description The token of an Invite link. It carries the ledger id and a signature of the server (ADR 0010). */
                 token: components["parameters"]["InviteToken"];
             };
             cookie?: never;
@@ -1730,7 +1813,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description The Member is already linked (`member_not_pending`), the User already holds a Member in this Group (`already_member`), or the User already has a Friendship with that person (`friendship_exists`). */
+            /** @description The Member is already linked (`member_not_pending`), the User already holds a Member in this ledger, even a former one, who comes back with `joinGroup` (`already_member`), or the User already has a Friendship with that person (`friendship_exists`). */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -1747,14 +1830,14 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The secret part of an Invite link. */
+                /** @description The token of an Invite link. It carries the ledger id and a signature of the server (ADR 0010). */
                 token: components["parameters"]["InviteToken"];
             };
             cookie?: never;
         };
         requestBody?: never;
         responses: {
-            /** @description The User's new Member. */
+            /** @description The User's Member, new or recovered. */
             201: {
                 headers: {
                     [name: string]: unknown;
@@ -1820,6 +1903,40 @@ export interface operations {
                 };
             };
             /** @description There is already a Friendship with that User (`friendship_exists`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    getFriendInviteLink: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                friendshipId: components["parameters"]["FriendshipId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The current Invite link. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InviteLink"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            /** @description The Friend is already linked to a User (`member_not_pending`). */
             409: {
                 headers: {
                     [name: string]: unknown;

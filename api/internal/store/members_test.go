@@ -185,3 +185,141 @@ func TestGetActiveMemberOfUserFindsWhoTheUserIsInALedger(t *testing.T) {
 		t.Errorf("GetActiveMemberOfUser after leaving: err = %v, want sql.ErrNoRows", err)
 	}
 }
+
+func TestReactivateMemberBringsAFormerMemberBack(t *testing.T) {
+	ctx := context.Background()
+	db := openMigrated(t)
+	seedGroup(t, db)
+	write(t, db, func(q *store.Queries, version int64) error {
+		_, err := q.MarkMemberFormer(ctx, store.MarkMemberFormerParams{ID: "member-beto", Version: version})
+		return err
+	})
+
+	var back store.Member
+	version := write(t, db, func(q *store.Queries, version int64) (err error) {
+		back, err = q.ReactivateMember(ctx, store.ReactivateMemberParams{ID: "member-beto", Version: version})
+		return err
+	})
+
+	if back.Status != "active" || back.UserID == nil || *back.UserID != "beto" || back.Version != version {
+		t.Errorf("reactivated member = %+v, want Beto active again with version %d", back, version)
+	}
+	_, err := store.Write(ctx, db, func(q *store.Queries, version int64) error {
+		_, err := q.ReactivateMember(ctx, store.ReactivateMemberParams{ID: "member-ana", Version: version})
+		return err
+	})
+	if !errors.Is(err, sql.ErrNoRows) {
+		t.Errorf("ReactivateMember on an active member: err = %v, want sql.ErrNoRows", err)
+	}
+}
+
+func TestGetUserSharingAGroupNeedsBothActiveInALiveGroup(t *testing.T) {
+	ctx := context.Background()
+	db := openMigrated(t)
+	q := store.New(db)
+	seedGroup(t, db)
+	insertUser(t, db, "carla")
+	params := store.GetUserSharingAGroupParams{UserID: "ana", OtherUserID: "beto"}
+
+	if u, err := q.GetUserSharingAGroup(ctx, params); err != nil || u.ID != "beto" || u.Name != "beto" {
+		t.Errorf("GetUserSharingAGroup = %+v, %v; want Beto", u, err)
+	}
+	stranger := store.GetUserSharingAGroupParams{UserID: "ana", OtherUserID: "carla"}
+	if _, err := q.GetUserSharingAGroup(ctx, stranger); !errors.Is(err, sql.ErrNoRows) {
+		t.Errorf("GetUserSharingAGroup with a stranger: err = %v, want sql.ErrNoRows", err)
+	}
+
+	write(t, db, func(q *store.Queries, version int64) error {
+		_, err := q.MarkMemberFormer(ctx, store.MarkMemberFormerParams{ID: "member-beto", Version: version})
+		return err
+	})
+	if _, err := q.GetUserSharingAGroup(ctx, params); !errors.Is(err, sql.ErrNoRows) {
+		t.Errorf("GetUserSharingAGroup after Beto left: err = %v, want sql.ErrNoRows", err)
+	}
+
+	write(t, db, func(q *store.Queries, version int64) error {
+		if _, err := q.ReactivateMember(ctx, store.ReactivateMemberParams{ID: "member-beto", Version: version}); err != nil {
+			return err
+		}
+		_, err := q.DeleteLedger(ctx, store.DeleteLedgerParams{ID: "ledger-1", DeletedAt: &now, Version: version})
+		return err
+	})
+	if _, err := q.GetUserSharingAGroup(ctx, params); !errors.Is(err, sql.ErrNoRows) {
+		t.Errorf("GetUserSharingAGroup in a deleted Group: err = %v, want sql.ErrNoRows", err)
+	}
+}
+
+func TestGetFriendshipBetweenFindsItFromEitherSide(t *testing.T) {
+	ctx := context.Background()
+	db := openMigrated(t)
+	q := store.New(db)
+	// ana and beto also share a Group, which is not a Friendship.
+	seedGroup(t, db)
+	write(t, db, func(q *store.Queries, version int64) error {
+		if err := q.CreateLedger(ctx, store.CreateLedgerParams{ID: "friends", Kind: "friendship", SimplifyDebts: true, Version: version, CreatedAt: now}); err != nil {
+			return err
+		}
+		if err := q.CreateMember(ctx, newMember("friend-ana", "friends", ptr("ana"), version)); err != nil {
+			return err
+		}
+		return q.CreateMember(ctx, newMember("friend-beto", "friends", ptr("beto"), version))
+	})
+	insertUser(t, db, "carla")
+
+	for _, pair := range [][2]string{{"ana", "beto"}, {"beto", "ana"}} {
+		got, err := q.GetFriendshipBetween(ctx, store.GetFriendshipBetweenParams{UserID: pair[0], OtherUserID: pair[1]})
+		if err != nil || got.ID != "friends" {
+			t.Errorf("GetFriendshipBetween(%s, %s) = %q, %v; want friends", pair[0], pair[1], got.ID, err)
+		}
+	}
+	_, err := q.GetFriendshipBetween(ctx, store.GetFriendshipBetweenParams{UserID: "ana", OtherUserID: "carla"})
+	if !errors.Is(err, sql.ErrNoRows) {
+		t.Errorf("GetFriendshipBetween without one: err = %v, want sql.ErrNoRows", err)
+	}
+}
+
+func TestUpdatePendingMemberReplacesItsNameAndEmail(t *testing.T) {
+	ctx := context.Background()
+	db := openMigrated(t)
+	write(t, db, func(q *store.Queries, version int64) error {
+		if err := q.CreateLedger(ctx, newGroup("ledger-1", version)); err != nil {
+			return err
+		}
+		pending := newMember("member-carla", "ledger-1", nil, version)
+		pending.Email = ptr("carla@example.com")
+		return q.CreateMember(ctx, pending)
+	})
+
+	var updated store.Member
+	version := write(t, db, func(q *store.Queries, version int64) (err error) {
+		updated, err = q.UpdatePendingMember(ctx, store.UpdatePendingMemberParams{ID: "member-carla", Name: "Carla Ríos", Version: version})
+		return err
+	})
+
+	if updated.Name != "Carla Ríos" || updated.Email != nil || updated.Version != version {
+		t.Errorf("updated member = %+v, want the new name, no email and version %d", updated, version)
+	}
+}
+
+func TestUpdatePendingMemberLeavesLinkedAndFormerMembersAlone(t *testing.T) {
+	ctx := context.Background()
+	db := openMigrated(t)
+	seedGroup(t, db)
+	write(t, db, func(q *store.Queries, version int64) error {
+		if err := q.CreateMember(ctx, newMember("member-carla", "ledger-1", nil, version)); err != nil {
+			return err
+		}
+		_, err := q.MarkMemberFormer(ctx, store.MarkMemberFormerParams{ID: "member-carla", Version: version})
+		return err
+	})
+
+	for _, id := range []string{"member-ana", "member-carla"} {
+		_, err := store.Write(ctx, db, func(q *store.Queries, version int64) error {
+			_, err := q.UpdatePendingMember(ctx, store.UpdatePendingMemberParams{ID: id, Name: "Otro", Version: version})
+			return err
+		})
+		if !errors.Is(err, sql.ErrNoRows) {
+			t.Errorf("UpdatePendingMember(%s): err = %v, want sql.ErrNoRows", id, err)
+		}
+	}
+}

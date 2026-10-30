@@ -64,15 +64,17 @@ CREATE INDEX login_codes_email ON login_codes (email);
 
 -- A ledger holds the Expenses and Settlements of a Group or a Friendship (ADR 0008).
 CREATE TABLE ledgers (
-    id               TEXT PRIMARY KEY,
-    kind             TEXT NOT NULL CHECK (kind IN ('group', 'friendship')),
-    name             TEXT NOT NULL DEFAULT '',
-    currency         TEXT CHECK (length(currency) = 3 AND currency = upper(currency)),
-    simplify_debts   BOOLEAN NOT NULL DEFAULT TRUE,
-    invite_link_hash TEXT UNIQUE,
-    version          BIGINT NOT NULL,
-    created_at       TIMESTAMP NOT NULL,
-    deleted_at       TIMESTAMP,
+    id                     TEXT PRIMARY KEY,
+    kind                   TEXT NOT NULL CHECK (kind IN ('group', 'friendship')),
+    name                   TEXT NOT NULL DEFAULT '',
+    currency               TEXT CHECK (length(currency) = 3 AND currency = upper(currency)),
+    simplify_debts         BOOLEAN NOT NULL DEFAULT TRUE,
+    -- The Invite link's token is derived from it (ADR 0010); regenerating the
+    -- link increments it, which revokes the previous token.
+    invite_link_generation BIGINT NOT NULL DEFAULT 0,
+    version                BIGINT NOT NULL,
+    created_at             TIMESTAMP NOT NULL,
+    deleted_at             TIMESTAMP,
     -- A Group always has a currency; a Friendship never does (each Expense carries its own).
     CHECK ((kind = 'group' AND currency IS NOT NULL) OR (kind = 'friendship' AND currency IS NULL))
 );

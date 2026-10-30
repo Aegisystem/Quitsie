@@ -42,7 +42,7 @@ const deleteLedger = `-- name: DeleteLedger :one
 UPDATE ledgers
 SET deleted_at = ?, version = ?
 WHERE id = ? AND deleted_at IS NULL
-RETURNING id, kind, name, currency, simplify_debts, invite_link_hash, version, created_at, deleted_at
+RETURNING id, kind, name, currency, simplify_debts, invite_link_generation, version, created_at, deleted_at
 `
 
 type DeleteLedgerParams struct {
@@ -61,7 +61,7 @@ func (q *Queries) DeleteLedger(ctx context.Context, arg DeleteLedgerParams) (Led
 		&i.Name,
 		&i.Currency,
 		&i.SimplifyDebts,
-		&i.InviteLinkHash,
+		&i.InviteLinkGeneration,
 		&i.Version,
 		&i.CreatedAt,
 		&i.DeletedAt,
@@ -70,7 +70,7 @@ func (q *Queries) DeleteLedger(ctx context.Context, arg DeleteLedgerParams) (Led
 }
 
 const getLedger = `-- name: GetLedger :one
-SELECT id, kind, name, currency, simplify_debts, invite_link_hash, version, created_at, deleted_at FROM ledgers
+SELECT id, kind, name, currency, simplify_debts, invite_link_generation, version, created_at, deleted_at FROM ledgers
 WHERE id = ?
 `
 
@@ -83,7 +83,7 @@ func (q *Queries) GetLedger(ctx context.Context, id string) (Ledger, error) {
 		&i.Name,
 		&i.Currency,
 		&i.SimplifyDebts,
-		&i.InviteLinkHash,
+		&i.InviteLinkGeneration,
 		&i.Version,
 		&i.CreatedAt,
 		&i.DeletedAt,
@@ -91,44 +91,22 @@ func (q *Queries) GetLedger(ctx context.Context, id string) (Ledger, error) {
 	return i, err
 }
 
-const getLedgerByInviteLink = `-- name: GetLedgerByInviteLink :one
-SELECT id, kind, name, currency, simplify_debts, invite_link_hash, version, created_at, deleted_at FROM ledgers
-WHERE invite_link_hash = CAST(?1 AS TEXT) AND deleted_at IS NULL
-`
-
-func (q *Queries) GetLedgerByInviteLink(ctx context.Context, inviteLinkHash string) (Ledger, error) {
-	row := q.db.QueryRowContext(ctx, getLedgerByInviteLink, inviteLinkHash)
-	var i Ledger
-	err := row.Scan(
-		&i.ID,
-		&i.Kind,
-		&i.Name,
-		&i.Currency,
-		&i.SimplifyDebts,
-		&i.InviteLinkHash,
-		&i.Version,
-		&i.CreatedAt,
-		&i.DeletedAt,
-	)
-	return i, err
-}
-
-const setLedgerInviteLink = `-- name: SetLedgerInviteLink :one
+const regenerateInviteLink = `-- name: RegenerateInviteLink :one
 UPDATE ledgers
-SET invite_link_hash = ?, version = ?
+SET invite_link_generation = invite_link_generation + 1, version = ?
 WHERE id = ? AND deleted_at IS NULL
-RETURNING id, kind, name, currency, simplify_debts, invite_link_hash, version, created_at, deleted_at
+RETURNING id, kind, name, currency, simplify_debts, invite_link_generation, version, created_at, deleted_at
 `
 
-type SetLedgerInviteLinkParams struct {
-	InviteLinkHash *string
-	Version        int64
-	ID             string
+type RegenerateInviteLinkParams struct {
+	Version int64
+	ID      string
 }
 
-// Stores the hash of a new Invite link, replacing the previous one, or revokes it with NULL.
-func (q *Queries) SetLedgerInviteLink(ctx context.Context, arg SetLedgerInviteLinkParams) (Ledger, error) {
-	row := q.db.QueryRowContext(ctx, setLedgerInviteLink, arg.InviteLinkHash, arg.Version, arg.ID)
+// The Invite link's token is derived from the generation (ADR 0010), so
+// moving to the next one revokes the previous token.
+func (q *Queries) RegenerateInviteLink(ctx context.Context, arg RegenerateInviteLinkParams) (Ledger, error) {
+	row := q.db.QueryRowContext(ctx, regenerateInviteLink, arg.Version, arg.ID)
 	var i Ledger
 	err := row.Scan(
 		&i.ID,
@@ -136,19 +114,97 @@ func (q *Queries) SetLedgerInviteLink(ctx context.Context, arg SetLedgerInviteLi
 		&i.Name,
 		&i.Currency,
 		&i.SimplifyDebts,
-		&i.InviteLinkHash,
+		&i.InviteLinkGeneration,
 		&i.Version,
 		&i.CreatedAt,
 		&i.DeletedAt,
 	)
 	return i, err
+}
+
+const scaleLedgerExpenseTotals = `-- name: ScaleLedgerExpenseTotals :exec
+UPDATE expenses
+SET total = total * ?1 / ?2
+WHERE ledger_id = ?3
+`
+
+type ScaleLedgerExpenseTotalsParams struct {
+	Multiplier int64
+	Divisor    int64
+	LedgerID   string
+}
+
+// Use ScaleLedgerAmounts, which runs the four ScaleLedger* queries together.
+func (q *Queries) ScaleLedgerExpenseTotals(ctx context.Context, arg ScaleLedgerExpenseTotalsParams) error {
+	_, err := q.db.ExecContext(ctx, scaleLedgerExpenseTotals, arg.Multiplier, arg.Divisor, arg.LedgerID)
+	return err
+}
+
+const scaleLedgerOwedShares = `-- name: ScaleLedgerOwedShares :exec
+UPDATE owed_shares
+SET amount = amount * ?1 / ?2,
+    split_value = CASE
+        WHEN expense_id IN (SELECT expenses.id FROM expenses WHERE expenses.ledger_id = ?3 AND split_method = 'adjustment')
+        THEN split_value * ?1 / ?2
+        ELSE split_value
+    END
+WHERE expense_id IN (SELECT expenses.id FROM expenses WHERE expenses.ledger_id = ?3)
+`
+
+type ScaleLedgerOwedSharesParams struct {
+	Multiplier int64
+	Divisor    int64
+	LedgerID   string
+}
+
+// Use ScaleLedgerAmounts, which runs the four ScaleLedger* queries together.
+// An adjustment is an amount too; percentages and weights have no currency.
+func (q *Queries) ScaleLedgerOwedShares(ctx context.Context, arg ScaleLedgerOwedSharesParams) error {
+	_, err := q.db.ExecContext(ctx, scaleLedgerOwedShares, arg.Multiplier, arg.Divisor, arg.LedgerID)
+	return err
+}
+
+const scaleLedgerPaidShares = `-- name: ScaleLedgerPaidShares :exec
+UPDATE paid_shares
+SET amount = amount * ?1 / ?2
+WHERE expense_id IN (SELECT expenses.id FROM expenses WHERE expenses.ledger_id = ?3)
+`
+
+type ScaleLedgerPaidSharesParams struct {
+	Multiplier int64
+	Divisor    int64
+	LedgerID   string
+}
+
+// Use ScaleLedgerAmounts, which runs the four ScaleLedger* queries together.
+func (q *Queries) ScaleLedgerPaidShares(ctx context.Context, arg ScaleLedgerPaidSharesParams) error {
+	_, err := q.db.ExecContext(ctx, scaleLedgerPaidShares, arg.Multiplier, arg.Divisor, arg.LedgerID)
+	return err
+}
+
+const scaleLedgerSettlements = `-- name: ScaleLedgerSettlements :exec
+UPDATE settlements
+SET amount = amount * ?1 / ?2
+WHERE ledger_id = ?3
+`
+
+type ScaleLedgerSettlementsParams struct {
+	Multiplier int64
+	Divisor    int64
+	LedgerID   string
+}
+
+// Use ScaleLedgerAmounts, which runs the four ScaleLedger* queries together.
+func (q *Queries) ScaleLedgerSettlements(ctx context.Context, arg ScaleLedgerSettlementsParams) error {
+	_, err := q.db.ExecContext(ctx, scaleLedgerSettlements, arg.Multiplier, arg.Divisor, arg.LedgerID)
+	return err
 }
 
 const updateLedger = `-- name: UpdateLedger :one
 UPDATE ledgers
 SET name = ?, simplify_debts = ?, version = ?
 WHERE id = ? AND deleted_at IS NULL
-RETURNING id, kind, name, currency, simplify_debts, invite_link_hash, version, created_at, deleted_at
+RETURNING id, kind, name, currency, simplify_debts, invite_link_generation, version, created_at, deleted_at
 `
 
 type UpdateLedgerParams struct {
@@ -172,7 +228,7 @@ func (q *Queries) UpdateLedger(ctx context.Context, arg UpdateLedgerParams) (Led
 		&i.Name,
 		&i.Currency,
 		&i.SimplifyDebts,
-		&i.InviteLinkHash,
+		&i.InviteLinkGeneration,
 		&i.Version,
 		&i.CreatedAt,
 		&i.DeletedAt,
