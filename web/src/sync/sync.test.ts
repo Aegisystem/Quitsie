@@ -239,4 +239,20 @@ describe('queue', () => {
       expect.objectContaining({ id, description: 'Taxi', createdBy: me, sync: 'synced' }),
     ])
   })
+
+  test('a rejected Expense stays in the inbox with its reason, never dropped', async () => {
+    const server = fakeServer()
+    const trip = server.addGroup({ name: 'Viaje a Cusco', currency: 'PEN', members: ['Ana'] })
+    const { replica, engine } = setup(server)
+    await engine.sync()
+    const id = await engine.addExpense(newExpense(trip, { description: 'Taxi', currency: 'PEN', paid: { Yo: 2000 }, owed: { Yo: 1000, Ana: 1000 } }))
+
+    server.setCurrency(trip, 'USD')
+    await engine.sync()
+
+    const records = await firstValue(liveRecords(replica))
+    expect(records.unsynced).toEqual([])
+    expect(records.rejected).toEqual([expect.objectContaining({ id, status: 'rejected', reason: 'currency_mismatch' })])
+    expect(await firstValue(liveExpenses(replica, trip.id))).toEqual([expect.objectContaining({ id, sync: 'rejected' })])
+  })
 })

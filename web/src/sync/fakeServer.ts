@@ -70,6 +70,12 @@ export function fakeServer({ versionsPerPull = Infinity }: { versionsPerPull?: n
     db.activities.set(id, { id, ledgerId, userId: me, kind, details: {}, createdAt: new Date().toISOString(), version })
   }
 
+  function rejection({ ledgerId, currency }: { ledgerId: string; currency: string }): RecordResult['reason'] {
+    if (!visible(ledgerId)) return 'ledger_unavailable'
+    if (db.groups.get(ledgerId)!.currency !== currency) return 'currency_mismatch'
+    return undefined
+  }
+
   // POST /records: each record is accepted or rejected on its own, and a record
   // the server already has is accepted again without changes.
   function push({ expenses, settlements }: RecordBatch): RecordResult[] {
@@ -78,6 +84,11 @@ export function fakeServer({ versionsPerPull = Infinity }: { versionsPerPull?: n
       const known = db.expenses.get(expense.id)
       if (known) {
         results.push({ id: expense.id, kind: 'expense', status: 'accepted', version: known.version })
+        continue
+      }
+      const reason = rejection(expense)
+      if (reason) {
+        results.push({ id: expense.id, kind: 'expense', status: 'rejected', reason })
         continue
       }
       const version = ++db.counter
@@ -196,6 +207,13 @@ export function fakeServer({ versionsPerPull = Infinity }: { versionsPerPull?: n
         })),
         version: ++db.counter,
       })
+    },
+
+    // Relabels the Group's amounts; queued records in the old currency get rejected.
+    setCurrency(group: FakeGroup, currency: string) {
+      const ledger = db.groups.get(group.id)!
+      db.groups.set(group.id, { ...ledger, currency, version: ++db.counter })
+      log(group.id, 'group_currency_changed', db.counter)
     },
 
     // The User leaves the Group or loses it. The pull says so in droppedLedgers
