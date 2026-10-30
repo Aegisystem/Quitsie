@@ -11,12 +11,16 @@ import (
 // cmd/server wires them.
 type Deps struct {
 	DB *sql.DB
-	// Auth signs Users in and resolves the session of every request. Without
-	// it nobody is signed in, so only the public operations answer.
+	// Auth signs Users in and resolves the session of every request. Only a
+	// test that never reaches the sign-in operations can leave it out; then
+	// nobody is signed in.
 	Auth *auth.Service
 	// Origins are the app's own origins, such as "https://quitsie.app".
 	// Requests that change data must come from one of them (CSRF).
 	Origins []string
+	// InviteSecret signs the Invite links (ADR 0010): at least
+	// invites.MinSecretLength random bytes. Changing it revokes every link.
+	InviteSecret []byte
 }
 
 // WithDeps gives the handlers their dependencies.
