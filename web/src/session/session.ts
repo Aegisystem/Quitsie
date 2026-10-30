@@ -30,8 +30,8 @@ export type SessionStore = ReturnType<typeof createSession>
 export function createSession({ client, storage, notice: firstNotice }: SessionOptions) {
   const cached = readUser(storage)
   let state: SessionState = cached ? signedIn(cached, false) : { status: 'loading' }
-  // Bumped on every sign-in and sign-out, so an answer to a request sent before
-  // it can never undo it.
+  // Bumped on every sign-in, sign-out and saved profile, so an answer to a
+  // request sent before it can never undo it.
   let generation = 0
   const listeners = new Set<() => void>()
 
@@ -129,6 +129,7 @@ export function createSession({ client, storage, notice: firstNotice }: SessionO
       const sent = generation
       const result = await calls.updateMe(client, update)
       if (result.ok && sent === generation) {
+        generation++
         writeUser(storage, result.value)
         set(signedIn(result.value, false))
       }

@@ -205,6 +205,17 @@ describe('the profile', () => {
     expect(JSON.parse(storage.data.get('quitsie.session.user') ?? '')).toEqual(saved)
   })
 
+  it('does not let an older /me undo a saved profile', async () => {
+    const me = deferred<Response>()
+    const saved = { ...newcomer, name: 'Ana' }
+    const { session } = setup({ 'GET /me': () => me.promise, 'PATCH /me': () => json(200, saved) }, { remembered: newcomer })
+    const checking = session.check()
+    await session.saveProfile({ name: 'Ana' })
+    me.resolve(json(200, newcomer))
+    await checking
+    expect(session.getState()).toEqual({ status: 'signedIn', user: saved, needsProfile: false })
+  })
+
   it('keeps asking when saving fails', async () => {
     const { session } = setup({ 'GET /me': () => json(200, newcomer), 'PATCH /me': () => problem(400, 'validation_failed') }, { remembered: newcomer })
     const result = await session.saveProfile({ name: 'x'.repeat(81) })
