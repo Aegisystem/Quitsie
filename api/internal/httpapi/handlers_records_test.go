@@ -416,3 +416,78 @@ func TestPushRecordsAcceptsAnOwedShareRoundedToZero(t *testing.T) {
 		t.Errorf("result = %+v, want accepted", got)
 	}
 }
+
+// payback is Beto paying Ana back 10 USD.
+func (tr trip) payback() httpapi.NewSettlement {
+	return httpapi.NewSettlement{
+		Id: id(uuid.NewString()), LedgerId: id(tr.id), FromMemberId: id(tr.betoM), ToMemberId: id(tr.anaM),
+		Amount: 1000, Currency: "USD", Date: day("2026-10-26"),
+	}
+}
+
+func settlements(s ...httpapi.NewSettlement) httpapi.RecordBatch {
+	return httpapi.RecordBatch{Expenses: []httpapi.NewExpense{}, Settlements: s}
+}
+
+func TestPushRecordsAcceptsSettlementsIdempotently(t *testing.T) {
+	a := newRecordsAPI(t)
+	tr := a.seedTrip()
+	payback := tr.payback()
+
+	first := a.push(t, tr.beto, settlements(payback))[0]
+	again := a.push(t, tr.beto, settlements(payback))[0]
+
+	if first.Id != payback.Id || first.Kind != httpapi.RecordResultKindSettlement || first.Status != httpapi.Accepted || first.Version == nil {
+		t.Fatalf("result = %+v, want the payback accepted", first)
+	}
+	if again.Status != httpapi.Accepted || again.Version == nil || *again.Version != *first.Version {
+		t.Errorf("resent result = %+v, want accepted with version %d", again, *first.Version)
+	}
+}
+
+func TestPushRecordsRejectsSettlementsThatBreakTheRules(t *testing.T) {
+	a := newRecordsAPI(t)
+	tr := a.seedTrip()
+	taken := tr.payback()
+	a.push(t, tr.beto, settlements(taken))
+	tests := []struct {
+		name   string
+		by     person
+		change func(s *httpapi.NewSettlement)
+		want   httpapi.RecordResultReason
+	}{
+		{"an id of another author", tr.ana, func(s *httpapi.NewSettlement) { s.Id = taken.Id }, httpapi.RecordResultReasonIdConflict},
+		{"a ledger the User is not in", tr.eva, func(*httpapi.NewSettlement) {}, httpapi.RecordResultReasonLedgerUnavailable},
+		{"a currency other than the Group's", tr.beto, func(s *httpapi.NewSettlement) { s.Currency = "EUR" }, httpapi.RecordResultReasonCurrencyMismatch},
+		{"a former member", tr.beto, func(s *httpapi.NewSettlement) { s.ToMemberId = id(tr.daniM) }, httpapi.RecordResultReasonInvalidParticipants},
+		{"paying oneself", tr.beto, func(s *httpapi.NewSettlement) { s.ToMemberId = id(tr.betoM) }, httpapi.RecordResultReasonInvalidParticipants},
+		{"an amount over 10^15", tr.beto, func(s *httpapi.NewSettlement) { s.Amount = 1_000_000_000_000_001 }, httpapi.RecordResultReasonInvalidAmounts},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := tr.payback()
+			tt.change(&s)
+			assertRejected(t, a.push(t, tt.by, settlements(s))[0], s.Id, tt.want)
+		})
+	}
+}
+
+func TestPushRecordsNeedsASession(t *testing.T) {
+	a := newRecordsAPI(t)
+	tr := a.seedTrip()
+
+	rec := a.do(person{}, http.MethodPost, "/api/v1/records", expenses(tr.dinner()))
+
+	decodeProblem(t, rec, http.StatusUnauthorized, httpapi.ProblemCodeUnauthenticated)
+}
+
+func TestPushRecordsTakesAtMostAHundredOfEach(t *testing.T) {
+	a := newRecordsAPI(t)
+	tr := a.seedTrip()
+	batch := expenses()
+	for range 101 {
+		batch.Expenses = append(batch.Expenses, tr.dinner())
+	}
+
+	decodeProblem(t, a.do(tr.ana, http.MethodPost, "/api/v1/records", batch), http.StatusBadRequest, httpapi.ProblemCodeValidationFailed)
+}

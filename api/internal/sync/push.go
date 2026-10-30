@@ -53,6 +53,13 @@ func Push(ctx context.Context, db *sql.DB, userID string, batch Batch) ([]Result
 			}
 			results = append(results, r)
 		}
+		for _, st := range batch.Settlements {
+			r, err := p.settlement(ctx, st)
+			if err != nil {
+				return err
+			}
+			results = append(results, r)
+		}
 		return nil
 	})
 	if err != nil {
@@ -121,6 +128,42 @@ func (p pusher) expense(ctx context.Context, e store.ExpenseWithShares) (Result,
 
 	e.CreatedBy, e.Version, e.CreatedAt = p.userID, p.version, p.now
 	if _, _, err := p.q.CreateExpense(ctx, e); err != nil {
+		return r, err
+	}
+	r.Version = p.version
+	return r, nil
+}
+
+func (p pusher) settlement(ctx context.Context, s store.Settlement) (Result, error) {
+	r := Result{ID: s.ID, Kind: KindSettlement}
+	stored, err := p.q.GetSettlement(ctx, s.ID)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+	case err != nil:
+		return r, fmt.Errorf("get settlement %s: %w", s.ID, err)
+	case stored.LedgerID == s.LedgerID && stored.CreatedBy == p.userID:
+		r.Version = stored.Version
+		return r, nil
+	}
+	ledger, err := p.ledger(ctx, s.LedgerID)
+	if err != nil {
+		return r, err
+	}
+	if ledger == nil {
+		r.Rejection = &Rejection{ReasonLedgerUnavailable, fmt.Errorf("ledger %s", s.LedgerID)}
+		return r, nil
+	}
+	if stored.ID != "" {
+		r.Rejection = &Rejection{ReasonIDConflict, errors.New("the id belongs to another settlement")}
+		return r, nil
+	}
+	if err := domain.ValidateSettlement(ledger.Domain(), ledgers.Settlement(s)); err != nil {
+		r.Rejection = rejection(err)
+		return r, nil
+	}
+
+	s.CreatedBy, s.Version, s.CreatedAt = p.userID, p.version, p.now
+	if _, _, err := p.q.CreateSettlement(ctx, s); err != nil {
 		return r, err
 	}
 	r.Version = p.version

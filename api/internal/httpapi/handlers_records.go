@@ -2,6 +2,8 @@ package httpapi
 
 import (
 	"context"
+	"fmt"
+	"net/http"
 
 	"github.com/google/uuid"
 	openapi_types "github.com/oapi-codegen/runtime/types"
@@ -14,11 +16,44 @@ import (
 // Handlers for Expenses, Settlements and sync. They translate between the
 // contract and package sync, which holds the rules.
 
+// maxBatch is the most Expenses, and the most Settlements, a RecordBatch takes.
+const maxBatch = 100
+
+// unauthenticated answers a request without a valid session.
+var unauthenticated = problem(http.StatusUnauthorized, ProblemCodeUnauthenticated, "Sign in first.", "")
+
+func problem(status int, code ProblemCode, title, detail string) Problem {
+	p := Problem{Status: status, Code: code, Title: title}
+	if detail != "" {
+		p.Detail = &detail
+	}
+	return p
+}
+
 func (s *Server) PushRecords(ctx context.Context, req PushRecordsRequestObject) (PushRecordsResponseObject, error) {
-	user, _ := auth.CurrentUser(ctx)
+	user, ok := auth.CurrentUser(ctx)
+	if !ok {
+		return PushRecords401ApplicationProblemPlusJSONResponse{UnauthorizedApplicationProblemPlusJSONResponse(unauthenticated)}, nil
+	}
+	if len(req.Body.Expenses) > maxBatch || len(req.Body.Settlements) > maxBatch {
+		p := problem(http.StatusBadRequest, ProblemCodeValidationFailed, "The request does not match the API contract.",
+			fmt.Sprintf("a batch takes at most %d expenses and %d settlements", maxBatch, maxBatch))
+		return PushRecords400ApplicationProblemPlusJSONResponse{BadRequestApplicationProblemPlusJSONResponse(p)}, nil
+	}
 	batch := sync.Batch{}
 	for _, e := range req.Body.Expenses {
 		batch.Expenses = append(batch.Expenses, newExpense(e))
+	}
+	for _, st := range req.Body.Settlements {
+		batch.Settlements = append(batch.Settlements, store.Settlement{
+			ID:           st.Id.String(),
+			LedgerID:     st.LedgerId.String(),
+			FromMemberID: st.FromMemberId.String(),
+			ToMemberID:   st.ToMemberId.String(),
+			Amount:       st.Amount,
+			Currency:     st.Currency,
+			Date:         st.Date.Time,
+		})
 	}
 	results, err := sync.Push(ctx, s.deps.DB, user.ID, batch)
 	if err != nil {
