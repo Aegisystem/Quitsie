@@ -36,12 +36,14 @@ const storage: KeyValueStorage = {
   },
 }
 
-// The server sends a failed Google sign-in to /login?error=google. Read it once
-// and put the address back to the app's root, keeping the route.
+// The server sends a failed Google sign-in to /login?error=google and a
+// cancelled one to /login. Read it once and put the address back to the app's
+// root, keeping the route.
 function takeGoogleFailure(): boolean {
-  if (!isGoogleFailure(new URL(location.href))) return false
+  const url = new URL(location.href)
+  if (url.pathname !== '/login') return false
   history.replaceState(null, '', `/${location.hash}`)
-  return true
+  return isGoogleFailure(url)
 }
 
 export const session = createSession({ client: api, storage, notice: takeGoogleFailure() ? 'googleFailed' : undefined })
