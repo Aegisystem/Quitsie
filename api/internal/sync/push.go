@@ -44,7 +44,6 @@ func Push(ctx context.Context, db *sql.DB, userID string, batch Batch) ([]Result
 	now := time.Now().UTC()
 	var results []Result
 	_, err := store.Write(ctx, db, func(q *store.Queries, version int64) error {
-		results = results[:0]
 		p := pusher{q: q, userID: userID, version: version, now: now, ledgers: make(map[string]*ledgers.Snapshot)}
 		for _, e := range batch.Expenses {
 			r, err := p.expense(ctx, e)
