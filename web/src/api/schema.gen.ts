@@ -214,7 +214,7 @@ export interface paths {
         head?: never;
         /**
          * Renames a Group, turns Debt simplification on or off, or changes the Group currency.
-         * @description Changing `currency` relabels every Expense and Settlement of the Group: same numbers, another currency, never an exchange rate. When the new currency has fewer decimals, the change is only allowed if no amount loses minor units; otherwise it answers `409 currency_precision_loss` with the records to fix. Unsynced records created before the change will be rejected with `currency_mismatch`.
+         * @description Changing `currency` relabels every Expense and Settlement of the Group, deleted ones included: same numbers, another currency, never an exchange rate. When the new currency has fewer decimals, the change is only allowed if no amount loses minor units; otherwise it answers `409 currency_precision_loss` with the records to fix. Unsynced records created before the change will be rejected with `currency_mismatch`.
          */
         patch: operations["updateGroup"];
         trace?: never;
@@ -390,7 +390,7 @@ export interface paths {
         put?: never;
         /**
          * Joins a Group as a new Member, named after the User.
-         * @description Only Group links allow it; a pending Friend's link can only be claimed (`400 validation_failed`).
+         * @description A User who left the Group recovers their former member instead, with its whole history. Only Group links allow it; a pending Friend's link can only be claimed (`400 validation_failed`).
          */
         post: operations["joinGroup"];
         delete?: never;
@@ -410,7 +410,7 @@ export interface paths {
         put?: never;
         /**
          * Creates a Friendship with a pending Friend or with an existing User.
-         * @description Send `name` (and optionally `email`) for a pending Friend, or `userId` for a User the caller already shares a Group with. Never both. An email never links to a User automatically.
+         * @description Send `name` (and optionally `email`) for a pending Friend, or `userId` for another User the caller already shares a Group with. Never both. An email never links to a User automatically.
          */
         post: operations["createFriendship"];
         delete?: never;
@@ -1765,7 +1765,7 @@ export interface operations {
                     "application/json": components["schemas"]["Invite"];
                 };
             };
-            /** @description The link does not exist or was revoked (`invite_link_invalid`). */
+            /** @description The link does not exist or was revoked (`invite_link_invalid`). A pending Friend's link also ends once the Friend is linked, except for those already in the Friendship. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -1813,7 +1813,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description The Member is already linked (`member_not_pending`), the User already holds a Member in this Group (`already_member`), or the User already has a Friendship with that person (`friendship_exists`). */
+            /** @description The Member is already linked (`member_not_pending`), the User already holds a Member in this ledger, even a former one, who comes back with `joinGroup` (`already_member`), or the User already has a Friendship with that person (`friendship_exists`). */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -1837,7 +1837,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description The User's new Member. */
+            /** @description The User's Member, new or recovered. */
             201: {
                 headers: {
                     [name: string]: unknown;

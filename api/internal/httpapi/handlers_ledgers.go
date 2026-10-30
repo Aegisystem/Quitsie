@@ -57,16 +57,16 @@ func invalid(format string, args ...any) *failure {
 }
 
 const (
-	maxNameLength  = 80
-	maxEmailLength = 254
-	maxNewMembers  = 50
+	maxGroupOrMemberName = 80
+	maxEmailLength       = 254
+	maxNewMembers        = 50
 )
 
 // cleanName trims a Group's or a Member's name and checks its length.
 func cleanName(name string) (string, error) {
 	name = strings.TrimSpace(name)
-	if n := utf8.RuneCountInString(name); n == 0 || n > maxNameLength {
-		return "", invalid("a name must have between 1 and %d characters", maxNameLength)
+	if n := utf8.RuneCountInString(name); n == 0 || n > maxGroupOrMemberName {
+		return "", invalid("a name must have between 1 and %d characters", maxGroupOrMemberName)
 	}
 	return name, nil
 }
