@@ -51,7 +51,7 @@ export function App() {
     case 'activity':
       return <Activity />
     case 'account':
-      return <Account />
+      return <Account user={state.user} />
     case 'records':
       return <Records />
     case 'ledger':
