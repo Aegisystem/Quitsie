@@ -8,6 +8,8 @@ import (
 	"maps"
 	"slices"
 
+	"github.com/Aegisystem/Quitsie/api/internal/domain"
+	"github.com/Aegisystem/Quitsie/api/internal/ledgers"
 	"github.com/Aegisystem/Quitsie/api/internal/store"
 )
 
@@ -20,12 +22,21 @@ type Changes struct {
 	Expenses    []store.ExpenseWithShares
 	Settlements []store.Settlement
 	Activities  []store.Activity
+	// Debts are the current Debts of every ledger that changed, simplified or
+	// not as each ledger says. They replace the previous ones.
+	Debts []LedgerDebts
 	// Dropped are the ledgers the replica must drop with everything in them;
 	// nothing else in Changes belongs to them.
 	Dropped []DroppedLedger
 	// VisibleLedgerIDs are all the ledgers the User can see now, changed or
 	// not. The replica drops any other, even one that is not in Dropped.
 	VisibleLedgerIDs []string
+}
+
+// LedgerDebts are the Debts of one ledger.
+type LedgerDebts struct {
+	LedgerID string
+	Debts    []domain.Debt
 }
 
 // DropReason says why a ledger left the User's replica. The values are the
@@ -62,6 +73,9 @@ func Pull(ctx context.Context, db *sql.DB, userID string, since int64) (Changes,
 			return ErrCursorAhead
 		}
 		out = withoutDropped(c)
+		if out.Debts, err = changedDebts(ctx, q, out); err != nil {
+			return err
+		}
 		visible, err := q.ListLedgersOfUser(ctx, userID)
 		if err != nil {
 			return fmt.Errorf("list ledgers of user: %w", err)
@@ -108,4 +122,36 @@ func withoutDropped(c store.Changes) Changes {
 		out.Dropped = append(out.Dropped, DroppedLedger{LedgerID: id, Reason: reasons[id]})
 	}
 	return out
+}
+
+// changedDebts computes the Debts of every ledger with a change that may move
+// them. The client cannot: Debt simplification only runs here (ADR 0003).
+func changedDebts(ctx context.Context, q *store.Queries, c Changes) ([]LedgerDebts, error) {
+	changed := make(map[string]bool)
+	for _, l := range c.Ledgers {
+		changed[l.ID] = true
+	}
+	for _, m := range c.Members {
+		changed[m.LedgerID] = true
+	}
+	for _, e := range c.Expenses {
+		changed[e.LedgerID] = true
+	}
+	for _, s := range c.Settlements {
+		changed[s.LedgerID] = true
+	}
+
+	out := make([]LedgerDebts, 0, len(changed))
+	for _, id := range slices.Sorted(maps.Keys(changed)) {
+		l, err := ledgers.Load(ctx, q, id)
+		if err != nil {
+			return nil, err
+		}
+		debts := domain.PairwiseDebts(l.Expenses(), l.Settlements())
+		if l.Ledger.SimplifyDebts {
+			debts = domain.SimplifyDebts(l.Balances())
+		}
+		out = append(out, LedgerDebts{LedgerID: id, Debts: debts})
+	}
+	return out, nil
 }

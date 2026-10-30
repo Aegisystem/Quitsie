@@ -734,3 +734,92 @@ func TestPullChangesShowsAFormerMemberToThoseWhoStay(t *testing.T) {
 		t.Errorf("members = %+v, want Beto as a former member", got.Members)
 	}
 }
+
+// expenseBy is an Expense in which payer paid total for debtor alone.
+func (tr trip) expenseBy(payer, debtor string, total int64) httpapi.NewExpense {
+	return httpapi.NewExpense{
+		Id: id(uuid.NewString()), LedgerId: id(tr.id), Description: "Taxi", Date: day("2026-10-26"),
+		Currency: "USD", Total: total, SplitMethod: httpapi.Exact,
+		PaidShares: []httpapi.PaidShare{{MemberId: id(payer), Amount: total}},
+		OwedShares: []httpapi.OwedShare{{MemberId: id(debtor), Amount: total}},
+	}
+}
+
+func debtsOf(t *testing.T, c httpapi.Changes, ledgerID string) []httpapi.Debt {
+	t.Helper()
+	for _, l := range c.Debts {
+		if l.LedgerId == id(ledgerID) {
+			return l.Debts
+		}
+	}
+	t.Fatalf("debts = %+v, want an entry for %s", c.Debts, ledgerID)
+	return nil
+}
+
+func TestPullChangesSimplifiesTheDebtsOfAGroupThatAsksForIt(t *testing.T) {
+	a := newRecordsAPI(t)
+	tr := a.seedTrip()
+	// Beto owes Ana 10 USD and Carla owes Beto 10 USD: Carla can pay Ana directly.
+	a.push(t, tr.ana, expenses(tr.expenseBy(tr.anaM, tr.betoM, 1000), tr.expenseBy(tr.betoM, tr.carlaM, 1000)))
+
+	got := debtsOf(t, a.pull(t, tr.ana, 0), tr.id)
+
+	want := []httpapi.Debt{{FromMemberId: id(tr.carlaM), ToMemberId: id(tr.anaM), Amount: 1000, Currency: "USD"}}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("debts = %+v, want %+v", got, want)
+	}
+}
+
+func TestPullChangesKeepsTheDebtsByPairInAGroupWithoutSimplification(t *testing.T) {
+	a := newRecordsAPI(t)
+	tr := a.seedTrip()
+	a.write(func(q *store.Queries, version int64) error {
+		_, err := q.UpdateLedger(context.Background(), store.UpdateLedgerParams{ID: tr.id, Name: "Viaje", SimplifyDebts: false, Version: version})
+		return err
+	})
+	a.push(t, tr.ana, expenses(tr.expenseBy(tr.anaM, tr.betoM, 1000), tr.expenseBy(tr.betoM, tr.carlaM, 1000)))
+
+	got := debtsOf(t, a.pull(t, tr.ana, 0), tr.id)
+
+	want := map[httpapi.Debt]bool{
+		{FromMemberId: id(tr.betoM), ToMemberId: id(tr.anaM), Amount: 1000, Currency: "USD"}:   true,
+		{FromMemberId: id(tr.carlaM), ToMemberId: id(tr.betoM), Amount: 1000, Currency: "USD"}: true,
+	}
+	if len(got) != len(want) || !want[got[0]] || !want[got[1]] {
+		t.Errorf("debts = %+v, want %+v", got, want)
+	}
+}
+
+func TestPullChangesGivesDebtsOnlyForLedgersThatChanged(t *testing.T) {
+	a := newRecordsAPI(t)
+	tr := a.seedTrip()
+	f := a.seedFriendship(tr.ana, tr.beto)
+	a.push(t, tr.ana, expenses(tr.dinner()))
+	cursor := a.pull(t, tr.ana, 0).Cursor
+	a.push(t, tr.ana, expenses(f.lunch()))
+
+	got := a.pull(t, tr.ana, cursor)
+
+	want := []httpapi.Debt{{FromMemberId: id(f.bM), ToMemberId: id(f.aM), Amount: 2000, Currency: "JPY"}}
+	if len(got.Debts) != 1 || !reflect.DeepEqual(debtsOf(t, got, f.id), want) {
+		t.Errorf("debts = %+v, want only the Friendship's %+v", got.Debts, want)
+	}
+}
+
+func TestPullChangesAnswersNoDebtsForASettledLedger(t *testing.T) {
+	a := newRecordsAPI(t)
+	tr := a.seedTrip()
+	a.push(t, tr.ana, expenses(tr.expenseBy(tr.anaM, tr.betoM, 1000)))
+	a.push(t, tr.beto, settlements(tr.payback()))
+
+	rec := a.do(tr.ana, http.MethodGet, "/api/v1/sync?since=0", nil)
+
+	body := decodeBody[struct {
+		Debts []struct {
+			Debts []httpapi.Debt `json:"debts"`
+		} `json:"debts"`
+	}](t, rec, http.StatusOK)
+	if len(body.Debts) != 1 || body.Debts[0].Debts == nil || len(body.Debts[0].Debts) != 0 {
+		t.Errorf("debts = %+v, want the trip with an empty list", body.Debts)
+	}
+}
