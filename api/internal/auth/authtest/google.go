@@ -1,4 +1,5 @@
-package auth_test
+// Package authtest helps tests sign in with Google without reaching it.
+package authtest
 
 import (
 	"crypto/rand"
@@ -17,17 +18,18 @@ import (
 
 	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/coreos/go-oidc/v3/oidc/oidctest"
+
+	"github.com/Aegisystem/Quitsie/api/internal/auth"
 )
 
 const (
 	googleClientID     = "quitsie-test.apps.googleusercontent.com"
 	googleClientSecret = "test-secret"
-	googleRedirectURL  = "https://quitsie.app/api/v1/auth/google/callback"
 	googleKeyID        = "test-key"
 )
 
-// googleAccount is who signs in at the fake Google.
-type googleAccount struct {
+// GoogleAccount is who signs in at the fake Google.
+type GoogleAccount struct {
 	Sub           string
 	Email         string
 	EmailVerified bool
@@ -39,49 +41,66 @@ type grant struct {
 	challenge   string
 	redirectURI string
 	nonce       string
-	account     googleAccount
+	account     GoogleAccount
 }
 
-// fakeGoogle is an OpenID Connect provider that behaves like Google's for
+// FakeGoogle is an OpenID Connect provider that behaves like Google's for
 // the authorization code flow with PKCE. oidctest serves discovery and the
-// signing keys; fakeGoogle adds the token endpoint and plays the consent
+// signing keys; FakeGoogle adds the token endpoint and plays the consent
 // screen.
-type fakeGoogle struct {
-	oidc *oidctest.Server
-	url  string
-	key  *rsa.PrivateKey
-	now  func() time.Time
+type FakeGoogle struct {
+	// URL is the issuer.
+	URL string
+	// Now is the time on the provider's clock.
+	Now func() time.Time
+
+	oidc        *oidctest.Server
+	key         *rsa.PrivateKey
+	redirectURL string
 
 	mu     sync.Mutex
 	grants map[string]grant
-	// tamper, when set, edits the ID token's claims before signing.
-	tamper func(claims map[string]any)
-	// signWith, when set, signs ID tokens with a key Google does not publish.
-	signWith *rsa.PrivateKey
+	// Tamper, when set, edits the ID token's claims before signing.
+	Tamper func(claims map[string]any)
+	// SignWith, when set, signs ID tokens with a key Google does not publish.
+	SignWith *rsa.PrivateKey
 }
 
-func newFakeGoogle(t *testing.T, now func() time.Time) *fakeGoogle {
+// NewFakeGoogle starts a provider that knows one client, whose callback is
+// redirectURL.
+func NewFakeGoogle(t *testing.T, redirectURL string, now func() time.Time) *FakeGoogle {
 	t.Helper()
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
 		t.Fatal(err)
 	}
-	g := &fakeGoogle{
+	g := &FakeGoogle{
 		oidc: &oidctest.Server{
 			PublicKeys: []oidctest.PublicKey{{PublicKey: key.Public(), KeyID: googleKeyID, Algorithm: oidc.RS256}},
 		},
-		key:    key,
-		now:    now,
-		grants: make(map[string]grant),
+		key:         key,
+		Now:         now,
+		redirectURL: redirectURL,
+		grants:      make(map[string]grant),
 	}
 	srv := httptest.NewServer(g)
 	t.Cleanup(srv.Close)
-	g.url = srv.URL
+	g.URL = srv.URL
 	g.oidc.SetIssuer(srv.URL)
 	return g
 }
 
-func (g *fakeGoogle) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+// Config is the Service's configuration to sign in with this provider.
+func (g *FakeGoogle) Config() *auth.GoogleConfig {
+	return &auth.GoogleConfig{
+		ClientID:     googleClientID,
+		ClientSecret: googleClientSecret,
+		RedirectURL:  g.redirectURL,
+		IssuerURL:    g.URL,
+	}
+}
+
+func (g *FakeGoogle) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path == "/token" {
 		g.serveToken(w, r)
 		return
@@ -89,22 +108,22 @@ func (g *fakeGoogle) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	g.oidc.ServeHTTP(w, r)
 }
 
-// consent plays the person approving Quitsie on Google's consent screen:
+// Consent plays the person approving Quitsie on Google's consent screen:
 // it checks the authorization request and returns the URL Google would
 // send the browser back to.
-func (g *fakeGoogle) consent(t *testing.T, authURL string, account googleAccount) string {
+func (g *FakeGoogle) Consent(t *testing.T, authURL string, account GoogleAccount) string {
 	t.Helper()
 	u, err := url.Parse(authURL)
 	if err != nil {
 		t.Fatal(err)
 	}
 	q := u.Query()
-	if got := u.Scheme + "://" + u.Host + u.Path; got != g.url+"/auth" {
-		t.Fatalf("authorization endpoint = %s, want %s/auth", got, g.url)
+	if got := u.Scheme + "://" + u.Host + u.Path; got != g.URL+"/auth" {
+		t.Fatalf("authorization endpoint = %s, want %s/auth", got, g.URL)
 	}
 	checks := map[string]bool{
 		"client_id":             q.Get("client_id") == googleClientID,
-		"redirect_uri":          q.Get("redirect_uri") == googleRedirectURL,
+		"redirect_uri":          q.Get("redirect_uri") == g.redirectURL,
 		"response_type":         q.Get("response_type") == "code",
 		"scope":                 hasScopes(q.Get("scope"), "openid", "email", "profile"),
 		"code_challenge_method": q.Get("code_challenge_method") == "S256",
@@ -140,7 +159,7 @@ func hasScopes(scope string, want ...string) bool {
 	return true
 }
 
-func (g *fakeGoogle) serveToken(w http.ResponseWriter, r *http.Request) {
+func (g *FakeGoogle) serveToken(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
 		tokenError(w, "invalid_request")
 		return
@@ -160,7 +179,7 @@ func (g *fakeGoogle) serveToken(w http.ResponseWriter, r *http.Request) {
 	g.mu.Lock()
 	gr, found := g.grants[r.PostForm.Get("code")]
 	delete(g.grants, r.PostForm.Get("code")) // codes work once
-	tamper, signWith := g.tamper, g.signWith
+	tamper, signWith := g.Tamper, g.SignWith
 	g.mu.Unlock()
 
 	verifier := sha256.Sum256([]byte(r.PostForm.Get("code_verifier")))
@@ -172,9 +191,9 @@ func (g *fakeGoogle) serveToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	now := g.now()
+	now := g.Now()
 	claims := map[string]any{
-		"iss":            g.url,
+		"iss":            g.URL,
 		"aud":            googleClientID,
 		"sub":            gr.account.Sub,
 		"email":          gr.account.Email,

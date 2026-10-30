@@ -14,38 +14,36 @@ import (
 	"golang.org/x/oauth2"
 
 	"github.com/Aegisystem/Quitsie/api/internal/auth"
+	"github.com/Aegisystem/Quitsie/api/internal/auth/authtest"
 )
 
+const googleRedirectURL = "https://quitsie.app/api/v1/auth/google/callback"
+
 // newGoogleFixture returns a fixture whose Service signs in with the fake Google.
-func newGoogleFixture(t *testing.T) (*fixture, *fakeGoogle) {
+func newGoogleFixture(t *testing.T) (*fixture, *authtest.FakeGoogle) {
 	t.Helper()
-	var g *fakeGoogle
+	var g *authtest.FakeGoogle
 	f := newFixture(t, func(cfg *auth.Config) {
-		g = newFakeGoogle(t, cfg.Now)
-		cfg.Google = &auth.GoogleConfig{
-			ClientID:     googleClientID,
-			ClientSecret: googleClientSecret,
-			RedirectURL:  googleRedirectURL,
-			IssuerURL:    g.url,
-		}
+		g = authtest.NewFakeGoogle(t, googleRedirectURL, cfg.Now)
+		cfg.Google = g.Config()
 	})
 	return f, g
 }
 
 // googleCallback starts signing in with Google and returns the request the
 // browser makes when Google sends it back, carrying the flow cookie.
-func (f *fixture) googleCallback(t *testing.T, g *fakeGoogle, account googleAccount) *http.Request {
+func (f *fixture) googleCallback(t *testing.T, g *authtest.FakeGoogle, account authtest.GoogleAccount) *http.Request {
 	t.Helper()
 	authURL, flow, err := f.svc.BeginGoogle(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
-	req := httptest.NewRequest(http.MethodGet, g.consent(t, authURL, account), nil)
+	req := httptest.NewRequest(http.MethodGet, g.Consent(t, authURL, account), nil)
 	req.AddCookie(flow)
 	return req
 }
 
-var anaAtGoogle = googleAccount{Sub: "108", Email: "ana@gmail.com", EmailVerified: true, Name: "Ana Pérez"}
+var anaAtGoogle = authtest.GoogleAccount{Sub: "108", Email: "ana@gmail.com", EmailVerified: true, Name: "Ana Pérez"}
 
 func TestGoogleSignsANewUserIn(t *testing.T) {
 	f, g := newGoogleFixture(t)
@@ -163,15 +161,17 @@ func TestGoogleIDTokensAreVerified(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for name, spoil := range map[string]func(g *fakeGoogle){
-		"wrong nonce": func(g *fakeGoogle) { g.tamper = func(c map[string]any) { c["nonce"] = "replayed" } },
-		"another client": func(g *fakeGoogle) {
-			g.tamper = func(c map[string]any) { c["aud"] = "someone-else.apps.googleusercontent.com" }
+	for name, spoil := range map[string]func(g *authtest.FakeGoogle){
+		"wrong nonce": func(g *authtest.FakeGoogle) { g.Tamper = func(c map[string]any) { c["nonce"] = "replayed" } },
+		"another client": func(g *authtest.FakeGoogle) {
+			g.Tamper = func(c map[string]any) { c["aud"] = "someone-else.apps.googleusercontent.com" }
 		},
-		"another issuer":   func(g *fakeGoogle) { g.tamper = func(c map[string]any) { c["iss"] = "https://evil.example" } },
-		"expired":          func(g *fakeGoogle) { g.tamper = func(c map[string]any) { c["exp"] = g.now().Add(-time.Minute).Unix() } },
-		"unknown key":      func(g *fakeGoogle) { g.signWith = otherKey },
-		"unverified email": func(g *fakeGoogle) { g.tamper = func(c map[string]any) { c["email_verified"] = false } },
+		"another issuer": func(g *authtest.FakeGoogle) { g.Tamper = func(c map[string]any) { c["iss"] = "https://evil.example" } },
+		"expired": func(g *authtest.FakeGoogle) {
+			g.Tamper = func(c map[string]any) { c["exp"] = g.Now().Add(-time.Minute).Unix() }
+		},
+		"unknown key":      func(g *authtest.FakeGoogle) { g.SignWith = otherKey },
+		"unverified email": func(g *authtest.FakeGoogle) { g.Tamper = func(c map[string]any) { c["email_verified"] = false } },
 	} {
 		t.Run(name, func(t *testing.T) {
 			f, g := newGoogleFixture(t)
