@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"crypto/subtle"
 	"database/sql"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"net/http"
@@ -101,8 +102,8 @@ func (g *google) client(ctx context.Context, now func() time.Time) (*oauth2.Conf
 
 // BeginGoogle starts signing in with Google. Set the returned cookie and
 // redirect the browser to authURL; Google sends it back to RedirectURL,
-// where FinishGoogle takes over.
-func (s *Service) BeginGoogle(ctx context.Context) (authURL string, flow *http.Cookie, err error) {
+// where FinishGoogle takes over and hands returnTo back in SignIn.ReturnTo.
+func (s *Service) BeginGoogle(ctx context.Context, returnTo string) (authURL string, flow *http.Cookie, err error) {
 	if s.google == nil {
 		return "", nil, ErrGoogleDisabled
 	}
@@ -118,7 +119,7 @@ func (s *Service) BeginGoogle(ctx context.Context) (authURL string, flow *http.C
 	authURL = oauth.AuthCodeURL(state, oidc.Nonce(nonce), oauth2.S256ChallengeOption(verifier))
 	flow = &http.Cookie{
 		Name:     GoogleCookieName,
-		Value:    strings.Join([]string{state, nonce, verifier}, "."),
+		Value:    strings.Join([]string{state, nonce, verifier, base64.RawURLEncoding.EncodeToString([]byte(returnTo))}, "."),
 		Path:     s.google.cookiePath,
 		MaxAge:   int(googleFlowLifetime / time.Second),
 		HttpOnly: true,
@@ -151,7 +152,7 @@ func (s *Service) FinishGoogle(ctx context.Context, r *http.Request, device stri
 	if err != nil {
 		return SignIn{}, fmt.Errorf("%w: no flow cookie (expired, or started in another browser)", ErrGoogleFailed)
 	}
-	state, nonce, verifier, ok := splitFlow(cookie.Value)
+	state, nonce, verifier, returnTo, ok := splitFlow(cookie.Value)
 	if !ok || subtle.ConstantTimeCompare([]byte(state), []byte(q.Get("state"))) != 1 {
 		return SignIn{}, fmt.Errorf("%w: state does not match", ErrGoogleFailed)
 	}
@@ -200,7 +201,7 @@ func (s *Service) FinishGoogle(ctx context.Context, r *http.Request, device stri
 		if err != nil {
 			return err
 		}
-		signIn = SignIn{User: user, Token: token, NewUser: created}
+		signIn = SignIn{User: user, Token: token, NewUser: created, ReturnTo: returnTo}
 		return nil
 	})
 	if err != nil {
@@ -219,12 +220,16 @@ func (s *Service) ClearGoogleCookie() *http.Cookie {
 	return &http.Cookie{Name: GoogleCookieName, Path: path, MaxAge: -1, HttpOnly: true, Secure: true, SameSite: http.SameSiteLaxMode}
 }
 
-func splitFlow(value string) (state, nonce, verifier string, ok bool) {
+func splitFlow(value string) (state, nonce, verifier, returnTo string, ok bool) {
 	parts := strings.Split(value, ".")
-	if len(parts) != 3 {
-		return "", "", "", false
+	if len(parts) != 4 {
+		return "", "", "", "", false
 	}
-	return parts[0], parts[1], parts[2], true
+	decoded, err := base64.RawURLEncoding.DecodeString(parts[3])
+	if err != nil {
+		return "", "", "", "", false
+	}
+	return parts[0], parts[1], parts[2], string(decoded), true
 }
 
 // userByGoogle finds the User with this Google account. Failing that, it

@@ -68,6 +68,9 @@ type SignIn struct {
 	// NewUser is true when this sign-in created the User, so the PWA can ask
 	// for a name and a PreferredCurrency.
 	NewUser bool
+	// ReturnTo is what BeginGoogle was given; it comes from a cookie, so
+	// check it before redirecting there. Empty for a sign-in with a code.
+	ReturnTo string
 }
 
 // inTx runs fn in a write transaction. The store opens SQLite with

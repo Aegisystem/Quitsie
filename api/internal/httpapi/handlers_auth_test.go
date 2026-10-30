@@ -3,6 +3,7 @@ package httpapi_test
 import (
 	"context"
 	"net/http"
+	"net/url"
 	"reflect"
 	"slices"
 	"strings"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"github.com/Aegisystem/Quitsie/api/internal/auth"
+	"github.com/Aegisystem/Quitsie/api/internal/auth/authtest"
 	"github.com/Aegisystem/Quitsie/api/internal/httpapi"
 	"github.com/Aegisystem/Quitsie/api/internal/store"
 )
@@ -334,5 +336,119 @@ func TestDeletingTheAccount(t *testing.T) {
 	again := api.newClient(t).signIn("ana@example.com")
 	if !again.NewUser || again.User.Id == ana.Id {
 		t.Errorf("signing in again = %+v, want a new User, not %s", again, ana.Id)
+	}
+}
+
+var anaAtGoogle = authtest.GoogleAccount{Sub: "108", Email: "ana@gmail.com", EmailVerified: true, Name: "Ana Pérez"}
+
+// startGoogle follows the browser to Google and back: it returns the path
+// Google redirects it to after the person approves.
+func (c *client) startGoogle(g *authtest.FakeGoogle, target string, account authtest.GoogleAccount) string {
+	c.t.Helper()
+	resp := c.do(http.MethodGet, target, "")
+	wantStatus(c.t, resp, http.StatusFound)
+	return strings.TrimPrefix(g.Consent(c.t, resp.Header.Get("Location"), account), c.api.srv.URL)
+}
+
+func TestSigningInWithGoogle(t *testing.T) {
+	var google *authtest.FakeGoogle
+	api := newTestAPI(t, withGoogle(t, &google))
+	browser := api.newClient(t)
+
+	back := browser.startGoogle(google, "/api/v1/auth/google?returnTo=/invites/k3J9xQ2mV7pL8wR4tY6u%3Fjoin%3D1", anaAtGoogle)
+	resp := browser.do(http.MethodGet, back, "")
+
+	wantStatus(t, resp, http.StatusFound)
+	if got := resp.Header.Get("Location"); got != "/invites/k3J9xQ2mV7pL8wR4tY6u?join=1" {
+		t.Errorf("Location = %q, want the returnTo of the start", got)
+	}
+	if c := cookie(resp, auth.SessionCookieName); c == nil || !c.HttpOnly || !c.Secure {
+		t.Errorf("session cookie = %v, want a hidden, Secure cookie", c)
+	}
+	if c := cookie(resp, auth.GoogleCookieName); c == nil || c.MaxAge >= 0 {
+		t.Errorf("flow cookie = %v, want one that deletes it", c)
+	}
+	me := readJSON[httpapi.User](t, browser.do(http.MethodGet, "/api/v1/me", ""), http.StatusOK)
+	if me.Email != "ana@gmail.com" || me.Name != "Ana Pérez" {
+		t.Errorf("/me = %+v, want Ana Pérez <ana@gmail.com>", me)
+	}
+}
+
+func TestGoogleReturnsToTheHomeByDefault(t *testing.T) {
+	var google *authtest.FakeGoogle
+	api := newTestAPI(t, withGoogle(t, &google))
+	browser := api.newClient(t)
+
+	resp := browser.do(http.MethodGet, browser.startGoogle(google, "/api/v1/auth/google", anaAtGoogle), "")
+
+	wantStatus(t, resp, http.StatusFound)
+	if got := resp.Header.Get("Location"); got != "/" {
+		t.Errorf("Location = %q, want /", got)
+	}
+}
+
+// An open redirect would let a link to Quitsie land on someone else's site.
+func TestGoogleOnlyReturnsInsideTheApp(t *testing.T) {
+	var google *authtest.FakeGoogle
+	api := newTestAPI(t, withGoogle(t, &google))
+	browser := api.newClient(t)
+
+	for _, returnTo := range []string{
+		"groups",
+		"https://evil.example",
+		"//evil.example",
+		`/\evil.example`,
+		"/\t/evil.example",
+		"/" + strings.Repeat("a", 512),
+	} {
+		t.Run(returnTo, func(t *testing.T) {
+			target := "/api/v1/auth/google?" + url.Values{"returnTo": {returnTo}}.Encode()
+			wantProblem(t, browser.do(http.MethodGet, target, ""), http.StatusBadRequest, httpapi.ProblemCodeValidationFailed)
+		})
+	}
+}
+
+func TestAFailedGoogleSignInGoesBackToTheLoginScreen(t *testing.T) {
+	var google *authtest.FakeGoogle
+	api := newTestAPI(t, withGoogle(t, &google))
+
+	tests := []struct {
+		name     string
+		target   string
+		location string
+	}{
+		{"the flow started elsewhere", "/api/v1/auth/google/callback?code=c&state=s", "/login?error=google"},
+		{"Google failed", "/api/v1/auth/google/callback?error=server_error", "/login?error=google"},
+		{"the person declined", "/api/v1/auth/google/callback?error=access_denied", "/login"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resp := api.newClient(t).do(http.MethodGet, tt.target, "")
+
+			wantStatus(t, resp, http.StatusFound)
+			if got := resp.Header.Get("Location"); got != tt.location {
+				t.Errorf("Location = %q, want %q", got, tt.location)
+			}
+			if c := cookie(resp, auth.SessionCookieName); c != nil {
+				t.Errorf("set the session cookie %v", c)
+			}
+			if c := cookie(resp, auth.GoogleCookieName); c == nil || c.MaxAge >= 0 {
+				t.Errorf("flow cookie = %v, want one that deletes it", c)
+			}
+		})
+	}
+}
+
+func TestWithoutGoogleConfiguredItGoesBackToTheLoginScreen(t *testing.T) {
+	api := newTestAPI(t)
+	browser := api.newClient(t)
+
+	for _, target := range []string{"/api/v1/auth/google", "/api/v1/auth/google/callback?code=c&state=s"} {
+		resp := browser.do(http.MethodGet, target, "")
+
+		wantStatus(t, resp, http.StatusFound)
+		if got := resp.Header.Get("Location"); got != "/login?error=google" {
+			t.Errorf("%s: Location = %q, want /login?error=google", target, got)
+		}
 	}
 }

@@ -21,6 +21,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/Aegisystem/Quitsie/api/internal/auth"
+	"github.com/Aegisystem/Quitsie/api/internal/auth/authtest"
 	"github.com/Aegisystem/Quitsie/api/internal/httpapi"
 	"github.com/Aegisystem/Quitsie/api/internal/mail"
 	"github.com/Aegisystem/Quitsie/api/internal/store"
@@ -37,7 +38,7 @@ type testAPI struct {
 	mail *mailLog
 }
 
-func newTestAPI(t *testing.T, options ...func(*auth.Config)) *testAPI {
+func newTestAPI(t *testing.T, options ...func(*testAPI, *auth.Config)) *testAPI {
 	t.Helper()
 	ctx := context.Background()
 	db, err := store.Open(ctx, filepath.Join(t.TempDir(), "quitsie.db"))
@@ -49,22 +50,22 @@ func newTestAPI(t *testing.T, options ...func(*auth.Config)) *testAPI {
 		t.Fatal(err)
 	}
 
-	a := &testAPI{db: db, mail: &mailLog{}}
+	// The listener exists before the server starts, so everything can be
+	// built with the server's own origin.
+	a := &testAPI{db: db, mail: &mailLog{}, srv: httptest.NewUnstartedServer(nil)}
 	cfg := auth.Config{
 		DB:              db,
 		Mail:            mail.NewLogSender(slog.New(slog.NewTextHandler(a.mail, nil))),
 		DefaultCurrency: "USD",
+		Now:             time.Now,
 	}
 	for _, option := range options {
-		option(&cfg)
+		option(a, &cfg)
 	}
 	if a.auth, err = auth.New(cfg); err != nil {
 		t.Fatal(err)
 	}
 
-	// The listener exists before the server starts, so the handler can be
-	// built with the server's own origin.
-	a.srv = httptest.NewUnstartedServer(nil)
 	a.srv.Config.Handler = httpapi.NewHandler(httpapi.NewServer(db, "test").WithDeps(httpapi.Deps{
 		DB:      db,
 		Auth:    a.auth,
@@ -251,10 +252,19 @@ func (c *clock) Advance(d time.Duration) {
 
 // withClock makes the API read the time from a new clock, which it returns
 // through c.
-func withClock(c **clock) func(*auth.Config) {
-	return func(cfg *auth.Config) {
+func withClock(c **clock) func(*testAPI, *auth.Config) {
+	return func(_ *testAPI, cfg *auth.Config) {
 		*c = &clock{now: time.Date(2026, 10, 27, 12, 0, 0, 0, time.UTC)}
 		cfg.Now = (*c).Now
+	}
+}
+
+// withGoogle makes the API sign in with a new fake Google, which it returns
+// through g.
+func withGoogle(t *testing.T, g **authtest.FakeGoogle) func(*testAPI, *auth.Config) {
+	return func(a *testAPI, cfg *auth.Config) {
+		*g = authtest.NewFakeGoogle(t, a.origin()+"/api/v1/auth/google/callback", cfg.Now)
+		cfg.Google = (*g).Config()
 	}
 }
 

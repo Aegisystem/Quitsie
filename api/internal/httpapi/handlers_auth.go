@@ -3,11 +3,13 @@ package httpapi
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"math"
 	"net"
 	"net/http"
 	"regexp"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/google/uuid"
@@ -73,6 +75,81 @@ func (s *Server) VerifyLoginCode(ctx context.Context, req VerifyLoginCodeRequest
 }
 
 var sixDigits = regexp.MustCompile(`^[0-9]{6}$`)
+
+func (s *Server) StartGoogleLogin(ctx context.Context, req StartGoogleLoginRequestObject) (StartGoogleLoginResponseObject, error) {
+	returnTo := "/"
+	if req.Params.ReturnTo != nil {
+		returnTo = *req.Params.ReturnTo
+		if !insideTheApp(returnTo) {
+			return StartGoogleLogindefaultApplicationProblemPlusJSONResponse{
+				StatusCode: http.StatusBadRequest,
+				Body:       authProblem(http.StatusBadRequest, ProblemCodeValidationFailed, "returnTo must be a path of the app."),
+			}, nil
+		}
+	}
+	authURL, flow, err := s.deps.Auth.BeginGoogle(ctx, returnTo)
+	if err != nil {
+		slog.WarnContext(ctx, "cannot start Google sign-in", "err", err)
+		return redirect{location: googleFailedPath}, nil
+	}
+	return redirect{location: authURL, cookies: []*http.Cookie{flow}}, nil
+}
+
+// googleFailedPath is the login screen, told to say that Google failed.
+const googleFailedPath = "/login?error=google"
+
+func (s *Server) FinishGoogleLogin(ctx context.Context, _ FinishGoogleLoginRequestObject) (FinishGoogleLoginResponseObject, error) {
+	r := requestFrom(ctx)
+	clearFlow := s.deps.Auth.ClearGoogleCookie()
+	signIn, err := s.deps.Auth.FinishGoogle(ctx, r, device(r))
+	switch {
+	case err == nil:
+		returnTo := signIn.ReturnTo
+		if !insideTheApp(returnTo) {
+			returnTo = "/"
+		}
+		return redirect{location: returnTo, cookies: []*http.Cookie{clearFlow, auth.SessionCookie(signIn.Token)}}, nil
+	case errors.Is(err, auth.ErrGoogleCancelled):
+		return redirect{location: "/login", cookies: []*http.Cookie{clearFlow}}, nil
+	default:
+		slog.WarnContext(ctx, "Google sign-in failed", "err", err)
+		return redirect{location: googleFailedPath, cookies: []*http.Cookie{clearFlow}}, nil
+	}
+}
+
+// redirect sends a browser somewhere else with a 302. The generated
+// responses of the Google operations have room for one cookie, and they
+// would overwrite the one Authenticate sets when it renews a session.
+type redirect struct {
+	location string
+	cookies  []*http.Cookie
+}
+
+func (d redirect) visit(w http.ResponseWriter) error {
+	for _, c := range d.cookies {
+		http.SetCookie(w, c)
+	}
+	w.Header().Set("Location", d.location)
+	w.WriteHeader(http.StatusFound)
+	return nil
+}
+
+func (d redirect) VisitStartGoogleLoginResponse(w http.ResponseWriter) error { return d.visit(w) }
+
+func (d redirect) VisitFinishGoogleLoginResponse(w http.ResponseWriter) error { return d.visit(w) }
+
+// maxReturnToLength is the contract's limit on returnTo.
+const maxReturnToLength = 512
+
+// insideTheApp reports whether path can be redirected to without leaving
+// the app. Browsers read "//host" and "/\host" as another host, and they
+// drop tabs and newlines before reading a URL.
+func insideTheApp(path string) bool {
+	if len(path) > maxReturnToLength || !strings.HasPrefix(path, "/") || strings.ContainsFunc(path, unicode.IsControl) {
+		return false
+	}
+	return !strings.HasPrefix(path, "//") && !strings.HasPrefix(path, `/\`)
+}
 
 func (s *Server) Logout(ctx context.Context, _ LogoutRequestObject) (LogoutResponseObject, error) {
 	user, _ := auth.CurrentUser(ctx)

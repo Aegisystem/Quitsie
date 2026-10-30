@@ -34,7 +34,7 @@ func newGoogleFixture(t *testing.T) (*fixture, *authtest.FakeGoogle) {
 // browser makes when Google sends it back, carrying the flow cookie.
 func (f *fixture) googleCallback(t *testing.T, g *authtest.FakeGoogle, account authtest.GoogleAccount) *http.Request {
 	t.Helper()
-	authURL, flow, err := f.svc.BeginGoogle(context.Background())
+	authURL, flow, err := f.svc.BeginGoogle(context.Background(), "/")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -96,7 +96,7 @@ func TestAGoogleAccountStaysLinkedWhenItsEmailChanges(t *testing.T) {
 func TestTheGoogleFlowCookieIsShortLivedAndHidden(t *testing.T) {
 	f, _ := newGoogleFixture(t)
 
-	_, c, err := f.svc.BeginGoogle(context.Background())
+	_, c, err := f.svc.BeginGoogle(context.Background(), "/")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -138,7 +138,7 @@ func TestGoogleAnswersNeedTheBrowserThatAsked(t *testing.T) {
 		f.finishFails(t, withCookie(f.googleCallback(t, g, anaAtGoogle), ""), auth.ErrGoogleFailed)
 	})
 	t.Run("another flow's cookie", func(t *testing.T) {
-		_, other, err := f.svc.BeginGoogle(context.Background())
+		_, other, err := f.svc.BeginGoogle(context.Background(), "/")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -183,7 +183,7 @@ func TestGoogleIDTokensAreVerified(t *testing.T) {
 
 func TestDecliningAtGoogleIsACancellation(t *testing.T) {
 	f, _ := newGoogleFixture(t)
-	authURL, flow, err := f.svc.BeginGoogle(context.Background())
+	authURL, flow, err := f.svc.BeginGoogle(context.Background(), "/")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -197,7 +197,7 @@ func TestDecliningAtGoogleIsACancellation(t *testing.T) {
 func TestGoogleIsOffWithoutConfiguration(t *testing.T) {
 	f := newFixture(t)
 
-	if _, _, err := f.svc.BeginGoogle(context.Background()); !errors.Is(err, auth.ErrGoogleDisabled) {
+	if _, _, err := f.svc.BeginGoogle(context.Background(), "/"); !errors.Is(err, auth.ErrGoogleDisabled) {
 		t.Errorf("BeginGoogle: err = %v, want ErrGoogleDisabled", err)
 	}
 }

@@ -28,10 +28,7 @@ type operationRequest struct {
 var unimplemented = slices.Concat(unimplementedAuth, unimplementedLedgers, unimplementedRecords)
 
 // Sign-in, sessions and the profile.
-var unimplementedAuth = []operationRequest{
-	{"StartGoogleLogin", http.MethodGet, "/api/v1/auth/google?returnTo=/groups", ""},
-	{"FinishGoogleLogin", http.MethodGet, "/api/v1/auth/google/callback?code=c&state=s", ""},
-}
+var unimplementedAuth = []operationRequest{}
 
 // Groups, Members, invitations and Friendships.
 var unimplementedLedgers = []operationRequest{
@@ -65,7 +62,7 @@ var unimplementedRecords = []operationRequest{
 // The operations that have a real handler, per area.
 var (
 	implementedBase    = []string{"GetHealth"}
-	implementedAuth    = []string{"RequestLoginCode", "VerifyLoginCode", "GetMe", "Logout", "ListSessions", "RevokeSession", "UpdateMe", "DeleteMe"}
+	implementedAuth    = []string{"RequestLoginCode", "VerifyLoginCode", "GetMe", "Logout", "ListSessions", "RevokeSession", "UpdateMe", "DeleteMe", "StartGoogleLogin", "FinishGoogleLogin"}
 	implementedLedgers = []string{}
 	implementedRecords = []string{}
 	implemented        = slices.Concat(implementedBase, implementedAuth, implementedLedgers, implementedRecords)
