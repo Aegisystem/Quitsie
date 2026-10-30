@@ -130,6 +130,9 @@ func (p pusher) expense(ctx context.Context, e store.ExpenseWithShares) (Result,
 	if _, _, err := p.q.CreateExpense(ctx, e); err != nil {
 		return r, err
 	}
+	if err := logActivity(ctx, p.q, e.LedgerID, p.userID, activityExpenseCreated, expenseDetails(e.Expense), p.version, p.now); err != nil {
+		return r, err
+	}
 	r.Version = p.version
 	return r, nil
 }
@@ -164,6 +167,9 @@ func (p pusher) settlement(ctx context.Context, s store.Settlement) (Result, err
 
 	s.CreatedBy, s.Version, s.CreatedAt = p.userID, p.version, p.now
 	if _, _, err := p.q.CreateSettlement(ctx, s); err != nil {
+		return r, err
+	}
+	if err := logActivity(ctx, p.q, s.LedgerID, p.userID, activitySettlementCreated, settlementDetails(s), p.version, p.now); err != nil {
 		return r, err
 	}
 	r.Version = p.version

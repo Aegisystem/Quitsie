@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 
@@ -108,10 +109,14 @@ func (s *Server) PullChanges(ctx context.Context, req PullChangesRequestObject) 
 	if err != nil {
 		return nil, err
 	}
-	return PullChanges200JSONResponse(pulledChanges(c)), nil
+	out, err := pulledChanges(c)
+	if err != nil {
+		return nil, err
+	}
+	return PullChanges200JSONResponse(out), nil
 }
 
-func pulledChanges(c sync.Changes) Changes {
+func pulledChanges(c sync.Changes) (Changes, error) {
 	out := Changes{
 		Cursor:         c.Cursor,
 		Groups:         []Group{},
@@ -119,7 +124,7 @@ func pulledChanges(c sync.Changes) Changes {
 		Members:        make([]Member, len(c.Members)),
 		Expenses:       make([]Expense, len(c.Expenses)),
 		Settlements:    make([]Settlement, len(c.Settlements)),
-		Activities:     []Activity{},
+		Activities:     make([]Activity, len(c.Activities)),
 		Debts:          []LedgerDebts{},
 		DroppedLedgers: []DroppedLedger{},
 	}
@@ -142,7 +147,17 @@ func pulledChanges(c sync.Changes) Changes {
 	for i, st := range c.Settlements {
 		out.Settlements[i] = pulledSettlement(st)
 	}
-	return out
+	for i, a := range c.Activities {
+		var details map[string]any
+		if err := json.Unmarshal([]byte(a.Details), &details); err != nil {
+			return Changes{}, fmt.Errorf("details of activity %s: %w", a.ID, err)
+		}
+		out.Activities[i] = Activity{
+			Id: toUUID(a.ID), LedgerId: toUUID(a.LedgerID), UserId: toUUID(a.UserID), Kind: ActivityKind(a.Kind),
+			Details: details, CreatedAt: a.CreatedAt, Version: a.Version,
+		}
+	}
+	return out, nil
 }
 
 func pulledMember(m store.Member) Member {

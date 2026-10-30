@@ -563,3 +563,37 @@ func TestPullChangesBringsPushedSettlementsAndFriendships(t *testing.T) {
 		t.Errorf("settlement = %+v, want the payback as pushed", s)
 	}
 }
+
+func TestPushRecordsLeavesOneActivityPerStoredRecord(t *testing.T) {
+	a := newRecordsAPI(t)
+	tr := a.seedTrip()
+	dinner, payback := tr.dinner(), tr.payback()
+	broken := tr.dinner()
+	broken.Total = 1
+	batch := httpapi.RecordBatch{Expenses: []httpapi.NewExpense{dinner, broken}, Settlements: []httpapi.NewSettlement{payback}}
+	a.push(t, tr.ana, batch)
+	a.push(t, tr.ana, batch) // resending stores nothing new
+
+	got := a.pull(t, tr.beto, 0).Activities
+
+	if len(got) != 2 {
+		t.Fatalf("activities = %+v, want one for the dinner and one for the payback", got)
+	}
+	d, s := got[0], got[1]
+	if d.Kind != httpapi.ExpenseCreated || d.LedgerId != id(tr.id) || d.UserId != id(tr.ana.user.ID) || d.CreatedAt.IsZero() {
+		t.Errorf("first activity = %+v, want Ana creating the dinner", d)
+	}
+	wantDetails := map[string]any{"expenseId": dinner.Id.String(), "description": "Cena", "total": float64(3000), "currency": "USD"}
+	if !reflect.DeepEqual(d.Details, wantDetails) {
+		t.Errorf("details = %+v, want %+v", d.Details, wantDetails)
+	}
+	if s.Kind != httpapi.SettlementCreated || s.UserId != id(tr.ana.user.ID) {
+		t.Errorf("second activity = %+v, want Ana recording the payback", s)
+	}
+	wantDetails = map[string]any{
+		"settlementId": payback.Id.String(), "fromMemberId": tr.betoM, "toMemberId": tr.anaM, "amount": float64(1000), "currency": "USD",
+	}
+	if !reflect.DeepEqual(s.Details, wantDetails) {
+		t.Errorf("details = %+v, want %+v", s.Details, wantDetails)
+	}
+}

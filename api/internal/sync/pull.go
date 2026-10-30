@@ -15,6 +15,7 @@ type Changes struct {
 	Members     []store.Member
 	Expenses    []store.ExpenseWithShares
 	Settlements []store.Settlement
+	Activities  []store.Activity
 }
 
 // Pull returns what changed after the cursor since for userID, all from one
@@ -26,7 +27,7 @@ func Pull(ctx context.Context, db *sql.DB, userID string, since int64) (Changes,
 		if err != nil {
 			return err
 		}
-		out = Changes{Cursor: c.Cursor, Ledgers: c.Ledgers, Members: c.Members, Expenses: c.Expenses, Settlements: c.Settlements}
+		out = Changes{Cursor: c.Cursor, Ledgers: c.Ledgers, Members: c.Members, Expenses: c.Expenses, Settlements: c.Settlements, Activities: c.Activities}
 		return nil
 	})
 	return out, err
