@@ -25,3 +25,7 @@ ORDER BY last_used_at DESC, id DESC;
 -- name: DeleteExpiredSessions :exec
 DELETE FROM sessions
 WHERE last_used_at <= ?;
+
+-- name: DeleteSessionsOfUser :exec
+DELETE FROM sessions
+WHERE user_id = ?;

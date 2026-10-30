@@ -29,11 +29,11 @@ func (s *Server) RequestLoginCode(ctx context.Context, req RequestLoginCodeReque
 		return RequestLoginCode204Response{}, nil
 	case errors.Is(err, auth.ErrInvalidEmail):
 		return RequestLoginCode400ApplicationProblemPlusJSONResponse{BadRequestApplicationProblemPlusJSONResponse(
-			problem(http.StatusBadRequest, ProblemCodeValidationFailed, "The email address is not valid."))}, nil
+			authProblem(http.StatusBadRequest, ProblemCodeValidationFailed, "The email address is not valid."))}, nil
 	case errors.As(err, &limited):
 		seconds := int(math.Ceil(limited.RetryAfter.Seconds()))
 		return RequestLoginCode429ApplicationProblemPlusJSONResponse{
-			Body:    problem(http.StatusTooManyRequests, ProblemCodeRateLimited, "Too many login codes requested."),
+			Body:    authProblem(http.StatusTooManyRequests, ProblemCodeRateLimited, "Too many login codes requested."),
 			Headers: RequestLoginCode429ResponseHeaders{RetryAfter: &seconds},
 		}, nil
 	default:
@@ -44,7 +44,7 @@ func (s *Server) RequestLoginCode(ctx context.Context, req RequestLoginCodeReque
 func (s *Server) VerifyLoginCode(ctx context.Context, req VerifyLoginCodeRequestObject) (VerifyLoginCodeResponseObject, error) {
 	if !sixDigits.MatchString(req.Body.Code) {
 		return VerifyLoginCode400ApplicationProblemPlusJSONResponse(
-			problem(http.StatusBadRequest, ProblemCodeValidationFailed, "A login code is 6 digits.")), nil
+			authProblem(http.StatusBadRequest, ProblemCodeValidationFailed, "A login code is 6 digits.")), nil
 	}
 	r := requestFrom(ctx)
 	signIn, err := s.deps.Auth.VerifyCode(ctx, string(req.Body.Email), req.Body.Code, device(r))
@@ -52,16 +52,16 @@ func (s *Server) VerifyLoginCode(ctx context.Context, req VerifyLoginCodeRequest
 	case err == nil:
 	case errors.Is(err, auth.ErrInvalidEmail):
 		return VerifyLoginCode400ApplicationProblemPlusJSONResponse(
-			problem(http.StatusBadRequest, ProblemCodeValidationFailed, "The email address is not valid.")), nil
+			authProblem(http.StatusBadRequest, ProblemCodeValidationFailed, "The email address is not valid.")), nil
 	case errors.Is(err, auth.ErrWrongCode):
 		return VerifyLoginCode400ApplicationProblemPlusJSONResponse(
-			problem(http.StatusBadRequest, ProblemCodeLoginCodeInvalid, "The login code is wrong.")), nil
+			authProblem(http.StatusBadRequest, ProblemCodeLoginCodeInvalid, "The login code is wrong.")), nil
 	case errors.Is(err, auth.ErrCodeExpired):
 		return VerifyLoginCode400ApplicationProblemPlusJSONResponse(
-			problem(http.StatusBadRequest, ProblemCodeLoginCodeExpired, "The login code expired; request another.")), nil
+			authProblem(http.StatusBadRequest, ProblemCodeLoginCodeExpired, "The login code expired; request another.")), nil
 	case errors.Is(err, auth.ErrTooManyAttempts):
 		return VerifyLoginCode429ApplicationProblemPlusJSONResponse(
-			problem(http.StatusTooManyRequests, ProblemCodeTooManyAttempts, "The login code was guessed wrong too many times; request another.")), nil
+			authProblem(http.StatusTooManyRequests, ProblemCodeTooManyAttempts, "The login code was guessed wrong too many times; request another.")), nil
 	default:
 		return nil, err
 	}
@@ -109,7 +109,7 @@ func (s *Server) RevokeSession(ctx context.Context, req RevokeSessionRequestObje
 	err := s.deps.Auth.EndSession(ctx, user.ID, req.SessionId.String())
 	if errors.Is(err, auth.ErrSessionNotFound) {
 		return RevokeSession404ApplicationProblemPlusJSONResponse{NotFoundApplicationProblemPlusJSONResponse(
-			problem(http.StatusNotFound, ProblemCodeNotFound, "There is no such session."))}, nil
+			authProblem(http.StatusNotFound, ProblemCodeNotFound, "There is no such session."))}, nil
 	}
 	if err != nil {
 		return nil, err
@@ -130,13 +130,21 @@ func (s *Server) GetMe(ctx context.Context, _ GetMeRequestObject) (GetMeResponse
 	return GetMe200JSONResponse(userFrom(user)), nil
 }
 
+func (s *Server) DeleteMe(ctx context.Context, _ DeleteMeRequestObject) (DeleteMeResponseObject, error) {
+	user, _ := auth.CurrentUser(ctx)
+	if err := s.deps.Auth.DeleteUser(ctx, user.ID); err != nil {
+		return nil, err
+	}
+	return DeleteMe204Response{Headers: DeleteMe204ResponseHeaders{SetCookie: clearSessionCookie()}}, nil
+}
+
 // maxNameLength is the longest name a User can have, in characters.
 const maxNameLength = 80
 
 func (s *Server) UpdateMe(ctx context.Context, req UpdateMeRequestObject) (UpdateMeResponseObject, error) {
 	invalid := func(title string) (UpdateMeResponseObject, error) {
 		return UpdateMe400ApplicationProblemPlusJSONResponse{BadRequestApplicationProblemPlusJSONResponse(
-			problem(http.StatusBadRequest, ProblemCodeValidationFailed, title))}, nil
+			authProblem(http.StatusBadRequest, ProblemCodeValidationFailed, title))}, nil
 	}
 	change := store.UpdateUserParams{PreferredCurrency: req.Body.PreferredCurrency}
 	if req.Body.Name == nil && req.Body.PreferredCurrency == nil {
@@ -162,6 +170,11 @@ func (s *Server) UpdateMe(ctx context.Context, req UpdateMeRequestObject) (Updat
 		return nil, err
 	}
 	return UpdateMe200JSONResponse(userFrom(updated)), nil
+}
+
+// authProblem is the body of an error of these operations.
+func authProblem(status int, code ProblemCode, title string) Problem {
+	return Problem{Status: status, Code: code, Title: title}
 }
 
 func userFrom(u store.User) User {

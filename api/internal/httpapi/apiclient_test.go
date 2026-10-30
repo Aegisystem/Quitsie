@@ -18,6 +18,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/Aegisystem/Quitsie/api/internal/auth"
 	"github.com/Aegisystem/Quitsie/api/internal/httpapi"
 	"github.com/Aegisystem/Quitsie/api/internal/mail"
@@ -173,7 +175,7 @@ func (c *client) signIn(email string) httpapi.LoginResult {
 	wantStatus(c.t, c.do(http.MethodPost, "/api/v1/auth/login-code", `{"email":"`+email+`"}`), http.StatusNoContent)
 	code := c.api.mail.lastCode(c.t, email)
 	resp := c.do(http.MethodPost, "/api/v1/auth/login-code/verify", `{"email":"`+email+`","code":"`+code+`"}`)
-	return decode[httpapi.LoginResult](c.t, resp, http.StatusOK)
+	return readJSON[httpapi.LoginResult](c.t, resp, http.StatusOK)
 }
 
 // signedIn returns a new client already signed in as email.
@@ -191,8 +193,8 @@ func wantStatus(t *testing.T, resp *http.Response, status int) {
 	}
 }
 
-// decode checks the status and decodes the JSON body.
-func decode[T any](t *testing.T, resp *http.Response, status int) T {
+// readJSON checks the status and decodes the JSON body.
+func readJSON[T any](t *testing.T, resp *http.Response, status int) T {
 	t.Helper()
 	wantStatus(t, resp, status)
 	var v T
@@ -281,4 +283,39 @@ func (a *testAPI) withSessionCookie(t *testing.T, ck *http.Cookie) *client {
 	}
 	c.http.Jar.SetCookies(u, []*http.Cookie{{Name: ck.Name, Value: ck.Value, Path: "/", Secure: true, HttpOnly: true}})
 	return c
+}
+
+// newGroup creates a Group in USD with one Member per name, linked to the
+// User in users when there is one there, and returns its id.
+func (a *testAPI) newGroup(t *testing.T, names []string, users map[string]httpapi.User) string {
+	t.Helper()
+	groupID := uuid.NewString()
+	usd := "USD"
+	now := time.Now().UTC()
+	_, err := store.Write(context.Background(), a.db, func(q *store.Queries, version int64) error {
+		err := q.CreateLedger(context.Background(), store.CreateLedgerParams{
+			ID: groupID, Kind: "group", Name: "Viaje", Currency: &usd, SimplifyDebts: true, Version: version, CreatedAt: now,
+		})
+		if err != nil {
+			return err
+		}
+		for _, name := range names {
+			var userID *string
+			if u, ok := users[name]; ok {
+				id := u.Id.String()
+				userID = &id
+			}
+			err := q.CreateMember(context.Background(), store.CreateMemberParams{
+				ID: uuid.NewString(), LedgerID: groupID, UserID: userID, Name: name, Version: version, CreatedAt: now,
+			})
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return groupID
 }

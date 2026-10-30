@@ -18,7 +18,3 @@ func (s *Server) FinishGoogleLogin(context.Context, FinishGoogleLoginRequestObje
 }
 
 // --- profile ---
-
-func (s *Server) DeleteMe(context.Context, DeleteMeRequestObject) (DeleteMeResponseObject, error) {
-	return nil, errNotImplemented
-}

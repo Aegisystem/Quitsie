@@ -65,7 +65,7 @@ func requireSession(f StrictHandlerFunc, operationID string) StrictHandlerFunc {
 	}
 	return func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
 		if _, ok := auth.CurrentUser(ctx); !ok {
-			return nil, errUnauthenticated
+			return nil, errNoSession
 		}
 		return f(ctx, w, r, request)
 	}

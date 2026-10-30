@@ -13,18 +13,13 @@ import (
 // built yet; it becomes 501 not_implemented.
 var errNotImplemented = errors.New("not implemented")
 
-// errUnauthenticated answers an operation that needs a session when the
-// request has none; it becomes 401 unauthenticated.
-var errUnauthenticated = errors.New("unauthenticated")
-
-// problem is the body of an error response.
-func problem(status int, code ProblemCode, title string) Problem {
-	return Problem{Status: status, Code: code, Title: title}
-}
+// errNoSession answers an operation that needs a session when the request
+// has none; it becomes 401 unauthenticated.
+var errNoSession = errors.New("no session")
 
 // writeProblem writes an application/problem+json body (RFC 9457).
 func writeProblem(w http.ResponseWriter, status int, code ProblemCode, title, detail string) {
-	p := problem(status, code, title)
+	p := Problem{Status: status, Code: code, Title: title}
 	if detail != "" {
 		p.Detail = &detail
 	}
@@ -50,7 +45,7 @@ func handlerError(w http.ResponseWriter, r *http.Request, err error) {
 		writeProblem(w, http.StatusForbidden, ProblemCodeOriginMismatch, "Changes must come from the app's own origin.", "")
 		return
 	}
-	if errors.Is(err, errUnauthenticated) {
+	if errors.Is(err, errNoSession) {
 		writeProblem(w, http.StatusUnauthorized, ProblemCodeUnauthenticated, "Sign in first.", "")
 		return
 	}

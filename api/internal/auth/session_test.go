@@ -131,8 +131,7 @@ func TestADeletedUsersSessionsStopWorking(t *testing.T) {
 	f := newFixture(t)
 	signIn := f.signInWithCode(t, anaEmail, anaIP)
 
-	// Account deletion lives elsewhere; mark the User as deleted directly.
-	if _, err := f.db.Exec("UPDATE users SET deleted_at = ? WHERE id = ?", f.clock.Now(), signIn.User.ID); err != nil {
+	if err := f.svc.DeleteUser(context.Background(), signIn.User.ID); err != nil {
 		t.Fatal(err)
 	}
 

@@ -1,6 +1,7 @@
 package httpapi_test
 
 import (
+	"context"
 	"net/http"
 	"reflect"
 	"slices"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/Aegisystem/Quitsie/api/internal/auth"
 	"github.com/Aegisystem/Quitsie/api/internal/httpapi"
+	"github.com/Aegisystem/Quitsie/api/internal/store"
 )
 
 func TestSigningInWithAnEmailedCode(t *testing.T) {
@@ -21,7 +23,7 @@ func TestSigningInWithAnEmailedCode(t *testing.T) {
 	code := api.mail.lastCode(t, "ana@example.com")
 
 	resp = phone.do(http.MethodPost, "/api/v1/auth/login-code/verify", `{"email":"ana@example.com","code":"`+code+`"}`)
-	login := decode[httpapi.LoginResult](t, resp, http.StatusOK)
+	login := readJSON[httpapi.LoginResult](t, resp, http.StatusOK)
 
 	if !login.NewUser || login.User.Email != "ana@example.com" || login.User.Name != "" || login.User.PreferredCurrency != "USD" {
 		t.Errorf("login = %+v, want a new User ana@example.com with no name and USD", login)
@@ -31,7 +33,7 @@ func TestSigningInWithAnEmailedCode(t *testing.T) {
 		t.Errorf("session cookie = %v, want an HttpOnly, Secure, SameSite=Lax cookie", session)
 	}
 
-	me := decode[httpapi.User](t, phone.do(http.MethodGet, "/api/v1/me", ""), http.StatusOK)
+	me := readJSON[httpapi.User](t, phone.do(http.MethodGet, "/api/v1/me", ""), http.StatusOK)
 	if me != login.User {
 		t.Errorf("/me = %+v, want %+v", me, login.User)
 	}
@@ -127,7 +129,7 @@ func TestChangesMustComeFromTheAppsOwnOrigin(t *testing.T) {
 	}
 
 	ana.origin = ""
-	decode[httpapi.User](t, ana.do(http.MethodGet, "/api/v1/me", ""), http.StatusOK)
+	readJSON[httpapi.User](t, ana.do(http.MethodGet, "/api/v1/me", ""), http.StatusOK)
 }
 
 func TestAFailingSessionLookupIsAnInternalError(t *testing.T) {
@@ -218,7 +220,7 @@ func TestSigningOutEndsTheSessionOfThatDeviceOnly(t *testing.T) {
 	wantProblem(t, laptop.do(http.MethodGet, "/api/v1/me", ""), http.StatusUnauthorized, httpapi.ProblemCodeUnauthenticated)
 	// The server ended the session too, so a copy of the cookie is useless.
 	wantProblem(t, api.withSessionCookie(t, copied).do(http.MethodGet, "/api/v1/me", ""), http.StatusUnauthorized, httpapi.ProblemCodeUnauthenticated)
-	decode[httpapi.User](t, phone.do(http.MethodGet, "/api/v1/me", ""), http.StatusOK)
+	readJSON[httpapi.User](t, phone.do(http.MethodGet, "/api/v1/me", ""), http.StatusOK)
 }
 
 func TestAUserSeesAndClosesTheirSessions(t *testing.T) {
@@ -231,7 +233,7 @@ func TestAUserSeesAndClosesTheirSessions(t *testing.T) {
 	phone.signIn("ana@example.com")
 	beto, _ := api.signedIn(t, "beto@example.com")
 
-	sessions := decode[[]httpapi.Session](t, laptop.do(http.MethodGet, "/api/v1/auth/sessions", ""), http.StatusOK)
+	sessions := readJSON[[]httpapi.Session](t, laptop.do(http.MethodGet, "/api/v1/auth/sessions", ""), http.StatusOK)
 
 	if len(sessions) != 2 {
 		t.Fatalf("sessions = %+v, want the laptop's and the phone's", sessions)
@@ -250,13 +252,13 @@ func TestAUserSeesAndClosesTheirSessions(t *testing.T) {
 
 	// Nobody can close someone else's session, and it looks like it does not exist.
 	wantProblem(t, beto.do(http.MethodDelete, "/api/v1/auth/sessions/"+phoneSession.Id.String(), ""), http.StatusNotFound, httpapi.ProblemCodeNotFound)
-	decode[httpapi.User](t, phone.do(http.MethodGet, "/api/v1/me", ""), http.StatusOK)
+	readJSON[httpapi.User](t, phone.do(http.MethodGet, "/api/v1/me", ""), http.StatusOK)
 
 	wantStatus(t, laptop.do(http.MethodDelete, "/api/v1/auth/sessions/"+phoneSession.Id.String(), ""), http.StatusNoContent)
 
 	wantProblem(t, phone.do(http.MethodGet, "/api/v1/me", ""), http.StatusUnauthorized, httpapi.ProblemCodeUnauthenticated)
 	wantProblem(t, laptop.do(http.MethodDelete, "/api/v1/auth/sessions/"+phoneSession.Id.String(), ""), http.StatusNotFound, httpapi.ProblemCodeNotFound)
-	if left := decode[[]httpapi.Session](t, laptop.do(http.MethodGet, "/api/v1/auth/sessions", ""), http.StatusOK); len(left) != 1 || !left[0].Current {
+	if left := readJSON[[]httpapi.Session](t, laptop.do(http.MethodGet, "/api/v1/auth/sessions", ""), http.StatusOK); len(left) != 1 || !left[0].Current {
 		t.Errorf("sessions after closing the phone's = %+v, want only the laptop's", left)
 	}
 }
@@ -265,12 +267,12 @@ func TestAUserChangesTheirNameAndPreferredCurrency(t *testing.T) {
 	api := newTestAPI(t)
 	ana, me := api.signedIn(t, "ana@example.com")
 
-	got := decode[httpapi.User](t, ana.do(http.MethodPatch, "/api/v1/me", `{"name":"  Ana Pérez  "}`), http.StatusOK)
+	got := readJSON[httpapi.User](t, ana.do(http.MethodPatch, "/api/v1/me", `{"name":"  Ana Pérez  "}`), http.StatusOK)
 	me.Name = "Ana Pérez"
 	if got != me {
 		t.Errorf("after changing the name: %+v, want %+v", got, me)
 	}
-	got = decode[httpapi.User](t, ana.do(http.MethodPatch, "/api/v1/me", `{"preferredCurrency":"COP"}`), http.StatusOK)
+	got = readJSON[httpapi.User](t, ana.do(http.MethodPatch, "/api/v1/me", `{"preferredCurrency":"COP"}`), http.StatusOK)
 	me.PreferredCurrency = "COP"
 	if got != me {
 		t.Errorf("after changing the currency: %+v, want %+v", got, me)
@@ -287,7 +289,50 @@ func TestAUserChangesTheirNameAndPreferredCurrency(t *testing.T) {
 	} {
 		wantProblem(t, ana.do(http.MethodPatch, "/api/v1/me", body), http.StatusBadRequest, httpapi.ProblemCodeValidationFailed)
 	}
-	if got := decode[httpapi.User](t, ana.do(http.MethodGet, "/api/v1/me", ""), http.StatusOK); got != me {
+	if got := readJSON[httpapi.User](t, ana.do(http.MethodGet, "/api/v1/me", ""), http.StatusOK); got != me {
 		t.Errorf("after invalid changes: %+v, want it unchanged %+v", got, me)
+	}
+}
+
+func TestDeletingTheAccount(t *testing.T) {
+	api := newTestAPI(t)
+	laptop, ana := api.signedIn(t, "ana@example.com")
+	phone, _ := api.signedIn(t, "ana@example.com")
+	_, beto := api.signedIn(t, "beto@example.com")
+	trip := api.newGroup(t, []string{"Ana", "Beto"}, map[string]httpapi.User{"Ana": ana, "Beto": beto})
+
+	resp := laptop.do(http.MethodDelete, "/api/v1/me", "")
+
+	wantStatus(t, resp, http.StatusNoContent)
+	if c := cookie(resp, auth.SessionCookieName); c == nil || c.MaxAge >= 0 {
+		t.Errorf("delete cookie = %v, want one that deletes the session cookie", c)
+	}
+	// Every device is signed out.
+	for name, device := range map[string]*client{"laptop": laptop, "phone": phone} {
+		if resp := device.do(http.MethodGet, "/api/v1/me", ""); resp.StatusCode != http.StatusUnauthorized {
+			t.Errorf("%s after deleting the account: status = %d, want 401", name, resp.StatusCode)
+		}
+	}
+
+	// Ana's Member is pending again and keeps her name, so Beto's Balances
+	// do not change; Beto's next pull says so.
+	changes, err := store.ChangesSince(context.Background(), api.db, beto.Id.String(), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var members []string
+	for _, m := range changes.Members {
+		if m.LedgerID == trip && m.UserID == nil {
+			members = append(members, m.Name)
+		}
+	}
+	if !slices.Equal(members, []string{"Ana"}) {
+		t.Errorf("pending Members of the Group = %v, want [Ana]", members)
+	}
+
+	// The email is free: it signs up again as somebody new.
+	again := api.newClient(t).signIn("ana@example.com")
+	if !again.NewUser || again.User.Id == ana.Id {
+		t.Errorf("signing in again = %+v, want a new User, not %s", again, ana.Id)
 	}
 }

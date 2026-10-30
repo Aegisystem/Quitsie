@@ -210,3 +210,24 @@ func mustQuery(t *testing.T, rawURL string) url.Values {
 	}
 	return u.Query()
 }
+
+func TestADeletedAccountFreesItsGoogleAccount(t *testing.T) {
+	f, g := newGoogleFixture(t)
+	ctx := context.Background()
+	first, err := f.svc.FinishGoogle(ctx, f.googleCallback(t, g, anaAtGoogle), device)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := f.svc.DeleteUser(ctx, first.User.ID); err != nil {
+		t.Fatal(err)
+	}
+	again, err := f.svc.FinishGoogle(ctx, f.googleCallback(t, g, anaAtGoogle), device)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !again.NewUser || again.User.ID == first.User.ID {
+		t.Errorf("signing in again = %+v, want a new User, not %s", again, first.User.ID)
+	}
+}
