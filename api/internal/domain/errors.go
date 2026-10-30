@@ -21,8 +21,9 @@ var (
 	// ErrNotActiveMember: a Participant is not an active Member of the ledger.
 	ErrNotActiveMember = errors.New("not an active member of the ledger")
 	// ErrFormerMemberChanged: an edit changes the PaidShare or OwedShare of a
-	// former member, whose Balance must stay at zero.
-	ErrFormerMemberChanged = errors.New("the shares of a former member cannot change")
+	// former member, or a deletion removes a record that includes one. Their
+	// Balance must stay at zero.
+	ErrFormerMemberChanged = errors.New("the balance of a former member cannot change")
 	// ErrSameMember: a Settlement goes from a Member to themselves.
 	ErrSameMember = errors.New("a settlement needs two different members")
 	// ErrNotGroupCurrency: a record of a Group is not in the Group currency.
