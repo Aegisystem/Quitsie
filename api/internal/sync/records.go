@@ -138,3 +138,70 @@ func expenseOf(ctx context.Context, q *store.Queries, userID, id string) (store.
 	}
 	return e, ledger, nil
 }
+
+// DeleteSettlement makes the Settlement id stop counting in Balances. Deleting
+// it again changes nothing. It returns ErrNotFound if userID cannot see it.
+func DeleteSettlement(ctx context.Context, db *sql.DB, userID, id string) error {
+	return write(ctx, db, func(q *store.Queries, version int64) error {
+		stored, _, err := settlementOf(ctx, q, userID, id)
+		if err != nil {
+			return err
+		}
+		if stored.DeletedAt != nil {
+			return errUnchanged
+		}
+		now := time.Now().UTC()
+		if _, err := q.DeleteSettlement(ctx, store.DeleteSettlementParams{DeletedAt: &now, Version: version, ID: id}); err != nil {
+			return fmt.Errorf("delete settlement %s: %w", id, err)
+		}
+		return logActivity(ctx, q, stored.LedgerID, userID, activitySettlementDeleted, settlementDetails(stored), version, now)
+	})
+}
+
+// RestoreSettlement makes a deleted Settlement count again and returns it; a
+// live one comes back as it is. It returns ErrNotFound, or a *Rejection if
+// one of the two people is now a former member.
+func RestoreSettlement(ctx context.Context, db *sql.DB, userID, id string) (store.Settlement, error) {
+	var restored store.Settlement
+	err := write(ctx, db, func(q *store.Queries, version int64) error {
+		stored, ledger, err := settlementOf(ctx, q, userID, id)
+		if err != nil {
+			return err
+		}
+		restored = stored
+		if stored.DeletedAt == nil {
+			return errUnchanged
+		}
+		if err := domain.ValidateSettlement(ledger.Domain(), ledgers.Settlement(stored)); err != nil {
+			return rejection(err)
+		}
+		if restored, err = q.RestoreSettlement(ctx, store.RestoreSettlementParams{Version: version, ID: id}); err != nil {
+			return fmt.Errorf("restore settlement %s: %w", id, err)
+		}
+		return logActivity(ctx, q, stored.LedgerID, userID, activitySettlementRestored, settlementDetails(stored), version, time.Now().UTC())
+	})
+	if err != nil {
+		return store.Settlement{}, err
+	}
+	return restored, nil
+}
+
+// settlementOf loads the Settlement id and its ledger, or returns ErrNotFound
+// if userID cannot use that ledger.
+func settlementOf(ctx context.Context, q *store.Queries, userID, id string) (store.Settlement, *ledgers.Snapshot, error) {
+	s, err := q.GetSettlement(ctx, id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return store.Settlement{}, nil, ErrNotFound
+	}
+	if err != nil {
+		return store.Settlement{}, nil, fmt.Errorf("get settlement %s: %w", id, err)
+	}
+	ledger, err := usableLedger(ctx, q, userID, s.LedgerID)
+	if err != nil {
+		return store.Settlement{}, nil, err
+	}
+	if ledger == nil {
+		return store.Settlement{}, nil, ErrNotFound
+	}
+	return s, ledger, nil
+}

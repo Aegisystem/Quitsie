@@ -1105,3 +1105,80 @@ func TestDeleteAndRestoreAnExpenseHideWhatTheUserCannotSee(t *testing.T) {
 	decodeProblem(t, a.do(signedIn{}, http.MethodDelete, delete, nil), http.StatusUnauthorized, httpapi.ProblemCodeUnauthenticated)
 	decodeProblem(t, a.do(signedIn{}, http.MethodPost, restore, nil), http.StatusUnauthorized, httpapi.ProblemCodeUnauthenticated)
 }
+
+func TestDeleteAndRestoreASettlement(t *testing.T) {
+	a := newRecordsAPI(t)
+	tr := a.seedTrip()
+	a.pushed(t, tr.ana, tr.expenseBy(tr.anaM, tr.betoM, 1000))
+	payback := tr.payback()
+	a.push(t, tr.beto, settlements(payback))
+	cursor := a.pull(t, tr.ana, 0).Cursor
+	target := "/api/v1/settlements/" + payback.Id.String()
+	owed := []httpapi.Debt{{FromMemberId: id(tr.betoM), ToMemberId: id(tr.anaM), Amount: 1000, Currency: "USD"}}
+
+	first := a.do(tr.ana, http.MethodDelete, target, nil)
+	again := a.do(tr.ana, http.MethodDelete, target, nil)
+
+	if first.Code != http.StatusNoContent || again.Code != http.StatusNoContent {
+		t.Fatalf("codes = %d and %d, want 204 both times", first.Code, again.Code)
+	}
+	got := a.pull(t, tr.ana, cursor)
+	if len(got.Settlements) != 1 || got.Settlements[0].DeletedAt == nil {
+		t.Errorf("settlements = %+v, want the payback with deletedAt", got.Settlements)
+	}
+	if !reflect.DeepEqual(debtsOf(t, got, tr.id), owed) {
+		t.Errorf("debts = %+v, want %+v: the payback no longer counts", debtsOf(t, got, tr.id), owed)
+	}
+	wantDetails := map[string]any{
+		"settlementId": payback.Id.String(), "fromMemberId": tr.betoM, "toMemberId": tr.anaM, "amount": float64(1000), "currency": "USD",
+	}
+	if len(got.Activities) != 1 || got.Activities[0].Kind != httpapi.SettlementDeleted || !reflect.DeepEqual(got.Activities[0].Details, wantDetails) {
+		t.Errorf("activities = %+v, want only the deletion", got.Activities)
+	}
+
+	cursor = got.Cursor
+	restored := decodeBody[httpapi.Settlement](t, a.do(tr.beto, http.MethodPost, target+"/restore", nil), http.StatusOK)
+	twice := decodeBody[httpapi.Settlement](t, a.do(tr.beto, http.MethodPost, target+"/restore", nil), http.StatusOK)
+
+	if restored.DeletedAt != nil || restored.Version <= cursor || twice.Version != restored.Version {
+		t.Errorf("restored = %+v, then %+v, want it alive with one new version", restored, twice)
+	}
+	got = a.pull(t, tr.ana, cursor)
+	if debts := debtsOf(t, got, tr.id); len(debts) != 0 {
+		t.Errorf("debts = %+v, want none: the payback counts again", debts)
+	}
+	if len(got.Activities) != 1 || got.Activities[0].Kind != httpapi.SettlementRestored {
+		t.Errorf("activities = %+v, want only the restoration", got.Activities)
+	}
+}
+
+func TestRestoreSettlementRefusesOneWithAFormerMember(t *testing.T) {
+	a := newRecordsAPI(t)
+	tr := a.seedTrip()
+	payback := tr.payback()
+	payback.FromMemberId = id(tr.carlaM)
+	a.push(t, tr.beto, settlements(payback))
+	a.do(tr.ana, http.MethodDelete, "/api/v1/settlements/"+payback.Id.String(), nil)
+	a.leave(tr.id, tr.carlaM, "member_removed", tr.ana)
+
+	rec := a.do(tr.ana, http.MethodPost, "/api/v1/settlements/"+payback.Id.String()+"/restore", nil)
+
+	decodeProblem(t, rec, http.StatusConflict, httpapi.ProblemCodeInvalidParticipants)
+	if got := a.pull(t, tr.ana, 0).Settlements[0]; got.DeletedAt == nil {
+		t.Errorf("settlement = %+v, want it still deleted", got)
+	}
+}
+
+func TestDeleteAndRestoreASettlementHideWhatTheUserCannotSee(t *testing.T) {
+	a := newRecordsAPI(t)
+	tr := a.seedTrip()
+	payback := tr.payback()
+	a.push(t, tr.beto, settlements(payback))
+	target := "/api/v1/settlements/" + payback.Id.String()
+
+	decodeProblem(t, a.do(tr.eva, http.MethodDelete, target, nil), http.StatusNotFound, httpapi.ProblemCodeNotFound)
+	decodeProblem(t, a.do(tr.eva, http.MethodPost, target+"/restore", nil), http.StatusNotFound, httpapi.ProblemCodeNotFound)
+	decodeProblem(t, a.do(tr.ana, http.MethodDelete, "/api/v1/settlements/"+uuid.NewString(), nil), http.StatusNotFound, httpapi.ProblemCodeNotFound)
+	decodeProblem(t, a.do(signedIn{}, http.MethodDelete, target, nil), http.StatusUnauthorized, httpapi.ProblemCodeUnauthenticated)
+	decodeProblem(t, a.do(signedIn{}, http.MethodPost, target+"/restore", nil), http.StatusUnauthorized, httpapi.ProblemCodeUnauthenticated)
+}

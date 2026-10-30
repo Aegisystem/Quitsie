@@ -14,3 +14,9 @@ UPDATE settlements
 SET deleted_at = ?, version = ?
 WHERE id = ? AND deleted_at IS NULL
 RETURNING *;
+
+-- name: RestoreSettlement :one
+UPDATE settlements
+SET deleted_at = NULL, version = ?
+WHERE id = ? AND deleted_at IS NOT NULL
+RETURNING *;

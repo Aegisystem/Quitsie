@@ -105,3 +105,34 @@ func (q *Queries) InsertSettlement(ctx context.Context, arg InsertSettlementPara
 	}
 	return result.RowsAffected()
 }
+
+const restoreSettlement = `-- name: RestoreSettlement :one
+UPDATE settlements
+SET deleted_at = NULL, version = ?
+WHERE id = ? AND deleted_at IS NOT NULL
+RETURNING id, ledger_id, from_member_id, to_member_id, amount, currency, date, created_by, version, created_at, deleted_at
+`
+
+type RestoreSettlementParams struct {
+	Version int64
+	ID      string
+}
+
+func (q *Queries) RestoreSettlement(ctx context.Context, arg RestoreSettlementParams) (Settlement, error) {
+	row := q.db.QueryRowContext(ctx, restoreSettlement, arg.Version, arg.ID)
+	var i Settlement
+	err := row.Scan(
+		&i.ID,
+		&i.LedgerID,
+		&i.FromMemberID,
+		&i.ToMemberID,
+		&i.Amount,
+		&i.Currency,
+		&i.Date,
+		&i.CreatedBy,
+		&i.Version,
+		&i.CreatedAt,
+		&i.DeletedAt,
+	)
+	return i, err
+}

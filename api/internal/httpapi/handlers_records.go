@@ -169,6 +169,42 @@ func (s *Server) RestoreExpense(ctx context.Context, req RestoreExpenseRequestOb
 	return RestoreExpense200JSONResponse(pulledExpense(restored)), nil
 }
 
+func (s *Server) DeleteSettlement(ctx context.Context, req DeleteSettlementRequestObject) (DeleteSettlementResponseObject, error) {
+	respond := func(p Problem) DeleteSettlementResponseObject {
+		return DeleteSettlementdefaultApplicationProblemPlusJSONResponse{Body: p, StatusCode: p.Status}
+	}
+	user, ok := auth.CurrentUser(ctx)
+	if !ok {
+		return respond(unauthenticated), nil
+	}
+	err := sync.DeleteSettlement(ctx, s.deps.DB, user.ID, req.SettlementId.String())
+	if p, ok := recordFailure(err); ok {
+		return respond(p), nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return DeleteSettlement204Response{}, nil
+}
+
+func (s *Server) RestoreSettlement(ctx context.Context, req RestoreSettlementRequestObject) (RestoreSettlementResponseObject, error) {
+	respond := func(p Problem) RestoreSettlementResponseObject {
+		return RestoreSettlementdefaultApplicationProblemPlusJSONResponse{Body: p, StatusCode: p.Status}
+	}
+	user, ok := auth.CurrentUser(ctx)
+	if !ok {
+		return respond(unauthenticated), nil
+	}
+	restored, err := sync.RestoreSettlement(ctx, s.deps.DB, user.ID, req.SettlementId.String())
+	if p, ok := recordFailure(err); ok {
+		return respond(p), nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return RestoreSettlement200JSONResponse(pulledSettlement(restored)), nil
+}
+
 // recordFailure is the contract's answer to an error of package sync; ok is
 // false for any other error, which the strict handler logs and answers 500.
 func recordFailure(err error) (p Problem, ok bool) {
