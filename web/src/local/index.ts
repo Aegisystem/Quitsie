@@ -1,5 +1,6 @@
 // The device's replica of everything the User can see, and the live queries the
-// screens read from it.
+// screens read from it. Writing to it is the sync engine's job (../sync): the
+// screens only read from here.
 export {
   type Ledger,
   openReplica,

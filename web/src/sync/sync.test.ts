@@ -98,6 +98,8 @@ function newExpense(
   }
 }
 
+const taxi = (group: FakeGroup) => newExpense(group, { description: 'Taxi', currency: 'PEN', paid: { Yo: 2000 }, owed: { Yo: 1000, Ana: 1000 } })
+
 // The first value of a live query that meets `done`, as a screen would end up rendering it.
 function until<T>(observable: Observable<T>, done: (value: T) => boolean): Promise<T> {
   return new Promise((resolve, reject) => {
@@ -284,7 +286,7 @@ describe('queue', () => {
     await engine.sync()
 
     device.goOffline()
-    const id = await engine.addExpense(newExpense(trip, { description: 'Taxi', currency: 'PEN', paid: { Yo: 2000 }, owed: { Yo: 1000, Ana: 1000 } }))
+    const id = await engine.addExpense(taxi(trip))
 
     const records = await firstValue(liveRecords(replica))
     expect(records.rejected).toEqual([])
@@ -298,7 +300,7 @@ describe('queue', () => {
     const trip = server.addGroup({ name: 'Viaje a Cusco', currency: 'PEN', members: ['Ana'] })
     const { replica, engine, device } = setup(server)
     device.goOffline()
-    const id = await engine.addExpense(newExpense(trip, { description: 'Taxi', currency: 'PEN', paid: { Yo: 2000 }, owed: { Yo: 1000, Ana: 1000 } }))
+    const id = await engine.addExpense(taxi(trip))
 
     device.goOnline()
     await engine.sync()
@@ -315,7 +317,7 @@ describe('queue', () => {
     const { replica, engine, device } = setup(server)
     await engine.sync()
     device.goOffline()
-    const id = await engine.addExpense(newExpense(trip, { description: 'Taxi', currency: 'PEN', paid: { Yo: 2000 }, owed: { Yo: 1000, Ana: 1000 } }))
+    const id = await engine.addExpense(taxi(trip))
 
     server.setCurrency(trip, 'USD')
     device.goOnline()
@@ -399,7 +401,7 @@ describe('triggers', () => {
 
     device.goOffline()
     server.setReachable(false)
-    const id = await engine.addExpense(newExpense(trip, { description: 'Taxi', currency: 'PEN', paid: { Yo: 2000 }, owed: { Yo: 1000, Ana: 1000 } }))
+    const id = await engine.addExpense(taxi(trip))
 
     expect(engine.getStatus()).toBe('offline')
     expect(server.pushes).toEqual([])
@@ -446,7 +448,7 @@ describe('triggers', () => {
     const { replica, engine } = setup(server)
     await engine.sync()
 
-    const id = await engine.addExpense(newExpense(trip, { description: 'Taxi', currency: 'PEN', paid: { Yo: 2000 }, owed: { Yo: 1000, Ana: 1000 } }))
+    const id = await engine.addExpense(taxi(trip))
 
     const [expense] = await until(liveExpenses(replica, trip.id), ([first]) => first?.version !== undefined)
     expect(expense).toMatchObject({ id, sync: 'synced' })
@@ -491,8 +493,6 @@ describe('triggers', () => {
 })
 
 describe('resending', () => {
-  const taxi = (trip: FakeGroup) => newExpense(trip, { description: 'Taxi', currency: 'PEN', paid: { Yo: 2000 }, owed: { Yo: 1000, Ana: 1000 } })
-
   test('when the answer to a push is lost, resending the same id does not duplicate the Expense', async () => {
     const server = fakeServer()
     const trip = server.addGroup({ name: 'Viaje a Cusco', currency: 'PEN', members: ['Ana'] })
@@ -578,8 +578,6 @@ describe('resending', () => {
 })
 
 describe('the queue through a rebuild or a lost ledger', () => {
-  const taxi = (trip: FakeGroup) => newExpense(trip, { description: 'Taxi', currency: 'PEN', paid: { Yo: 2000 }, owed: { Yo: 1000, Ana: 1000 } })
-
   test('a 410 keeps the unsynced and rejected records', async () => {
     const server = fakeServer()
     const trip = server.addGroup({ name: 'Viaje a Cusco', currency: 'PEN', members: ['Ana'] })
@@ -672,8 +670,6 @@ describe('the queue through a rebuild or a lost ledger', () => {
 })
 
 describe('sending batches', () => {
-  const taxi = (trip: FakeGroup) => newExpense(trip, { description: 'Taxi', currency: 'PEN', paid: { Yo: 2000 }, owed: { Yo: 1000, Ana: 1000 } })
-
   test('a long queue goes in batches the server accepts', async () => {
     const server = fakeServer()
     const trip = server.addGroup({ name: 'Viaje a Cusco', currency: 'PEN', members: ['Ana'] })
@@ -775,7 +771,7 @@ describe('provisional Balances', () => {
     expect(amounts(await firstValue(liveBalances(replica, trip.id)))).toEqual({ [trip.member.Yo!]: -500, [trip.member.Ana!]: 500 })
 
     device.goOffline()
-    await engine.addExpense(newExpense(trip, { description: 'Taxi', currency: 'PEN', paid: { Yo: 2000 }, owed: { Yo: 1000, Ana: 1000 } }))
+    await engine.addExpense(taxi(trip))
     await engine.addSettlement({ ledgerId: trip.id, fromMemberId: trip.member.Ana!, toMemberId: trip.member.Yo!, amount: 200, currency: 'PEN', date: '2026-10-27' })
 
     expect(amounts(await firstValue(liveBalances(replica, trip.id)))).toEqual({ [trip.member.Yo!]: 300, [trip.member.Ana!]: -300 })
@@ -788,7 +784,7 @@ describe('provisional Balances', () => {
     await engine.sync()
 
     device.goOffline()
-    await engine.addExpense(newExpense(trip, { description: 'Taxi', currency: 'PEN', paid: { Yo: 2000 }, owed: { Yo: 1000, Ana: 1000 } }))
+    await engine.addExpense(taxi(trip))
     expect(await firstValue(liveBalances(replica, trip.id))).toHaveLength(2)
 
     server.setCurrency(trip, 'USD')
@@ -805,7 +801,7 @@ describe('provisional Balances', () => {
     await engine.sync()
 
     device.goOffline()
-    await engine.addExpense(newExpense(trip, { description: 'Taxi', currency: 'PEN', paid: { Yo: 2000 }, owed: { Yo: 1000, Ana: 1000 } }))
+    await engine.addExpense(taxi(trip))
     device.goOnline()
     server.failWith(503, 'GET')
     await engine.sync()
@@ -840,8 +836,6 @@ describe('provisional Balances', () => {
 })
 
 describe('rejected records', () => {
-  const taxi = (trip: FakeGroup) => newExpense(trip, { description: 'Taxi', currency: 'PEN', paid: { Yo: 2000 }, owed: { Yo: 1000, Ana: 1000 } })
-
   async function withRejected() {
     const server = fakeServer()
     const trip = server.addGroup({ name: 'Viaje a Cusco', currency: 'PEN', members: ['Ana'] })
