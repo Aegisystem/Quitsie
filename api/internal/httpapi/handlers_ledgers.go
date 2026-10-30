@@ -438,7 +438,7 @@ func (s *Server) DeleteGroup(ctx context.Context, req DeleteGroupRequestObject) 
 		if _, err := q.DeleteLedger(ctx, store.DeleteLedgerParams{ID: snap.Ledger.ID, DeletedAt: &now, Version: version}); err != nil {
 			return fmt.Errorf("delete group: %w", err)
 		}
-		return nil
+		return activity(ctx, q, snap.Ledger.ID, user.ID, "group_deleted", map[string]any{"name": snap.Ledger.Name}, version)
 	})
 	if err != nil {
 		return answer(err, respond)
@@ -511,6 +511,43 @@ func (s *Server) AddPendingMember(ctx context.Context, req AddPendingMemberReque
 		return answer(err, respond)
 	}
 	return AddPendingMember201JSONResponse(memberResponse(member)), nil
+}
+
+func (s *Server) UpdatePendingMember(ctx context.Context, req UpdatePendingMemberRequestObject) (UpdatePendingMemberResponseObject, error) {
+	respond := func(status int, p Problem) UpdatePendingMemberResponseObject {
+		return UpdatePendingMemberdefaultApplicationProblemPlusJSONResponse{Body: p, StatusCode: status}
+	}
+	user, err := currentUser(ctx)
+	if err != nil {
+		return answer(err, respond)
+	}
+	pending, err := cleanPendingMember(NewPendingMember(*req.Body))
+	if err != nil {
+		return answer(err, respond)
+	}
+	var member store.Member
+	_, err = store.Write(ctx, s.deps.DB, func(q *store.Queries, version int64) error {
+		snap, _, err := open(ctx, q, req.GroupId.String(), "group", user.ID)
+		if err != nil {
+			return err
+		}
+		m, ok := memberOf(snap, req.MemberId.String())
+		if !ok || m.Status != "active" {
+			return errNotFound
+		}
+		if m.UserID != nil {
+			return errMemberNotPending
+		}
+		member, err = q.UpdatePendingMember(ctx, store.UpdatePendingMemberParams{ID: m.ID, Name: pending.name, Email: pending.email, Version: version})
+		if err != nil {
+			return fmt.Errorf("update pending member: %w", err)
+		}
+		return activity(ctx, q, snap.Ledger.ID, user.ID, "member_updated", map[string]any{"memberId": m.ID, "from": m.Name, "to": member.Name}, version)
+	})
+	if err != nil {
+		return answer(err, respond)
+	}
+	return UpdatePendingMember200JSONResponse(memberResponse(member)), nil
 }
 
 // memberOf finds the Member memberID in snap, in any status.

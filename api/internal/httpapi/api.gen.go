@@ -29,6 +29,7 @@ const (
 	FriendshipCreated         ActivityKind = "friendship_created"
 	GroupCreated              ActivityKind = "group_created"
 	GroupCurrencyChanged      ActivityKind = "group_currency_changed"
+	GroupDeleted              ActivityKind = "group_deleted"
 	GroupRenamed              ActivityKind = "group_renamed"
 	InviteLinkRegenerated     ActivityKind = "invite_link_regenerated"
 	MemberAdded               ActivityKind = "member_added"
@@ -36,6 +37,7 @@ const (
 	MemberJoined              ActivityKind = "member_joined"
 	MemberLeft                ActivityKind = "member_left"
 	MemberRemoved             ActivityKind = "member_removed"
+	MemberUpdated             ActivityKind = "member_updated"
 	SettlementCreated         ActivityKind = "settlement_created"
 	SettlementDeleted         ActivityKind = "settlement_deleted"
 	SettlementRestored        ActivityKind = "settlement_restored"
@@ -63,6 +65,8 @@ func (e ActivityKind) Valid() bool {
 		return true
 	case GroupCurrencyChanged:
 		return true
+	case GroupDeleted:
+		return true
 	case GroupRenamed:
 		return true
 	case InviteLinkRegenerated:
@@ -76,6 +80,8 @@ func (e ActivityKind) Valid() bool {
 	case MemberLeft:
 		return true
 	case MemberRemoved:
+		return true
+	case MemberUpdated:
 		return true
 	case SettlementCreated:
 		return true
@@ -874,6 +880,13 @@ type PaidShare struct {
 	MemberId openapi_types.UUID `json:"memberId"`
 }
 
+// PendingMemberUpdate Both values of a pending Member; without `email`, it has none.
+type PendingMemberUpdate struct {
+	// Email Used only to suggest this Member when someone with that email opens the Invite link.
+	Email *openapi_types.Email `json:"email,omitempty"`
+	Name  string               `json:"name"`
+}
+
 // Problem Error body (RFC 9457, `application/problem+json`).
 type Problem struct {
 	// Code Stable machine-readable error code. New codes may be added; clients treat an unknown code as a generic error for its status.
@@ -1108,6 +1121,9 @@ type UpdateGroupJSONRequestBody = GroupUpdate
 // AddPendingMemberJSONRequestBody defines body for AddPendingMember for application/json ContentType.
 type AddPendingMemberJSONRequestBody = NewPendingMember
 
+// UpdatePendingMemberJSONRequestBody defines body for UpdatePendingMember for application/json ContentType.
+type UpdatePendingMemberJSONRequestBody = PendingMemberUpdate
+
 // ClaimMemberJSONRequestBody defines body for ClaimMember for application/json ContentType.
 type ClaimMemberJSONRequestBody = ClaimRequest
 
@@ -1185,6 +1201,9 @@ type ServerInterface interface {
 	// RemoveMember Removes a Member whose Balance is zero from a Group.
 	// (DELETE /groups/{groupId}/members/{memberId})
 	RemoveMember(w http.ResponseWriter, r *http.Request, groupId GroupId, memberId MemberId)
+	// UpdatePendingMember Replaces the name and the email of a pending Member.
+	// (PUT /groups/{groupId}/members/{memberId})
+	UpdatePendingMember(w http.ResponseWriter, r *http.Request, groupId GroupId, memberId MemberId)
 	// UndoClaim Undoes a Claim made by mistake.
 	// (DELETE /groups/{groupId}/members/{memberId}/claim)
 	UndoClaim(w http.ResponseWriter, r *http.Request, groupId GroupId, memberId MemberId)
@@ -1758,6 +1777,41 @@ func (siw *ServerInterfaceWrapper) RemoveMember(w http.ResponseWriter, r *http.R
 	handler.ServeHTTP(w, r)
 }
 
+// UpdatePendingMember operation middleware
+func (siw *ServerInterfaceWrapper) UpdatePendingMember(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "groupId" -------------
+	var groupId GroupId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "groupId", r.PathValue("groupId"), &groupId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "groupId", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "memberId" -------------
+	var memberId MemberId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "memberId", r.PathValue("memberId"), &memberId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "memberId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdatePendingMember(w, r, groupId, memberId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // UndoClaim operation middleware
 func (siw *ServerInterfaceWrapper) UndoClaim(w http.ResponseWriter, r *http.Request) {
 
@@ -2188,6 +2242,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/groups/{groupId}", wrapper.UpdateGroup)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/groups/{groupId}/members", wrapper.AddPendingMember)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/groups/{groupId}/members/{memberId}", wrapper.RemoveMember)
+	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/groups/{groupId}/members/{memberId}", wrapper.UpdatePendingMember)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/groups/{groupId}/members/{memberId}/claim", wrapper.UndoClaim)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/groups/{groupId}/leave", wrapper.LeaveGroup)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/groups/{groupId}/invite-link", wrapper.GetGroupInviteLink)
@@ -3793,6 +3848,109 @@ func (response RemoveMemberdefaultApplicationProblemPlusJSONResponse) VisitRemov
 	return err
 }
 
+type UpdatePendingMemberRequestObject struct {
+	GroupId  GroupId  `json:"groupId"`
+	MemberId MemberId `json:"memberId"`
+	Body     *UpdatePendingMemberJSONRequestBody
+}
+
+type UpdatePendingMemberResponseObject interface {
+	VisitUpdatePendingMemberResponse(w http.ResponseWriter) error
+}
+
+type UpdatePendingMember200JSONResponse Member
+
+func (response UpdatePendingMember200JSONResponse) VisitUpdatePendingMemberResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdatePendingMember400ApplicationProblemPlusJSONResponse struct {
+	BadRequestApplicationProblemPlusJSONResponse
+}
+
+func (response UpdatePendingMember400ApplicationProblemPlusJSONResponse) VisitUpdatePendingMemberResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdatePendingMember401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response UpdatePendingMember401ApplicationProblemPlusJSONResponse) VisitUpdatePendingMemberResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdatePendingMember404ApplicationProblemPlusJSONResponse struct {
+	NotFoundApplicationProblemPlusJSONResponse
+}
+
+func (response UpdatePendingMember404ApplicationProblemPlusJSONResponse) VisitUpdatePendingMemberResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdatePendingMember409ApplicationProblemPlusJSONResponse Problem
+
+func (response UpdatePendingMember409ApplicationProblemPlusJSONResponse) VisitUpdatePendingMemberResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdatePendingMemberdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response UpdatePendingMemberdefaultApplicationProblemPlusJSONResponse) VisitUpdatePendingMemberResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type UndoClaimRequestObject struct {
 	GroupId  GroupId  `json:"groupId"`
 	MemberId MemberId `json:"memberId"`
@@ -4814,6 +4972,9 @@ type StrictServerInterface interface {
 	// RemoveMember Removes a Member whose Balance is zero from a Group.
 	// (DELETE /groups/{groupId}/members/{memberId})
 	RemoveMember(ctx context.Context, request RemoveMemberRequestObject) (RemoveMemberResponseObject, error)
+	// UpdatePendingMember Replaces the name and the email of a pending Member.
+	// (PUT /groups/{groupId}/members/{memberId})
+	UpdatePendingMember(ctx context.Context, request UpdatePendingMemberRequestObject) (UpdatePendingMemberResponseObject, error)
 	// UndoClaim Undoes a Claim made by mistake.
 	// (DELETE /groups/{groupId}/members/{memberId}/claim)
 	UndoClaim(ctx context.Context, request UndoClaimRequestObject) (UndoClaimResponseObject, error)
@@ -5471,6 +5632,40 @@ func (sh *strictHandler) RemoveMember(w http.ResponseWriter, r *http.Request, gr
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(RemoveMemberResponseObject); ok {
 		if err := validResponse.VisitRemoveMemberResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// UpdatePendingMember operation middleware
+func (sh *strictHandler) UpdatePendingMember(w http.ResponseWriter, r *http.Request, groupId GroupId, memberId MemberId) {
+	var request UpdatePendingMemberRequestObject
+
+	request.GroupId = groupId
+	request.MemberId = memberId
+
+	var body UpdatePendingMemberJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.UpdatePendingMember(ctx, request.(UpdatePendingMemberRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "UpdatePendingMember")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(UpdatePendingMemberResponseObject); ok {
+		if err := validResponse.VisitUpdatePendingMemberResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

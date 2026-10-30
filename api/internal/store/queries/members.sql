@@ -83,3 +83,10 @@ WHERE mine.user_id = CAST(sqlc.arg(user_id) AS TEXT)
   AND ledgers.kind = 'friendship'
   AND ledgers.deleted_at IS NULL
 LIMIT 1;
+
+-- name: UpdatePendingMember :one
+-- Only a pending Member: a linked one is whoever their User is.
+UPDATE members
+SET name = ?, email = ?, version = ?
+WHERE id = ? AND user_id IS NULL AND status = 'active'
+RETURNING *;

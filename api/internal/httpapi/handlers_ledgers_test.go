@@ -465,8 +465,12 @@ func TestDeleteGroupWhenEveryBalanceIsZero(t *testing.T) {
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("code = %d, want 204 (body %q)", rec.Code, rec.Body.String())
 	}
-	if ledgers := ana.pull().Ledgers; len(ledgers) != 1 || ledgers[0].DeletedAt == nil {
-		t.Errorf("ledgers = %+v, want the Group as a deletion", ledgers)
+	changes := ana.pull()
+	if len(changes.Ledgers) != 1 || changes.Ledgers[0].DeletedAt == nil {
+		t.Errorf("ledgers = %+v, want the Group as a deletion", changes.Ledgers)
+	}
+	if kinds := strings.Join(activityKinds(changes, groupID), ","); kinds != "group_created,group_deleted" {
+		t.Errorf("activities = %s, want group_created,group_deleted", kinds)
 	}
 	again := ana.send(http.MethodPatch, "/api/v1/groups/"+groupID, `{"name":"Otra"}`)
 	decodeProblem(t, again, http.StatusNotFound, httpapi.ProblemCodeNotFound)
@@ -1189,4 +1193,73 @@ func TestAFriendLinkEndsWhenWhoAddedTheFriendDeletesTheirAccount(t *testing.T) {
 
 	decodeProblem(t, beto.send(http.MethodGet, "/api/v1/invites/"+link, ""), http.StatusNotFound, httpapi.ProblemCodeInviteLinkInvalid)
 	decodeProblem(t, beto.claim(link, friendID), http.StatusNotFound, httpapi.ProblemCodeInviteLinkInvalid)
+}
+
+func TestEditAPendingMember(t *testing.T) {
+	w := newWorld(t)
+	ana := w.signIn("Ana")
+	beto := w.signIn("Beto")
+	groupID := ana.createGroup(`{"name":"Casa","currency":"COP","pendingMembers":[{"name":"Betico"}]}`)
+	betoID := ana.memberID(groupID, "Betico")
+
+	rec := ana.send(http.MethodPut, "/api/v1/groups/"+groupID+"/members/"+betoID, `{"name":" Beto Ríos ","email":"beto@example.com"}`)
+
+	m := decode[httpapi.Member](t, rec, http.StatusOK)
+	if m.Name != "Beto Ríos" || m.Email == nil || *m.Email != "beto@example.com" || m.UserId != nil {
+		t.Errorf("member = %+v, want pending with the new name and email", m)
+	}
+	if kinds := strings.Join(activityKinds(ana.pull(), groupID), ","); kinds != "group_created,member_updated" {
+		t.Errorf("activities = %s, want group_created,member_updated", kinds)
+	}
+	// The new email is what the invite suggests from now on.
+	invite := decode[httpapi.Invite](t, beto.send(http.MethodGet, "/api/v1/invites/"+ana.groupLink(groupID), ""), http.StatusOK)
+	if invite.SuggestedMemberId == nil || invite.SuggestedMemberId.String() != betoID {
+		t.Errorf("suggested member = %v, want %s", invite.SuggestedMemberId, betoID)
+	}
+}
+
+func TestEditingAPendingMemberWithoutAnEmailRemovesIt(t *testing.T) {
+	w := newWorld(t)
+	ana := w.signIn("Ana")
+	groupID := ana.createGroup(`{"name":"Casa","currency":"COP","pendingMembers":[{"name":"Beto","email":"beto@example.com"}]}`)
+	betoID := ana.memberID(groupID, "Beto")
+
+	rec := ana.send(http.MethodPut, "/api/v1/groups/"+groupID+"/members/"+betoID, `{"name":"Beto"}`)
+
+	if m := decode[httpapi.Member](t, rec, http.StatusOK); m.Email != nil {
+		t.Errorf("email = %v, want none", *m.Email)
+	}
+}
+
+func TestEditPendingMemberRefusals(t *testing.T) {
+	w := newWorld(t)
+	ana := w.signIn("Ana")
+	beto := w.signIn("Beto")
+	groupID := ana.createGroup(`{"name":"Casa","currency":"COP","pendingMembers":[{"name":"Carla"},{"name":"Dani"}]}`)
+	otherID := ana.createGroup(`{"name":"Oficina","currency":"COP","pendingMembers":[{"name":"Eva"}]}`)
+	carlaID := ana.memberID(groupID, "Carla")
+	daniID := ana.memberID(groupID, "Dani")
+	ana.send(http.MethodDelete, "/api/v1/groups/"+groupID+"/members/"+daniID, "")
+
+	tests := []struct {
+		name     string
+		who      *person
+		memberID string
+		body     string
+		status   int
+		code     httpapi.ProblemCode
+	}{
+		{"a linked Member", ana, ana.memberID(groupID, "Ana"), `{"name":"Otra"}`, http.StatusConflict, httpapi.ProblemCodeMemberNotPending},
+		{"a former member", ana, daniID, `{"name":"Otra"}`, http.StatusNotFound, httpapi.ProblemCodeNotFound},
+		{"a Member of another Group", ana, ana.memberID(otherID, "Eva"), `{"name":"Otra"}`, http.StatusNotFound, httpapi.ProblemCodeNotFound},
+		{"by someone outside the Group", beto, carlaID, `{"name":"Otra"}`, http.StatusNotFound, httpapi.ProblemCodeNotFound},
+		{"a blank name", ana, carlaID, `{"name":"  "}`, http.StatusBadRequest, httpapi.ProblemCodeValidationFailed},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rec := tt.who.send(http.MethodPut, "/api/v1/groups/"+groupID+"/members/"+tt.memberID, tt.body)
+
+			decodeProblem(t, rec, tt.status, tt.code)
+		})
+	}
 }

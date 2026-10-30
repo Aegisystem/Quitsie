@@ -249,7 +249,11 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
-        put?: never;
+        /**
+         * Replaces the name and the email of a pending Member.
+         * @description The body replaces both values, so leaving `email` out removes it. Former members are not found, like in the other Member operations.
+         */
+        put: operations["updatePendingMember"];
         post?: never;
         /**
          * Removes a Member whose Balance is zero from a Group.
@@ -711,6 +715,15 @@ export interface components {
              */
             email?: string;
         };
+        /** @description Both values of a pending Member; without `email`, it has none. */
+        PendingMemberUpdate: {
+            name: string;
+            /**
+             * Format: email
+             * @description Used only to suggest this Member when someone with that email opens the Invite link.
+             */
+            email?: string;
+        };
         /** @description A Friendship's ledger. Its two Members (the User and the Friend) arrive in `Changes.members`. */
         Friendship: {
             /**
@@ -998,7 +1011,7 @@ export interface components {
              * @description What changed. New kinds may be added; clients skip the ones they do not know.
              * @enum {string}
              */
-            kind: "group_created" | "group_renamed" | "group_currency_changed" | "debt_simplification_changed" | "member_added" | "member_joined" | "member_claimed" | "claim_undone" | "member_removed" | "member_left" | "invite_link_regenerated" | "friendship_created" | "expense_created" | "expense_updated" | "expense_deleted" | "expense_restored" | "settlement_created" | "settlement_updated" | "settlement_deleted" | "settlement_restored";
+            kind: "group_created" | "group_deleted" | "group_renamed" | "group_currency_changed" | "debt_simplification_changed" | "member_added" | "member_updated" | "member_joined" | "member_claimed" | "claim_undone" | "member_removed" | "member_left" | "invite_link_regenerated" | "friendship_created" | "expense_created" | "expense_updated" | "expense_deleted" | "expense_restored" | "settlement_created" | "settlement_updated" | "settlement_deleted" | "settlement_restored";
             /** @description Data that depends on `kind`, such as the ids involved and the values before and after. */
             details: {
                 [key: string]: unknown;
@@ -1540,6 +1553,46 @@ export interface operations {
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    updatePendingMember: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                groupId: components["parameters"]["GroupId"];
+                memberId: components["parameters"]["MemberId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PendingMemberUpdate"];
+            };
+        };
+        responses: {
+            /** @description The Member with its new name and email. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Member"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            /** @description The Member is linked to a User (`member_not_pending`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
             default: components["responses"]["Problem"];
         };
     };

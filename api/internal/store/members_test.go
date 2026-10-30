@@ -277,3 +277,49 @@ func TestGetFriendshipBetweenFindsItFromEitherSide(t *testing.T) {
 		t.Errorf("GetFriendshipBetween without one: err = %v, want sql.ErrNoRows", err)
 	}
 }
+
+func TestUpdatePendingMemberReplacesItsNameAndEmail(t *testing.T) {
+	ctx := context.Background()
+	db := openMigrated(t)
+	write(t, db, func(q *store.Queries, version int64) error {
+		if err := q.CreateLedger(ctx, newGroup("ledger-1", version)); err != nil {
+			return err
+		}
+		pending := newMember("member-carla", "ledger-1", nil, version)
+		pending.Email = ptr("carla@example.com")
+		return q.CreateMember(ctx, pending)
+	})
+
+	var updated store.Member
+	version := write(t, db, func(q *store.Queries, version int64) (err error) {
+		updated, err = q.UpdatePendingMember(ctx, store.UpdatePendingMemberParams{ID: "member-carla", Name: "Carla Ríos", Version: version})
+		return err
+	})
+
+	if updated.Name != "Carla Ríos" || updated.Email != nil || updated.Version != version {
+		t.Errorf("updated member = %+v, want the new name, no email and version %d", updated, version)
+	}
+}
+
+func TestUpdatePendingMemberLeavesLinkedAndFormerMembersAlone(t *testing.T) {
+	ctx := context.Background()
+	db := openMigrated(t)
+	seedGroup(t, db)
+	write(t, db, func(q *store.Queries, version int64) error {
+		if err := q.CreateMember(ctx, newMember("member-carla", "ledger-1", nil, version)); err != nil {
+			return err
+		}
+		_, err := q.MarkMemberFormer(ctx, store.MarkMemberFormerParams{ID: "member-carla", Version: version})
+		return err
+	})
+
+	for _, id := range []string{"member-ana", "member-carla"} {
+		_, err := store.Write(ctx, db, func(q *store.Queries, version int64) error {
+			_, err := q.UpdatePendingMember(ctx, store.UpdatePendingMemberParams{ID: id, Name: "Otro", Version: version})
+			return err
+		})
+		if !errors.Is(err, sql.ErrNoRows) {
+			t.Errorf("UpdatePendingMember(%s): err = %v, want sql.ErrNoRows", id, err)
+		}
+	}
+}

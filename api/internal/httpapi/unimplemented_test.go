@@ -60,7 +60,7 @@ var unimplementedRecords = []operationRequest{
 var (
 	implementedBase    = []string{"GetHealth"}
 	implementedAuth    = []string{}
-	implementedLedgers = []string{"CreateGroup", "UpdateGroup", "DeleteGroup", "AddPendingMember", "RemoveMember", "LeaveGroup",
+	implementedLedgers = []string{"CreateGroup", "UpdateGroup", "DeleteGroup", "AddPendingMember", "UpdatePendingMember", "RemoveMember", "LeaveGroup",
 		"GetGroupInviteLink", "RegenerateGroupInviteLink", "GetInvite",
 		"JoinGroup", "ClaimMember", "UndoClaim",
 		"CreateFriendship", "GetFriendInviteLink", "RegenerateFriendInviteLink"}

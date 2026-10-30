@@ -349,3 +349,39 @@ func (q *Queries) UnlinkMembersOfUser(ctx context.Context, arg UnlinkMembersOfUs
 	_, err := q.db.ExecContext(ctx, unlinkMembersOfUser, arg.Version, arg.UserID)
 	return err
 }
+
+const updatePendingMember = `-- name: UpdatePendingMember :one
+UPDATE members
+SET name = ?, email = ?, version = ?
+WHERE id = ? AND user_id IS NULL AND status = 'active'
+RETURNING id, ledger_id, user_id, name, email, status, version, created_at
+`
+
+type UpdatePendingMemberParams struct {
+	Name    string
+	Email   *string
+	Version int64
+	ID      string
+}
+
+// Only a pending Member: a linked one is whoever their User is.
+func (q *Queries) UpdatePendingMember(ctx context.Context, arg UpdatePendingMemberParams) (Member, error) {
+	row := q.db.QueryRowContext(ctx, updatePendingMember,
+		arg.Name,
+		arg.Email,
+		arg.Version,
+		arg.ID,
+	)
+	var i Member
+	err := row.Scan(
+		&i.ID,
+		&i.LedgerID,
+		&i.UserID,
+		&i.Name,
+		&i.Email,
+		&i.Status,
+		&i.Version,
+		&i.CreatedAt,
+	)
+	return i, err
+}
