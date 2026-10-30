@@ -5,7 +5,7 @@ import type { Observable } from 'dexie'
 import createClient from 'openapi-fetch'
 import { describe, expect, test, vi } from 'vitest'
 import type { paths } from '../api/schema.gen'
-import { liveActivity, liveDebts, liveExpenses, liveHome, liveRecords, liveSettlements, openReplica } from '../local'
+import { liveActivity, liveBalances, liveDebts, liveExpenses, liveHome, liveLedger, liveRecords, liveSettlements, openReplica } from '../local'
 import { type FakeGroup, fakeServer, type FakeServer, me } from './fakeServer'
 import { createSyncEngine, type Environment } from '.'
 
@@ -76,14 +76,20 @@ function setup(server: FakeServer) {
 // What the expense form would queue: `paid` and `owed` by Member name.
 function newExpense(
   group: FakeGroup,
-  { description, currency, paid, owed }: { description: string; currency: string; paid: Record<string, number>; owed: Record<string, number> },
+  {
+    description,
+    currency,
+    paid,
+    owed,
+    date = '2026-10-27',
+  }: { description: string; currency: string; paid: Record<string, number>; owed: Record<string, number>; date?: string },
 ) {
   const shares = (amounts: Record<string, number>) =>
     Object.entries(amounts).map(([name, amount]) => ({ memberId: group.member[name]!, amount }))
   return {
     ledgerId: group.id,
     description,
-    date: '2026-10-27',
+    date,
     currency,
     total: Object.values(paid).reduce((sum, amount) => sum + amount, 0),
     splitMethod: 'equal' as const,
@@ -702,5 +708,133 @@ describe('sending batches', () => {
       rejected: [expect.objectContaining({ id: unreadable, reason: 'invalid_record' })],
       unsynced: [],
     })
+  })
+})
+
+describe('Settlements', () => {
+  test('one created offline waits in the queue, shows in its ledger and reaches the server', async () => {
+    const server = fakeServer()
+    const trip = server.addGroup({ name: 'Viaje a Cusco', currency: 'PEN', members: ['Ana'] })
+    const { replica, engine, device } = setup(server)
+    await engine.sync()
+
+    device.goOffline()
+    const id = await engine.addSettlement({
+      ledgerId: trip.id,
+      fromMemberId: trip.member.Yo!,
+      toMemberId: trip.member.Ana!,
+      amount: 3000,
+      currency: 'PEN',
+      date: '2026-10-27',
+    })
+
+    expect((await firstValue(liveRecords(replica))).unsynced).toEqual([
+      expect.objectContaining({ id, kind: 'settlement', ledgerId: trip.id }),
+    ])
+    expect(await firstValue(liveSettlements(replica, trip.id))).toEqual([expect.objectContaining({ id, amount: 3000, sync: 'unsynced' })])
+
+    device.goOnline()
+    await engine.sync()
+
+    expect(await firstValue(liveRecords(replica))).toEqual({ rejected: [], unsynced: [] })
+    expect(await firstValue(liveSettlements(replica, trip.id))).toEqual([expect.objectContaining({ id, createdBy: me, sync: 'synced' })])
+  })
+})
+
+describe('lists', () => {
+  test('Expenses and Settlements come newest first, synced or queued', async () => {
+    const server = fakeServer()
+    const trip = server.addGroup({ name: 'Viaje a Cusco', currency: 'PEN', members: ['Ana'] })
+    server.addExpense(trip, { description: 'Cena', paid: { Ana: 1000 }, owed: { Yo: 500, Ana: 500 }, date: '2026-10-20' })
+    server.addExpense(trip, { description: 'Museo', paid: { Ana: 1000 }, owed: { Yo: 500, Ana: 500 }, date: '2026-10-22' })
+    server.addSettlement(trip, { from: 'Yo', to: 'Ana', amount: 500, date: '2026-10-21' })
+    const { replica, engine, device } = setup(server)
+    await engine.sync()
+
+    device.goOffline()
+    await engine.addExpense(newExpense(trip, { description: 'Taxi', currency: 'PEN', paid: { Yo: 1000 }, owed: { Yo: 500, Ana: 500 }, date: '2026-10-21' }))
+    await engine.addSettlement({ ledgerId: trip.id, fromMemberId: trip.member.Ana!, toMemberId: trip.member.Yo!, amount: 100, currency: 'PEN', date: '2026-10-25' })
+
+    expect((await firstValue(liveExpenses(replica, trip.id))).map((e) => e.description)).toEqual(['Museo', 'Taxi', 'Cena'])
+    expect((await firstValue(liveSettlements(replica, trip.id))).map((x) => x.date)).toEqual(['2026-10-25', '2026-10-21'])
+  })
+})
+
+describe('provisional Balances', () => {
+  const amounts = (balances: { participantId: string; amount: number }[]) =>
+    Object.fromEntries(balances.map(({ participantId, amount }) => [participantId, amount]))
+
+  test('add up the replica and the queue, without deleted records', async () => {
+    const server = fakeServer()
+    const trip = server.addGroup({ name: 'Viaje a Cusco', currency: 'PEN', members: ['Ana'] })
+    server.addExpense(trip, { description: 'Cena', paid: { Ana: 1000 }, owed: { Yo: 500, Ana: 500 } })
+    const deleted = server.addExpense(trip, { description: 'Museo', paid: { Ana: 9000 }, owed: { Yo: 4500, Ana: 4500 } })
+    server.deleteExpense(deleted)
+    const { replica, engine, device } = setup(server)
+    await engine.sync()
+    expect(amounts(await firstValue(liveBalances(replica, trip.id)))).toEqual({ [trip.member.Yo!]: -500, [trip.member.Ana!]: 500 })
+
+    device.goOffline()
+    await engine.addExpense(newExpense(trip, { description: 'Taxi', currency: 'PEN', paid: { Yo: 2000 }, owed: { Yo: 1000, Ana: 1000 } }))
+    await engine.addSettlement({ ledgerId: trip.id, fromMemberId: trip.member.Ana!, toMemberId: trip.member.Yo!, amount: 200, currency: 'PEN', date: '2026-10-27' })
+
+    expect(amounts(await firstValue(liveBalances(replica, trip.id)))).toEqual({ [trip.member.Yo!]: 300, [trip.member.Ana!]: -300 })
+  })
+
+  test('do not count a rejected record', async () => {
+    const server = fakeServer()
+    const trip = server.addGroup({ name: 'Viaje a Cusco', currency: 'PEN', members: ['Ana'] })
+    const { replica, engine, device } = setup(server)
+    await engine.sync()
+
+    device.goOffline()
+    await engine.addExpense(newExpense(trip, { description: 'Taxi', currency: 'PEN', paid: { Yo: 2000 }, owed: { Yo: 1000, Ana: 1000 } }))
+    expect(await firstValue(liveBalances(replica, trip.id))).toHaveLength(2)
+
+    server.setCurrency(trip, 'USD')
+    device.goOnline()
+    await engine.sync()
+
+    expect(await firstValue(liveBalances(replica, trip.id))).toEqual([])
+  })
+
+  test('count an accepted record once, before and after the pull brings it', async () => {
+    const server = fakeServer()
+    const trip = server.addGroup({ name: 'Viaje a Cusco', currency: 'PEN', members: ['Ana'] })
+    const { replica, engine, device, retry } = setup(server)
+    await engine.sync()
+
+    device.goOffline()
+    await engine.addExpense(newExpense(trip, { description: 'Taxi', currency: 'PEN', paid: { Yo: 2000 }, owed: { Yo: 1000, Ana: 1000 } }))
+    device.goOnline()
+    server.failWith(503, 'GET')
+    await engine.sync()
+    const expected = { [trip.member.Yo!]: 1000, [trip.member.Ana!]: -1000 }
+    expect(amounts(await firstValue(liveBalances(replica, trip.id)))).toEqual(expected)
+
+    server.failWith(undefined)
+    await retry()
+
+    expect(amounts(await firstValue(liveBalances(replica, trip.id)))).toEqual(expected)
+  })
+
+  test('home and the ledger show each ledger with its Balances', async () => {
+    const server = fakeServer()
+    const trip = server.addGroup({ name: 'Viaje a Cusco', currency: 'PEN', members: ['Ana'] })
+    const flat = server.addGroup({ name: 'Piso', currency: 'EUR', members: ['Beto'] })
+    server.addExpense(trip, { description: 'Cena', paid: { Ana: 1000 }, owed: { Yo: 500, Ana: 500 } })
+    const { replica, engine } = setup(server)
+    await engine.sync()
+
+    const home = await firstValue(liveHome(replica))
+    const balancesOf = (id: string) => amounts(home.find(({ ledger }) => ledger.id === id)?.balances ?? [])
+    expect(balancesOf(trip.id)).toEqual({ [trip.member.Yo!]: -500, [trip.member.Ana!]: 500 })
+    expect(balancesOf(flat.id)).toEqual({})
+
+    const ledger = await firstValue(liveLedger(replica, trip.id))
+    expect(ledger?.ledger).toMatchObject({ name: 'Viaje a Cusco' })
+    expect(ledger?.members.map((m) => m.name).sort()).toEqual(['Ana', 'Yo'])
+    expect(amounts(ledger?.balances ?? [])).toEqual({ [trip.member.Yo!]: -500, [trip.member.Ana!]: 500 })
+    expect(await firstValue(liveLedger(replica, crypto.randomUUID()))).toBeUndefined()
   })
 })

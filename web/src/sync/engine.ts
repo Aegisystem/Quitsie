@@ -1,4 +1,4 @@
-import type { NewExpense } from '../api/client'
+import type { NewExpense, NewSettlement } from '../api/client'
 import { type Replica, uuidv7 } from '../local'
 import { type Api, SyncFailure } from './api'
 import { browserEnvironment, type Environment } from './environment'
@@ -25,6 +25,8 @@ export interface SyncEngine {
   sync(): Promise<void>
   // Queues an Expense created on the device and returns the id it was given.
   addExpense(expense: Omit<NewExpense, 'id'>): Promise<string>
+  // The same for a Settlement.
+  addSettlement(settlement: Omit<NewSettlement, 'id'>): Promise<string>
   // For useSyncExternalStore.
   getStatus(): SyncStatus
   subscribe(listener: () => void): () => void
@@ -101,6 +103,16 @@ export function createSyncEngine({
     return following
   }
 
+  async function enqueue(
+    id: string,
+    ledgerId: string,
+    record: { kind: 'expense'; expense: NewExpense } | { kind: 'settlement'; settlement: NewSettlement },
+  ): Promise<string> {
+    await replica.queue.add({ id, ledgerId, queuedAt: new Date().toISOString(), status: 'unsynced', ...record })
+    void sync()
+    return id
+  }
+
   function stop() {
     stopped = true
     stopListening()
@@ -124,18 +136,14 @@ export function createSyncEngine({
     stop,
     sync,
 
-    async addExpense(expense) {
+    addExpense(expense) {
       const id = uuidv7()
-      await replica.queue.add({
-        id,
-        ledgerId: expense.ledgerId,
-        queuedAt: new Date().toISOString(),
-        kind: 'expense',
-        expense: { ...expense, id },
-        status: 'unsynced',
-      })
-      void sync()
-      return id
+      return enqueue(id, expense.ledgerId, { kind: 'expense', expense: { ...expense, id } })
+    },
+
+    addSettlement(settlement) {
+      const id = uuidv7()
+      return enqueue(id, settlement.ledgerId, { kind: 'settlement', settlement: { ...settlement, id } })
     },
 
     getStatus: () => status,

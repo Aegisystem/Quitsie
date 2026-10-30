@@ -103,7 +103,20 @@ export function fakeServer({ versionsPerPull = Infinity }: { versionsPerPull?: n
       results.push({ id: expense.id, kind: 'expense', status: 'accepted', version })
     }
     for (const settlement of settlements) {
-      results.push({ id: settlement.id, kind: 'settlement', status: 'rejected', reason: 'invalid_record' })
+      const known = db.settlements.get(settlement.id)
+      if (known) {
+        results.push({ id: settlement.id, kind: 'settlement', status: 'accepted', version: known.version })
+        continue
+      }
+      const reason = rejection(settlement)
+      if (reason) {
+        results.push({ id: settlement.id, kind: 'settlement', status: 'rejected', reason })
+        continue
+      }
+      const version = ++db.counter
+      db.settlements.set(settlement.id, { ...settlement, createdBy: me, createdAt: new Date().toISOString(), version })
+      log(settlement.ledgerId, 'settlement_created', version)
+      results.push({ id: settlement.id, kind: 'settlement', status: 'accepted', version })
     }
     return results
   }
@@ -210,7 +223,12 @@ export function fakeServer({ versionsPerPull = Infinity }: { versionsPerPull?: n
 
     addExpense(
       group: FakeGroup,
-      { description, paid, owed }: { description: string; paid: Record<string, number>; owed: Record<string, number> },
+      {
+        description,
+        paid,
+        owed,
+        date,
+      }: { description: string; paid: Record<string, number>; owed: Record<string, number>; date?: string },
     ): string {
       const id = crypto.randomUUID()
       const now = new Date().toISOString()
@@ -218,7 +236,7 @@ export function fakeServer({ versionsPerPull = Infinity }: { versionsPerPull?: n
         id,
         ledgerId: group.id,
         description,
-        date: now.slice(0, 10),
+        date: date ?? now.slice(0, 10),
         currency: db.groups.get(group.id)!.currency,
         total: Object.values(paid).reduce((sum, amount) => sum + amount, 0),
         splitMethod: 'exact',
@@ -232,7 +250,7 @@ export function fakeServer({ versionsPerPull = Infinity }: { versionsPerPull?: n
       return id
     },
 
-    addSettlement(group: FakeGroup, { from, to, amount }: { from: string; to: string; amount: number }): string {
+    addSettlement(group: FakeGroup, { from, to, amount, date }: { from: string; to: string; amount: number; date?: string }): string {
       const id = crypto.randomUUID()
       const now = new Date().toISOString()
       db.settlements.set(id, {
@@ -242,7 +260,7 @@ export function fakeServer({ versionsPerPull = Infinity }: { versionsPerPull?: n
         toMemberId: group.member[to]!,
         amount,
         currency: db.groups.get(group.id)!.currency,
-        date: now.slice(0, 10),
+        date: date ?? now.slice(0, 10),
         createdBy: me,
         createdAt: now,
         version: ++db.counter,
