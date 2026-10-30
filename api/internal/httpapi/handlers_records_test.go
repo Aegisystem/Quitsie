@@ -1020,3 +1020,88 @@ func TestUpdateExpenseWithAFormerMemberKeepsTheirShares(t *testing.T) {
 		t.Errorf("expense = %+v, want the edit", got)
 	}
 }
+
+func TestDeleteExpenseStopsItCountingAndCanBeRepeated(t *testing.T) {
+	a := newRecordsAPI(t)
+	tr := a.seedTrip()
+	taxi := tr.expenseBy(tr.anaM, tr.betoM, 1000)
+	version := a.pushed(t, tr.ana, taxi)
+	target := "/api/v1/expenses/" + taxi.Id.String()
+
+	first := a.do(tr.beto, http.MethodDelete, target, nil)
+	again := a.do(tr.ana, http.MethodDelete, target, nil)
+
+	if first.Code != http.StatusNoContent || again.Code != http.StatusNoContent {
+		t.Fatalf("codes = %d and %d, want 204 both times", first.Code, again.Code)
+	}
+	got := a.pull(t, tr.ana, version)
+	if len(got.Expenses) != 1 || got.Expenses[0].DeletedAt == nil {
+		t.Errorf("expenses = %+v, want the taxi with deletedAt", got.Expenses)
+	}
+	if debts := debtsOf(t, got, tr.id); len(debts) != 0 {
+		t.Errorf("debts = %+v, want none: it no longer counts", debts)
+	}
+	wantDetails := map[string]any{"expenseId": taxi.Id.String(), "description": "Taxi", "total": float64(1000), "currency": "USD"}
+	if len(got.Activities) != 1 || got.Activities[0].Kind != httpapi.ExpenseDeleted || got.Activities[0].UserId != id(tr.beto.user.ID) ||
+		!reflect.DeepEqual(got.Activities[0].Details, wantDetails) {
+		t.Errorf("activities = %+v, want only Beto's deletion", got.Activities)
+	}
+}
+
+func TestRestoreExpenseMakesItCountAgain(t *testing.T) {
+	a := newRecordsAPI(t)
+	tr := a.seedTrip()
+	taxi := tr.expenseBy(tr.anaM, tr.betoM, 1000)
+	a.pushed(t, tr.ana, taxi)
+	a.do(tr.ana, http.MethodDelete, "/api/v1/expenses/"+taxi.Id.String(), nil)
+	cursor := a.pull(t, tr.ana, 0).Cursor
+	target := "/api/v1/expenses/" + taxi.Id.String() + "/restore"
+
+	restored := decodeBody[httpapi.Expense](t, a.do(tr.beto, http.MethodPost, target, nil), http.StatusOK)
+	again := decodeBody[httpapi.Expense](t, a.do(tr.beto, http.MethodPost, target, nil), http.StatusOK)
+
+	if restored.DeletedAt != nil || restored.Version <= cursor || len(restored.OwedShares) != 1 {
+		t.Errorf("restored = %+v, want it alive with a new version and its shares", restored)
+	}
+	if again.Version != restored.Version {
+		t.Errorf("version after restoring twice = %d, want %d: a live Expense stays as it is", again.Version, restored.Version)
+	}
+	got := a.pull(t, tr.ana, cursor)
+	want := []httpapi.Debt{{FromMemberId: id(tr.betoM), ToMemberId: id(tr.anaM), Amount: 1000, Currency: "USD"}}
+	if !reflect.DeepEqual(debtsOf(t, got, tr.id), want) {
+		t.Errorf("debts = %+v, want %+v", debtsOf(t, got, tr.id), want)
+	}
+	if len(got.Activities) != 1 || got.Activities[0].Kind != httpapi.ExpenseRestored {
+		t.Errorf("activities = %+v, want only the restoration", got.Activities)
+	}
+}
+
+func TestRestoreExpenseRefusesOneWithAFormerMember(t *testing.T) {
+	a := newRecordsAPI(t)
+	tr := a.seedTrip()
+	dinner := tr.dinner()
+	a.pushed(t, tr.ana, dinner)
+	a.do(tr.ana, http.MethodDelete, "/api/v1/expenses/"+dinner.Id.String(), nil)
+	a.leave(tr.id, tr.carlaM, "member_removed", tr.ana)
+
+	rec := a.do(tr.ana, http.MethodPost, "/api/v1/expenses/"+dinner.Id.String()+"/restore", nil)
+
+	decodeProblem(t, rec, http.StatusConflict, httpapi.ProblemCodeInvalidParticipants)
+	if got := a.pull(t, tr.ana, 0).Expenses[0]; got.DeletedAt == nil {
+		t.Errorf("expense = %+v, want it still deleted", got)
+	}
+}
+
+func TestDeleteAndRestoreAnExpenseHideWhatTheUserCannotSee(t *testing.T) {
+	a := newRecordsAPI(t)
+	tr := a.seedTrip()
+	dinner := tr.dinner()
+	a.pushed(t, tr.ana, dinner)
+	delete, restore := "/api/v1/expenses/"+dinner.Id.String(), "/api/v1/expenses/"+dinner.Id.String()+"/restore"
+
+	decodeProblem(t, a.do(tr.eva, http.MethodDelete, delete, nil), http.StatusNotFound, httpapi.ProblemCodeNotFound)
+	decodeProblem(t, a.do(tr.eva, http.MethodPost, restore, nil), http.StatusNotFound, httpapi.ProblemCodeNotFound)
+	decodeProblem(t, a.do(tr.ana, http.MethodDelete, "/api/v1/expenses/"+uuid.NewString(), nil), http.StatusNotFound, httpapi.ProblemCodeNotFound)
+	decodeProblem(t, a.do(signedIn{}, http.MethodDelete, delete, nil), http.StatusUnauthorized, httpapi.ProblemCodeUnauthenticated)
+	decodeProblem(t, a.do(signedIn{}, http.MethodPost, restore, nil), http.StatusUnauthorized, httpapi.ProblemCodeUnauthenticated)
+}

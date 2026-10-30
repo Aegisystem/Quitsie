@@ -57,6 +57,68 @@ func UpdateExpense(ctx context.Context, db *sql.DB, userID string, e store.Expen
 	return updated, nil
 }
 
+// errUnchanged rolls back the write of an operation that finds its work
+// already done, so repeating it spends no version and leaves no Activity.
+var errUnchanged = errors.New("already done")
+
+// write runs fn with store.Write; errUnchanged from fn is not a failure.
+func write(ctx context.Context, db *sql.DB, fn func(q *store.Queries, version int64) error) error {
+	_, err := store.Write(ctx, db, fn)
+	if errors.Is(err, errUnchanged) {
+		return nil
+	}
+	return err
+}
+
+// DeleteExpense makes the Expense id a deleted expense, which no longer counts
+// in Balances. Deleting it again changes nothing. It returns ErrNotFound if
+// userID cannot see it.
+func DeleteExpense(ctx context.Context, db *sql.DB, userID, id string) error {
+	return write(ctx, db, func(q *store.Queries, version int64) error {
+		stored, _, err := expenseOf(ctx, q, userID, id)
+		if err != nil {
+			return err
+		}
+		if stored.DeletedAt != nil {
+			return errUnchanged
+		}
+		now := time.Now().UTC()
+		if _, err := q.DeleteExpense(ctx, store.DeleteExpenseParams{DeletedAt: &now, Version: version, ID: id}); err != nil {
+			return fmt.Errorf("delete expense %s: %w", id, err)
+		}
+		return logActivity(ctx, q, stored.LedgerID, userID, activityExpenseDeleted, expenseDetails(stored.Expense), version, now)
+	})
+}
+
+// RestoreExpense makes a deleted Expense count again, with no time limit, and
+// returns it; a live one comes back as it is. It returns ErrNotFound, or a
+// *Rejection if the Expense includes someone who is now a former member.
+func RestoreExpense(ctx context.Context, db *sql.DB, userID, id string) (store.ExpenseWithShares, error) {
+	var restored store.ExpenseWithShares
+	err := write(ctx, db, func(q *store.Queries, version int64) error {
+		stored, ledger, err := expenseOf(ctx, q, userID, id)
+		if err != nil {
+			return err
+		}
+		restored = stored
+		if stored.DeletedAt == nil {
+			return errUnchanged
+		}
+		if err := domain.ValidateExpense(ledger.Domain(), ledgers.Expense(stored)); err != nil {
+			return rejection(err)
+		}
+		if _, err := q.RestoreExpense(ctx, store.RestoreExpenseParams{Version: version, ID: id}); err != nil {
+			return fmt.Errorf("restore expense %s: %w", id, err)
+		}
+		restored.Version, restored.DeletedAt = version, nil
+		return logActivity(ctx, q, stored.LedgerID, userID, activityExpenseRestored, expenseDetails(stored.Expense), version, time.Now().UTC())
+	})
+	if err != nil {
+		return store.ExpenseWithShares{}, err
+	}
+	return restored, nil
+}
+
 // expenseOf loads the Expense id and its ledger, or returns ErrNotFound if
 // userID cannot use that ledger.
 func expenseOf(ctx context.Context, q *store.Queries, userID, id string) (store.ExpenseWithShares, *ledgers.Snapshot, error) {

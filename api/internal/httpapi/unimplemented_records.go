@@ -9,14 +9,6 @@ import "context"
 
 // --- records ---
 
-func (s *Server) DeleteExpense(context.Context, DeleteExpenseRequestObject) (DeleteExpenseResponseObject, error) {
-	return nil, errNotImplemented
-}
-
-func (s *Server) RestoreExpense(context.Context, RestoreExpenseRequestObject) (RestoreExpenseResponseObject, error) {
-	return nil, errNotImplemented
-}
-
 func (s *Server) DeleteSettlement(context.Context, DeleteSettlementRequestObject) (DeleteSettlementResponseObject, error) {
 	return nil, errNotImplemented
 }
