@@ -30,6 +30,8 @@ func NewHandler(s *Server, pwa fs.FS) http.Handler {
 
 	mux := http.NewServeMux()
 	mux.Handle("/api/", s.guard(api))
+	// Health needs no User, and it must keep working when the session lookup cannot.
+	mux.Handle("GET /api/v1/health", api)
 	mux.Handle("/", pwaHandler(pwa))
 	return mux
 }
@@ -57,7 +59,7 @@ var publicOperations = map[string]bool{
 }
 
 // requireSession answers 401 unauthenticated to any operation outside
-// publicOperations when authenticate found no User, so handlers of those
+// publicOperations when Authenticate found no User, so handlers of those
 // operations can count on auth.CurrentUser.
 func requireSession(f StrictHandlerFunc, operationID string) StrictHandlerFunc {
 	if publicOperations[operationID] {

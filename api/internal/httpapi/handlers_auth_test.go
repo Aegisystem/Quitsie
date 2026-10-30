@@ -142,6 +142,20 @@ func TestAFailingSessionLookupIsAnInternalError(t *testing.T) {
 	wantProblem(t, ana.do(http.MethodGet, "/api/v1/me", ""), http.StatusInternalServerError, httpapi.ProblemCodeInternalError)
 }
 
+// The PWA's requests carry the session cookie, and health must still report
+// the database instead of failing on the session lookup.
+func TestHealthReportsTheDatabaseToASignedInBrowser(t *testing.T) {
+	api := newTestAPI(t)
+	ana, _ := api.signedIn(t, "ana@example.com")
+	api.db.Close()
+
+	health := readJSON[httpapi.Health](t, ana.do(http.MethodGet, "/api/v1/health", ""), http.StatusServiceUnavailable)
+
+	if health.Database != httpapi.HealthDatabaseUnreachable {
+		t.Errorf("health = %+v, want the database unreachable", health)
+	}
+}
+
 func TestALoginCodeMustBeTheOneSentAndStillLive(t *testing.T) {
 	var clk *clock
 	api := newTestAPI(t, withClock(&clk))
