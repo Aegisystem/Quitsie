@@ -2572,6 +2572,20 @@ func (response DeleteExpense404ApplicationProblemPlusJSONResponse) VisitDeleteEx
 	return err
 }
 
+type DeleteExpense409ApplicationProblemPlusJSONResponse Problem
+
+func (response DeleteExpense409ApplicationProblemPlusJSONResponse) VisitDeleteExpenseResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type DeleteExpensedefaultApplicationProblemPlusJSONResponse struct {
 	Body       Problem
 	StatusCode int
@@ -4191,6 +4205,20 @@ func (response DeleteSettlement404ApplicationProblemPlusJSONResponse) VisitDelet
 	}
 	w.Header().Set("Content-Type", "application/problem+json")
 	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteSettlement409ApplicationProblemPlusJSONResponse Problem
+
+func (response DeleteSettlement409ApplicationProblemPlusJSONResponse) VisitDeleteSettlementResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(409)
 	_, err := buf.WriteTo(w)
 	return err
 }

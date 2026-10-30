@@ -512,7 +512,7 @@ export interface paths {
         post?: never;
         /**
          * Deletes a Settlement; it stops counting in Balances but can be restored.
-         * @description Settlements are never edited: to correct one, delete it and record another.
+         * @description Settlements are never edited: to correct one, delete it and record another. One with a former member can be neither deleted nor replaced.
          */
         delete: operations["deleteSettlement"];
         options?: never;
@@ -1914,6 +1914,15 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
+            /** @description A Participant is a former member, whose Balance must stay at zero (`invalid_participants`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
             default: components["responses"]["Problem"];
         };
     };
@@ -2018,6 +2027,15 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
+            /** @description One of the two people is a former member, whose Balance must stay at zero (`invalid_participants`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
             default: components["responses"]["Problem"];
         };
     };

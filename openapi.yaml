@@ -823,6 +823,14 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
+        "409":
+          description: >
+            A Participant is a former member, whose Balance must stay at zero
+            (`invalid_participants`).
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
         default:
           $ref: "#/components/responses/Problem"
 
@@ -863,7 +871,8 @@ paths:
       summary: Deletes a Settlement; it stops counting in Balances but can be restored.
       description: >
         Settlements are never edited: to correct one, delete it and record
-        another.
+        another. One with a former member can be neither deleted nor
+        replaced.
       tags: [records]
       responses:
         "204":
@@ -872,6 +881,14 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
+        "409":
+          description: >
+            One of the two people is a former member, whose Balance must stay
+            at zero (`invalid_participants`).
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
         default:
           $ref: "#/components/responses/Problem"
 

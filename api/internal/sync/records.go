@@ -72,15 +72,18 @@ func write(ctx context.Context, db *sql.DB, fn func(q *store.Queries, version in
 
 // DeleteExpense makes the Expense id a deleted expense, which no longer counts
 // in Balances. Deleting it again changes nothing. It returns ErrNotFound if
-// userID cannot see it.
+// userID cannot see it, or a *Rejection if it includes a former member.
 func DeleteExpense(ctx context.Context, db *sql.DB, userID, id string) error {
 	return write(ctx, db, func(q *store.Queries, version int64) error {
-		stored, _, err := expenseOf(ctx, q, userID, id)
+		stored, ledger, err := expenseOf(ctx, q, userID, id)
 		if err != nil {
 			return err
 		}
 		if stored.DeletedAt != nil {
 			return errUnchanged
+		}
+		if err := domain.ValidateExpenseDeletion(ledger.Domain(), ledgers.Expense(stored)); err != nil {
+			return rejection(err)
 		}
 		now := time.Now().UTC()
 		if _, err := q.DeleteExpense(ctx, store.DeleteExpenseParams{DeletedAt: &now, Version: version, ID: id}); err != nil {
@@ -140,15 +143,19 @@ func expenseOf(ctx context.Context, q *store.Queries, userID, id string) (store.
 }
 
 // DeleteSettlement makes the Settlement id stop counting in Balances. Deleting
-// it again changes nothing. It returns ErrNotFound if userID cannot see it.
+// it again changes nothing. It returns ErrNotFound if userID cannot see it, or
+// a *Rejection if one of the two people is a former member.
 func DeleteSettlement(ctx context.Context, db *sql.DB, userID, id string) error {
 	return write(ctx, db, func(q *store.Queries, version int64) error {
-		stored, _, err := settlementOf(ctx, q, userID, id)
+		stored, ledger, err := settlementOf(ctx, q, userID, id)
 		if err != nil {
 			return err
 		}
 		if stored.DeletedAt != nil {
 			return errUnchanged
+		}
+		if err := domain.ValidateSettlementDeletion(ledger.Domain(), ledgers.Settlement(stored)); err != nil {
+			return rejection(err)
 		}
 		now := time.Now().UTC()
 		if _, err := q.DeleteSettlement(ctx, store.DeleteSettlementParams{DeletedAt: &now, Version: version, ID: id}); err != nil {

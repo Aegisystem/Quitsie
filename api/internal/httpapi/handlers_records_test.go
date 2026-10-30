@@ -1182,3 +1182,61 @@ func TestDeleteAndRestoreASettlementHideWhatTheUserCannotSee(t *testing.T) {
 	decodeProblem(t, a.do(signedIn{}, http.MethodDelete, target, nil), http.StatusUnauthorized, httpapi.ProblemCodeUnauthenticated)
 	decodeProblem(t, a.do(signedIn{}, http.MethodPost, target+"/restore", nil), http.StatusUnauthorized, httpapi.ProblemCodeUnauthenticated)
 }
+
+func TestDeleteExpenseRefusesOneWithAFormerMember(t *testing.T) {
+	a := newRecordsAPI(t)
+	tr := a.seedTrip()
+	dinner := tr.dinner()
+	a.pushed(t, tr.ana, dinner)
+	a.leave(tr.id, tr.carlaM, "member_removed", tr.ana)
+	cursor := a.pull(t, tr.ana, 0).Cursor
+
+	rec := a.do(tr.ana, http.MethodDelete, "/api/v1/expenses/"+dinner.Id.String(), nil)
+
+	decodeProblem(t, rec, http.StatusConflict, httpapi.ProblemCodeInvalidParticipants)
+	if got := a.pull(t, tr.ana, 0).Expenses[0]; got.DeletedAt != nil {
+		t.Errorf("expense = %+v, want it still counting", got)
+	}
+	if got := a.pull(t, tr.ana, cursor); len(got.Activities) != 0 || got.Cursor != cursor {
+		t.Errorf("after the refusal: activities = %+v, cursor = %d, want nothing written at %d", got.Activities, got.Cursor, cursor)
+	}
+}
+
+func TestDeleteSettlementRefusesOneWithAFormerMember(t *testing.T) {
+	a := newRecordsAPI(t)
+	tr := a.seedTrip()
+	payback := tr.payback()
+	payback.FromMemberId = id(tr.carlaM)
+	a.push(t, tr.beto, settlements(payback))
+	a.leave(tr.id, tr.carlaM, "member_left", tr.ana)
+	cursor := a.pull(t, tr.ana, 0).Cursor
+
+	rec := a.do(tr.ana, http.MethodDelete, "/api/v1/settlements/"+payback.Id.String(), nil)
+
+	decodeProblem(t, rec, http.StatusConflict, httpapi.ProblemCodeInvalidParticipants)
+	if got := a.pull(t, tr.ana, 0).Settlements[0]; got.DeletedAt != nil {
+		t.Errorf("settlement = %+v, want it still counting", got)
+	}
+	if got := a.pull(t, tr.ana, cursor); len(got.Activities) != 0 || got.Cursor != cursor {
+		t.Errorf("after the refusal: activities = %+v, cursor = %d, want nothing written at %d", got.Activities, got.Cursor, cursor)
+	}
+}
+
+func TestDeleteStaysRepeatableForARecordDeletedBeforeTheMemberLeft(t *testing.T) {
+	a := newRecordsAPI(t)
+	tr := a.seedTrip()
+	dinner, payback := tr.dinner(), tr.payback()
+	payback.FromMemberId = id(tr.carlaM)
+	a.pushed(t, tr.ana, dinner)
+	a.push(t, tr.beto, settlements(payback))
+	expense, settlement := "/api/v1/expenses/"+dinner.Id.String(), "/api/v1/settlements/"+payback.Id.String()
+	a.do(tr.ana, http.MethodDelete, expense, nil)
+	a.do(tr.ana, http.MethodDelete, settlement, nil)
+	a.leave(tr.id, tr.carlaM, "member_left", tr.ana)
+
+	for _, target := range []string{expense, settlement} {
+		if rec := a.do(tr.ana, http.MethodDelete, target, nil); rec.Code != http.StatusNoContent {
+			t.Errorf("DELETE %s: code = %d, want 204: it already was deleted", target, rec.Code)
+		}
+	}
+}
