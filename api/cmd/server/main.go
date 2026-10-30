@@ -155,6 +155,8 @@ const (
 	viteOrigin = "http://localhost:5173"
 	// minInviteSecretLength is what invites.Token asks of its secret.
 	minInviteSecretLength = 32
+	// runLocally is the hint of the errors a developer meets first.
+	runLocally = "to run locally, set QUITSIE_ENV=development and QUITSIE_MAIL=log"
 )
 
 // loadConfig reads the configuration and checks it, so that a server that
@@ -182,8 +184,12 @@ func loadConfig(getenv func(string) string) (config, error) {
 	}
 
 	origin := getenv("QUITSIE_PUBLIC_ORIGIN")
-	if origin == "" && development {
+	switch {
+	case origin != "":
+	case development:
 		origin = "http://localhost:8080"
+	default:
+		return config{}, errors.New("QUITSIE_PUBLIC_ORIGIN is required (" + runLocally + ")")
 	}
 	if err := checkOrigin(origin, development); err != nil {
 		return config{}, err
@@ -203,8 +209,7 @@ func loadConfig(getenv func(string) string) (config, error) {
 	case "resend":
 		cfg.resend = mail.ResendConfig{APIKey: getenv("QUITSIE_RESEND_API_KEY"), From: getenv("QUITSIE_MAIL_FROM")}
 		if cfg.resend.APIKey == "" || cfg.resend.From == "" {
-			return config{}, errors.New("QUITSIE_RESEND_API_KEY and QUITSIE_MAIL_FROM are required to send login codes " +
-				"(to run locally, set QUITSIE_ENV=development and QUITSIE_MAIL=log)")
+			return config{}, errors.New("QUITSIE_RESEND_API_KEY and QUITSIE_MAIL_FROM are required to send login codes (" + runLocally + ")")
 		}
 	case "log":
 		if !development {

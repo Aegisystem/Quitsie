@@ -130,6 +130,15 @@ func TestAMissingKeyNeverTurnsOnTheDevelopmentMail(t *testing.T) {
 	}
 }
 
+// It is the first thing someone sees who runs the server with no setup.
+func TestAnEmptyEnvironmentSaysHowToRunLocally(t *testing.T) {
+	_, err := loadConfig(env(map[string]string{}, nil))
+
+	if err == nil || !strings.Contains(err.Error(), "QUITSIE_ENV=development") {
+		t.Errorf("err = %v, want one that mentions QUITSIE_ENV=development", err)
+	}
+}
+
 func TestADevelopmentEnvironment(t *testing.T) {
 	cfg, err := loadConfig(env(development, nil))
 	if err != nil {

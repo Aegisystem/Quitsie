@@ -70,7 +70,7 @@ export interface paths {
         };
         /**
          * Redirects to Google to sign in with OpenID Connect.
-         * @description The browser navigates here (it is not called with fetch). The server keeps the OAuth state in a short-lived cookie.
+         * @description The browser navigates here (it is not called with fetch). The server keeps the OAuth state in a short-lived cookie. If Google sign-in is off or Google cannot be reached, it redirects to `/login?error=google` instead.
          */
         get: operations["startGoogleLogin"];
         put?: never;
@@ -90,7 +90,7 @@ export interface paths {
         };
         /**
          * Google redirects back here; signs in and returns to the app.
-         * @description Always answers with a redirect to the app: to `returnTo` on success, creating the User if needed, or to `/login?error=google` on failure.
+         * @description Always answers with a redirect to the app: to `returnTo` on success, creating the User if needed; to `/login` if the person declined; or to `/login?error=google` on any other failure.
          */
         get: operations["finishGoogleLogin"];
         put?: never;
@@ -170,7 +170,7 @@ export interface paths {
         post?: never;
         /**
          * Deletes the User's account.
-         * @description Closes every session. The User's Members and Friends become pending again, keeping their names, so nobody else's Balances change.
+         * @description Closes every session. The User's Members and Friends become pending again, keeping their names, so nobody else's Balances change. The email and the Google account are freed: signing in with them again creates a new User.
          */
         delete: operations["deleteMe"];
         options?: never;
@@ -659,8 +659,8 @@ export interface components {
             /** Format: uuid */
             id: string;
             /**
-             * @description Description of the device, derived from its User-Agent at sign-in.
-             * @example Safari en iPhone
+             * @description The User-Agent at sign-in, cut to 256 bytes. The client turns it into something readable, such as "Safari en iPhone".
+             * @example Mozilla/5.0 (iPhone; CPU iPhone OS 19_0 like Mac OS X) AppleWebKit/605.1.15 Version/19.0 Mobile/15E148 Safari/604.1
              */
             device: string;
             /** Format: date-time */
@@ -1223,7 +1223,7 @@ export interface operations {
     startGoogleLogin: {
         parameters: {
             query?: {
-                /** @description Path inside the app to go back to afterwards, for example an invite. Must start with `/`. */
+                /** @description Path inside the app to go back to afterwards, for example an invite. Must start with a single `/`; a path that would leave the app answers `400 validation_failed`. */
                 returnTo?: string;
             };
             header?: never;
@@ -1232,7 +1232,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Redirect to Google. */
+            /** @description Redirect to Google, or to `/login?error=google` if it cannot be used. */
             302: {
                 headers: {
                     Location?: string;
