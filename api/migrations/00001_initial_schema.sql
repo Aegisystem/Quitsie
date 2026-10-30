@@ -22,15 +22,22 @@ CREATE TABLE version_counter (
 
 INSERT INTO version_counter (id, value) VALUES (1, 0);
 
+-- A deleted User keeps its row, which past Expenses and Activities point to,
+-- but loses its email, name and Google account, so the person can sign up
+-- again and nothing personal stays behind.
 CREATE TABLE users (
     id                 TEXT PRIMARY KEY,
-    email              TEXT NOT NULL UNIQUE,
+    email              TEXT NOT NULL,
     name               TEXT NOT NULL,
     preferred_currency TEXT NOT NULL CHECK (length(preferred_currency) = 3 AND preferred_currency = upper(preferred_currency)),
     google_sub         TEXT UNIQUE,
     created_at         TIMESTAMP NOT NULL,
-    deleted_at         TIMESTAMP
+    deleted_at         TIMESTAMP,
+    CHECK (deleted_at IS NOT NULL OR email <> '')
 );
+
+-- Only live accounts hold their email: deleted ones all have it empty.
+CREATE UNIQUE INDEX users_email ON users (email) WHERE deleted_at IS NULL;
 
 CREATE TABLE sessions (
     id           TEXT PRIMARY KEY,

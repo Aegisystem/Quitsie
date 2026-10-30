@@ -14,38 +14,36 @@ import (
 	"golang.org/x/oauth2"
 
 	"github.com/Aegisystem/Quitsie/api/internal/auth"
+	"github.com/Aegisystem/Quitsie/api/internal/auth/authtest"
 )
 
+const googleRedirectURL = "https://quitsie.app/api/v1/auth/google/callback"
+
 // newGoogleFixture returns a fixture whose Service signs in with the fake Google.
-func newGoogleFixture(t *testing.T) (*fixture, *fakeGoogle) {
+func newGoogleFixture(t *testing.T) (*fixture, *authtest.FakeGoogle) {
 	t.Helper()
-	var g *fakeGoogle
+	var g *authtest.FakeGoogle
 	f := newFixture(t, func(cfg *auth.Config) {
-		g = newFakeGoogle(t, cfg.Now)
-		cfg.Google = &auth.GoogleConfig{
-			ClientID:     googleClientID,
-			ClientSecret: googleClientSecret,
-			RedirectURL:  googleRedirectURL,
-			IssuerURL:    g.url,
-		}
+		g = authtest.NewFakeGoogle(t, googleRedirectURL, cfg.Now)
+		cfg.Google = g.Config()
 	})
 	return f, g
 }
 
 // googleCallback starts signing in with Google and returns the request the
 // browser makes when Google sends it back, carrying the flow cookie.
-func (f *fixture) googleCallback(t *testing.T, g *fakeGoogle, account googleAccount) *http.Request {
+func (f *fixture) googleCallback(t *testing.T, g *authtest.FakeGoogle, account authtest.GoogleAccount) *http.Request {
 	t.Helper()
-	authURL, flow, err := f.svc.BeginGoogle(context.Background())
+	authURL, flow, err := f.svc.BeginGoogle(context.Background(), "/")
 	if err != nil {
 		t.Fatal(err)
 	}
-	req := httptest.NewRequest(http.MethodGet, g.consent(t, authURL, account), nil)
+	req := httptest.NewRequest(http.MethodGet, g.Consent(t, authURL, account), nil)
 	req.AddCookie(flow)
 	return req
 }
 
-var anaAtGoogle = googleAccount{Sub: "108", Email: "ana@gmail.com", EmailVerified: true, Name: "Ana Pérez"}
+var anaAtGoogle = authtest.GoogleAccount{Sub: "108", Email: "ana@gmail.com", EmailVerified: true, Name: "Ana Pérez"}
 
 func TestGoogleSignsANewUserIn(t *testing.T) {
 	f, g := newGoogleFixture(t)
@@ -98,7 +96,7 @@ func TestAGoogleAccountStaysLinkedWhenItsEmailChanges(t *testing.T) {
 func TestTheGoogleFlowCookieIsShortLivedAndHidden(t *testing.T) {
 	f, _ := newGoogleFixture(t)
 
-	_, c, err := f.svc.BeginGoogle(context.Background())
+	_, c, err := f.svc.BeginGoogle(context.Background(), "/")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -140,7 +138,7 @@ func TestGoogleAnswersNeedTheBrowserThatAsked(t *testing.T) {
 		f.finishFails(t, withCookie(f.googleCallback(t, g, anaAtGoogle), ""), auth.ErrGoogleFailed)
 	})
 	t.Run("another flow's cookie", func(t *testing.T) {
-		_, other, err := f.svc.BeginGoogle(context.Background())
+		_, other, err := f.svc.BeginGoogle(context.Background(), "/")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -163,15 +161,17 @@ func TestGoogleIDTokensAreVerified(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for name, spoil := range map[string]func(g *fakeGoogle){
-		"wrong nonce": func(g *fakeGoogle) { g.tamper = func(c map[string]any) { c["nonce"] = "replayed" } },
-		"another client": func(g *fakeGoogle) {
-			g.tamper = func(c map[string]any) { c["aud"] = "someone-else.apps.googleusercontent.com" }
+	for name, spoil := range map[string]func(g *authtest.FakeGoogle){
+		"wrong nonce": func(g *authtest.FakeGoogle) { g.Tamper = func(c map[string]any) { c["nonce"] = "replayed" } },
+		"another client": func(g *authtest.FakeGoogle) {
+			g.Tamper = func(c map[string]any) { c["aud"] = "someone-else.apps.googleusercontent.com" }
 		},
-		"another issuer":   func(g *fakeGoogle) { g.tamper = func(c map[string]any) { c["iss"] = "https://evil.example" } },
-		"expired":          func(g *fakeGoogle) { g.tamper = func(c map[string]any) { c["exp"] = g.now().Add(-time.Minute).Unix() } },
-		"unknown key":      func(g *fakeGoogle) { g.signWith = otherKey },
-		"unverified email": func(g *fakeGoogle) { g.tamper = func(c map[string]any) { c["email_verified"] = false } },
+		"another issuer": func(g *authtest.FakeGoogle) { g.Tamper = func(c map[string]any) { c["iss"] = "https://evil.example" } },
+		"expired": func(g *authtest.FakeGoogle) {
+			g.Tamper = func(c map[string]any) { c["exp"] = g.Now().Add(-time.Minute).Unix() }
+		},
+		"unknown key":      func(g *authtest.FakeGoogle) { g.SignWith = otherKey },
+		"unverified email": func(g *authtest.FakeGoogle) { g.Tamper = func(c map[string]any) { c["email_verified"] = false } },
 	} {
 		t.Run(name, func(t *testing.T) {
 			f, g := newGoogleFixture(t)
@@ -183,7 +183,7 @@ func TestGoogleIDTokensAreVerified(t *testing.T) {
 
 func TestDecliningAtGoogleIsACancellation(t *testing.T) {
 	f, _ := newGoogleFixture(t)
-	authURL, flow, err := f.svc.BeginGoogle(context.Background())
+	authURL, flow, err := f.svc.BeginGoogle(context.Background(), "/")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -197,7 +197,7 @@ func TestDecliningAtGoogleIsACancellation(t *testing.T) {
 func TestGoogleIsOffWithoutConfiguration(t *testing.T) {
 	f := newFixture(t)
 
-	if _, _, err := f.svc.BeginGoogle(context.Background()); !errors.Is(err, auth.ErrGoogleDisabled) {
+	if _, _, err := f.svc.BeginGoogle(context.Background(), "/"); !errors.Is(err, auth.ErrGoogleDisabled) {
 		t.Errorf("BeginGoogle: err = %v, want ErrGoogleDisabled", err)
 	}
 }
@@ -209,4 +209,25 @@ func mustQuery(t *testing.T, rawURL string) url.Values {
 		t.Fatal(err)
 	}
 	return u.Query()
+}
+
+func TestADeletedAccountFreesItsGoogleAccount(t *testing.T) {
+	f, g := newGoogleFixture(t)
+	ctx := context.Background()
+	first, err := f.svc.FinishGoogle(ctx, f.googleCallback(t, g, anaAtGoogle), device)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := f.svc.DeleteUser(ctx, first.User.ID); err != nil {
+		t.Fatal(err)
+	}
+	again, err := f.svc.FinishGoogle(ctx, f.googleCallback(t, g, anaAtGoogle), device)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !again.NewUser || again.User.ID == first.User.ID {
+		t.Errorf("signing in again = %+v, want a new User, not %s", again, first.User.ID)
+	}
 }

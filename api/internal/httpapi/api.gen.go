@@ -940,9 +940,10 @@ type Session struct {
 	// Current True for the session making this request.
 	Current bool `json:"current"`
 
-	// Device Description of the device, derived from its User-Agent at sign-in.
+	// Device The User-Agent at sign-in, cut to 256 bytes. The client turns it into something readable, such as "Safari en iPhone".
 	//
-	// Example: Safari en iPhone
+	//
+	// Example: Mozilla/5.0 (iPhone; CPU iPhone OS 19_0 like Mac OS X) AppleWebKit/605.1.15 Version/19.0 Mobile/15E148 Safari/604.1
 	Device     string             `json:"device"`
 	Id         openapi_types.UUID `json:"id"`
 	LastUsedAt time.Time          `json:"lastUsedAt"`
@@ -1065,7 +1066,7 @@ type Unauthorized = Problem
 
 // StartGoogleLoginParams defines parameters for StartGoogleLogin.
 type StartGoogleLoginParams struct {
-	// ReturnTo Path inside the app to go back to afterwards, for example an invite. Must start with `/`.
+	// ReturnTo Path inside the app to go back to afterwards, for example an invite. Must start with a single `/`; a path that would leave the app answers `400 validation_failed`.
 	ReturnTo *string `form:"returnTo,omitempty" json:"returnTo,omitempty"`
 }
 

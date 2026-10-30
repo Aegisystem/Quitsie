@@ -37,9 +37,19 @@ var (
 	// no longer works. The User must ask for another.
 	ErrTooManyAttempts = errors.New("auth: too many attempts with this login code")
 	// ErrRateLimited means too many codes were requested for that email or
-	// from that IP in the last hour.
+	// from that IP in the last hour. RequestCode returns it as a
+	// *RateLimitError, which says when to try again.
 	ErrRateLimited = errors.New("auth: too many login codes requested")
 )
+
+// RateLimitError is ErrRateLimited with how long until another code can be
+// requested.
+type RateLimitError struct {
+	RetryAfter time.Duration
+}
+
+func (e *RateLimitError) Error() string        { return ErrRateLimited.Error() }
+func (e *RateLimitError) Is(target error) bool { return target == ErrRateLimited }
 
 // RequestCode emails a new 6-digit login code to email. The code replaces
 // any earlier one for the same email. ip is the client's address, used to
@@ -49,8 +59,8 @@ func (s *Service) RequestCode(ctx context.Context, email, ip string) error {
 	if err != nil {
 		return err
 	}
-	if !s.sends.allow(s.now(), quota{"email:" + email, maxSendsPerMail}, quota{"ip:" + ip, maxSendsPerIP}) {
-		return ErrRateLimited
+	if ok, retryAfter := s.sends.allow(s.now(), quota{"email:" + email, maxSendsPerMail}, quota{"ip:" + ip, maxSendsPerIP}); !ok {
+		return &RateLimitError{RetryAfter: retryAfter}
 	}
 	code, err := newCode()
 	if err != nil {

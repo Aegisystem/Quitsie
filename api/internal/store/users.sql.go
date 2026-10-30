@@ -34,6 +34,24 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) error {
 	return err
 }
 
+const deleteUser = `-- name: DeleteUser :exec
+UPDATE users
+SET email = '', name = '', google_sub = NULL, deleted_at = ?1
+WHERE id = ?2 AND deleted_at IS NULL
+`
+
+type DeleteUserParams struct {
+	DeletedAt *time.Time
+	ID        string
+}
+
+// Frees the email and the Google account, so the person can sign up again,
+// and forgets the name. The row stays for past Expenses and Activities.
+func (q *Queries) DeleteUser(ctx context.Context, arg DeleteUserParams) error {
+	_, err := q.db.ExecContext(ctx, deleteUser, arg.DeletedAt, arg.ID)
+	return err
+}
+
 const getUserByEmail = `-- name: GetUserByEmail :one
 SELECT id, email, name, preferred_currency, google_sub, created_at, deleted_at FROM users
 WHERE email = ? AND deleted_at IS NULL
@@ -88,4 +106,34 @@ type SetUserGoogleSubParams struct {
 func (q *Queries) SetUserGoogleSub(ctx context.Context, arg SetUserGoogleSubParams) error {
 	_, err := q.db.ExecContext(ctx, setUserGoogleSub, arg.GoogleSub, arg.ID)
 	return err
+}
+
+const updateUser = `-- name: UpdateUser :one
+UPDATE users
+SET name = coalesce(?1, name),
+    preferred_currency = coalesce(?2, preferred_currency)
+WHERE id = ?3 AND deleted_at IS NULL
+RETURNING id, email, name, preferred_currency, google_sub, created_at, deleted_at
+`
+
+type UpdateUserParams struct {
+	Name              *string
+	PreferredCurrency *string
+	ID                string
+}
+
+// Changes the fields that are not NULL.
+func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) (User, error) {
+	row := q.db.QueryRowContext(ctx, updateUser, arg.Name, arg.PreferredCurrency, arg.ID)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.Name,
+		&i.PreferredCurrency,
+		&i.GoogleSub,
+		&i.CreatedAt,
+		&i.DeletedAt,
+	)
+	return i, err
 }

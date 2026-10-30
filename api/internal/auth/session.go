@@ -72,30 +72,33 @@ func CurrentSession(ctx context.Context) (Session, bool) {
 
 // Authenticate resolves the User from the session cookie, when there is a
 // valid one, and makes it available through CurrentUser. It never rejects a
-// request; RequireUser does.
-func (s *Service) Authenticate(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		cookie, err := r.Cookie(SessionCookieName)
-		if err != nil {
-			next.ServeHTTP(w, r)
-			return
-		}
-		id, renewed, err := s.resolve(r.Context(), cookie.Value)
-		if errors.Is(err, errNoSession) {
-			// The session expired or was ended: stop the browser sending it.
-			http.SetCookie(w, ClearSessionCookie())
-			next.ServeHTTP(w, r)
-			return
-		}
-		if err != nil {
-			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-			return
-		}
-		if renewed {
-			http.SetCookie(w, SessionCookie(cookie.Value))
-		}
-		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), identityKey{}, id)))
-	})
+// request for lacking a session; the API decides which operations need one.
+// If the session cannot be looked up, fail answers the request.
+func (s *Service) Authenticate(fail ErrorHandler) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			cookie, err := r.Cookie(SessionCookieName)
+			if err != nil {
+				next.ServeHTTP(w, r)
+				return
+			}
+			id, renewed, err := s.resolve(r.Context(), cookie.Value)
+			if errors.Is(err, errNoSession) {
+				// The session expired or was ended: stop the browser sending it.
+				http.SetCookie(w, ClearSessionCookie())
+				next.ServeHTTP(w, r)
+				return
+			}
+			if err != nil {
+				fail(w, r, err)
+				return
+			}
+			if renewed {
+				http.SetCookie(w, SessionCookie(cookie.Value))
+			}
+			next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), identityKey{}, id)))
+		})
+	}
 }
 
 var errNoSession = errors.New("auth: no session")
@@ -130,17 +133,6 @@ func (s *Service) resolve(ctx context.Context, token string) (id identity, renew
 		renewed = true
 	}
 	return identity{user: row.User, session: sessionFrom(row.Session)}, renewed, nil
-}
-
-// RequireUser answers 401 Unauthorized when Authenticate found no User.
-func RequireUser(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if _, ok := CurrentUser(r.Context()); !ok {
-			http.Error(w, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
 }
 
 // createSession starts a session for the User and returns its token.

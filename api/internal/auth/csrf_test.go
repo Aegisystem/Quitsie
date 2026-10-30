@@ -1,6 +1,7 @@
 package auth_test
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -8,10 +9,19 @@ import (
 	"github.com/Aegisystem/Quitsie/api/internal/auth"
 )
 
+// refuse answers 403 to requests RequireSameOrigin refuses with ErrForeignOrigin.
+func refuse(w http.ResponseWriter, _ *http.Request, err error) {
+	if errors.Is(err, auth.ErrForeignOrigin) {
+		w.WriteHeader(http.StatusForbidden)
+		return
+	}
+	w.WriteHeader(http.StatusInternalServerError)
+}
+
 // send runs a request with the given Origin header (none if empty) through
 // RequireSameOrigin for https://quitsie.app and returns the status code.
 func send(method, origin string) int {
-	h := auth.RequireSameOrigin("https://quitsie.app")(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	h := auth.RequireSameOrigin(refuse, "https://quitsie.app")(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
 	req := httptest.NewRequest(method, "https://quitsie.app/api/v1/expenses", nil)
 	if origin != "" {
 		req.Header.Set("Origin", origin)
@@ -44,7 +54,7 @@ func TestReadsNeedNoOrigin(t *testing.T) {
 
 // An unset origin in the configuration must not let requests without Origin through.
 func TestAnEmptyAllowedOriginAllowsNothing(t *testing.T) {
-	h := auth.RequireSameOrigin("")(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	h := auth.RequireSameOrigin(refuse, "")(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/v1/expenses", nil))
 
