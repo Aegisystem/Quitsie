@@ -13,6 +13,11 @@ const longestWait = 5 * 60 * 1000
 // next sync, which the sign-in should start.
 export type SyncStatus = 'idle' | 'syncing' | 'offline' | 'retrying' | 'signedOut'
 
+export interface AddOptions {
+  // The id of the RejectedRecord this one fixes, which leaves the queue with it.
+  replacing?: string
+}
+
 export interface SyncEngine {
   // Syncs now and from then on when the app comes back or reconnects.
   start(): void
@@ -24,9 +29,12 @@ export interface SyncEngine {
   // Call it after any operation that goes straight to the API.
   sync(): Promise<void>
   // Queues an Expense created on the device and returns the id it was given.
-  addExpense(expense: Omit<NewExpense, 'id'>): Promise<string>
+  addExpense(expense: Omit<NewExpense, 'id'>, options?: AddOptions): Promise<string>
   // The same for a Settlement.
-  addSettlement(settlement: Omit<NewSettlement, 'id'>): Promise<string>
+  addSettlement(settlement: Omit<NewSettlement, 'id'>, options?: AddOptions): Promise<string>
+  // Removes a RejectedRecord, which only the User can decide. Any other record
+  // stays: it is on its way to the server.
+  discardRecord(id: string): Promise<void>
   // For useSyncExternalStore.
   getStatus(): SyncStatus
   subscribe(listener: () => void): () => void
@@ -103,12 +111,19 @@ export function createSyncEngine({
     return following
   }
 
+  const discardRejected = (id: string) =>
+    replica.queue.where({ id }).filter(({ status }) => status === 'rejected').delete()
+
   async function enqueue(
     id: string,
     ledgerId: string,
     record: { kind: 'expense'; expense: NewExpense } | { kind: 'settlement'; settlement: NewSettlement },
+    { replacing }: AddOptions = {},
   ): Promise<string> {
-    await replica.queue.add({ id, ledgerId, queuedAt: new Date().toISOString(), status: 'unsynced', ...record })
+    await replica.transaction('rw', replica.queue, async () => {
+      if (replacing) await discardRejected(replacing)
+      await replica.queue.add({ id, ledgerId, queuedAt: new Date().toISOString(), status: 'unsynced', ...record })
+    })
     void sync()
     return id
   }
@@ -136,14 +151,18 @@ export function createSyncEngine({
     stop,
     sync,
 
-    addExpense(expense) {
+    addExpense(expense, options) {
       const id = uuidv7()
-      return enqueue(id, expense.ledgerId, { kind: 'expense', expense: { ...expense, id } })
+      return enqueue(id, expense.ledgerId, { kind: 'expense', expense: { ...expense, id } }, options)
     },
 
-    addSettlement(settlement) {
+    addSettlement(settlement, options) {
       const id = uuidv7()
-      return enqueue(id, settlement.ledgerId, { kind: 'settlement', settlement: { ...settlement, id } })
+      return enqueue(id, settlement.ledgerId, { kind: 'settlement', settlement: { ...settlement, id } }, options)
+    },
+
+    async discardRecord(id) {
+      await discardRejected(id)
     },
 
     getStatus: () => status,

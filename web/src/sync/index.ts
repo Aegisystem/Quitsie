@@ -2,5 +2,5 @@
 // UnsyncedRecords when the app opens, regains focus or reconnects, and after
 // every change. No Background Sync: Safari on iOS does not support it.
 export type { Api } from './api'
-export { createSyncEngine, type SyncEngine, type SyncStatus } from './engine'
+export { type AddOptions, createSyncEngine, type SyncEngine, type SyncStatus } from './engine'
 export { browserEnvironment, type Environment } from './environment'

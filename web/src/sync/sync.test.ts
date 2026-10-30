@@ -3,11 +3,11 @@ import 'fake-indexeddb/auto'
 import { IDBFactory, IDBKeyRange } from 'fake-indexeddb'
 import type { Observable } from 'dexie'
 import createClient from 'openapi-fetch'
-import { describe, expect, test, vi } from 'vitest'
+import { afterEach, describe, expect, test, vi } from 'vitest'
 import type { paths } from '../api/schema.gen'
 import { liveActivity, liveBalances, liveDebts, liveExpenses, liveHome, liveLedger, liveRecords, liveSettlements, openReplica } from '../local'
 import { type FakeGroup, fakeServer, type FakeServer, me } from './fakeServer'
-import { createSyncEngine, type Environment } from '.'
+import { browserEnvironment, createSyncEngine, type Environment } from '.'
 
 // The browser around the engine, moved by hand: the tests decide when the
 // connection changes and when a timer fires.
@@ -836,5 +836,88 @@ describe('provisional Balances', () => {
     expect(ledger?.members.map((m) => m.name).sort()).toEqual(['Ana', 'Yo'])
     expect(amounts(ledger?.balances ?? [])).toEqual({ [trip.member.Yo!]: -500, [trip.member.Ana!]: 500 })
     expect(await firstValue(liveLedger(replica, crypto.randomUUID()))).toBeUndefined()
+  })
+})
+
+describe('rejected records', () => {
+  const taxi = (trip: FakeGroup) => newExpense(trip, { description: 'Taxi', currency: 'PEN', paid: { Yo: 2000 }, owed: { Yo: 1000, Ana: 1000 } })
+
+  async function withRejected() {
+    const server = fakeServer()
+    const trip = server.addGroup({ name: 'Viaje a Cusco', currency: 'PEN', members: ['Ana'] })
+    const context = setup(server)
+    await context.engine.sync()
+    context.device.goOffline()
+    const id = await context.engine.addExpense(taxi(trip))
+    server.setCurrency(trip, 'USD')
+    context.device.goOnline()
+    await context.engine.sync()
+    return { ...context, server, trip, id }
+  }
+
+  test('the User can discard one', async () => {
+    const { replica, engine, trip, id } = await withRejected()
+
+    await engine.discardRecord(id)
+
+    expect(await firstValue(liveRecords(replica))).toEqual({ rejected: [], unsynced: [] })
+    expect(await firstValue(liveExpenses(replica, trip.id))).toEqual([])
+  })
+
+  test('discarding leaves alone a record that is still unsynced', async () => {
+    const server = fakeServer()
+    const trip = server.addGroup({ name: 'Viaje a Cusco', currency: 'PEN', members: ['Ana'] })
+    const { replica, engine, device } = setup(server)
+    device.goOffline()
+    const id = await engine.addExpense(taxi(trip))
+
+    await engine.discardRecord(id)
+
+    expect((await firstValue(liveRecords(replica))).unsynced.map((record) => record.id)).toEqual([id])
+  })
+
+  test('fixing one replaces it with a new record that goes to the server', async () => {
+    const { replica, engine, trip, id } = await withRejected()
+
+    const fixed = await engine.addExpense({ ...taxi(trip), currency: 'USD' }, { replacing: id })
+
+    const [expense] = await until(liveExpenses(replica, trip.id), ([first]) => first?.version !== undefined)
+    expect(fixed).not.toBe(id)
+    expect(expense).toMatchObject({ id: fixed, currency: 'USD', sync: 'synced' })
+    expect(await firstValue(liveRecords(replica))).toEqual({ rejected: [], unsynced: [] })
+  })
+})
+
+describe('browserEnvironment', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  test('hears `online` on window and `visibilitychange` on document, until told to stop', () => {
+    const window = new EventTarget()
+    const document = Object.assign(new EventTarget(), { visibilityState: 'visible' })
+    vi.stubGlobal('window', window)
+    vi.stubGlobal('document', document)
+    const heard: string[] = []
+
+    const stopOnline = browserEnvironment.listen('online', () => heard.push('online'))
+    const stopVisibility = browserEnvironment.listen('visibilitychange', () => heard.push('visibilitychange'))
+    window.dispatchEvent(new Event('online'))
+    document.dispatchEvent(new Event('visibilitychange'))
+    expect(heard).toEqual(['online', 'visibilitychange'])
+
+    stopOnline()
+    stopVisibility()
+    window.dispatchEvent(new Event('online'))
+    document.dispatchEvent(new Event('visibilitychange'))
+    expect(heard).toHaveLength(2)
+  })
+
+  test('reads the connection and the visibility from the browser', () => {
+    vi.stubGlobal('navigator', { onLine: false })
+    vi.stubGlobal('document', { visibilityState: 'hidden' })
+
+    expect(browserEnvironment.online()).toBe(false)
+    expect(browserEnvironment.visible()).toBe(false)
   })
 })
