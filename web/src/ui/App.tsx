@@ -1,7 +1,8 @@
 import { useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
+import { session, useSession } from '../session'
 import { Screen, useOnline } from './components/Shell'
-import { demo, useDemo } from './demo/store'
+import { demo } from './demo/store'
 import { href, useRoute } from './router'
 import { Account } from './screens/Account'
 import { Activity } from './screens/Activity'
@@ -12,11 +13,19 @@ import { Ledger } from './screens/Ledger'
 import { Records } from './screens/Records'
 import { SettlementForm } from './screens/SettlementForm'
 import { SignIn } from './screens/SignIn'
+import { Welcome } from './screens/Welcome'
 
 export function App() {
-  const { signedIn } = useDemo()
+  const state = useSession()
+  const signedIn = state.status === 'signedIn'
   const route = useRoute()
   const online = useOnline()
+
+  // Who is signed in is asked when the app opens and when the connection comes
+  // back; offline, the app opens with the last known User.
+  useEffect(() => {
+    if (online || session.getState().status === 'loading') void session.check()
+  }, [online])
 
   // The queue empties when the app opens and when the connection comes back
   // (docs/arquitectura.md).
@@ -30,7 +39,11 @@ export function App() {
     window.scrollTo(0, 0)
   }, [route])
 
-  if (!signedIn) return <SignIn />
+  // The way in. The route stays in the address meanwhile, so an invite opened
+  // while signed out is still there after signing in.
+  if (state.status === 'loading') return <div className="signin" aria-busy="true" />
+  if (state.status === 'signedOut') return <SignIn notice={state.notice} />
+  if (state.needsProfile) return <Welcome user={state.user} />
 
   switch (route.name) {
     case 'home':
@@ -38,7 +51,7 @@ export function App() {
     case 'activity':
       return <Activity />
     case 'account':
-      return <Account />
+      return <Account user={state.user} />
     case 'records':
       return <Records />
     case 'ledger':
