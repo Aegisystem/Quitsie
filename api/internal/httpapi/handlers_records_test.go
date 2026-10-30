@@ -597,3 +597,56 @@ func TestPushRecordsLeavesOneActivityPerStoredRecord(t *testing.T) {
 		t.Errorf("details = %+v, want %+v", s.Details, wantDetails)
 	}
 }
+
+func TestPullChangesFromACursorBringsOnlyWhatCameAfter(t *testing.T) {
+	a := newRecordsAPI(t)
+	tr := a.seedTrip()
+	a.push(t, tr.ana, expenses(tr.dinner()))
+	cursor := a.pull(t, tr.ana, 0).Cursor
+	lunch := tr.dinner()
+	a.push(t, tr.ana, expenses(lunch))
+
+	got := a.pull(t, tr.ana, cursor)
+
+	if len(got.Expenses) != 1 || got.Expenses[0].Id != lunch.Id {
+		t.Errorf("expenses = %+v, want only the lunch", got.Expenses)
+	}
+	if len(got.Groups) != 0 || len(got.Members) != 0 {
+		t.Errorf("groups = %+v, members = %+v, want none: they did not change", got.Groups, got.Members)
+	}
+}
+
+func TestPullChangesAnswersEveryListEvenWhenEmpty(t *testing.T) {
+	a := newRecordsAPI(t)
+	eva := a.signIn("eva@example.com")
+
+	rec := a.do(eva, http.MethodGet, "/api/v1/sync?since=0", nil)
+
+	body := decodeBody[map[string]any](t, rec, http.StatusOK)
+	for _, list := range []string{"groups", "friendships", "members", "expenses", "settlements", "activities", "debts", "droppedLedgers", "visibleLedgerIds"} {
+		if got, ok := body[list].([]any); !ok || len(got) != 0 {
+			t.Errorf("%s = %v, want an empty list", list, body[list])
+		}
+	}
+}
+
+func TestPullChangesRefusesACursorAheadOfTheServer(t *testing.T) {
+	a := newRecordsAPI(t)
+	tr := a.seedTrip()
+	cursor := a.pull(t, tr.ana, 0).Cursor
+
+	decodeProblem(t, a.do(tr.ana, http.MethodGet, fmt.Sprintf("/api/v1/sync?since=%d", cursor+1), nil), http.StatusGone, httpapi.ProblemCodeCursorInvalid)
+}
+
+func TestPullChangesRefusesANegativeCursor(t *testing.T) {
+	a := newRecordsAPI(t)
+	eva := a.signIn("eva@example.com")
+
+	decodeProblem(t, a.do(eva, http.MethodGet, "/api/v1/sync?since=-1", nil), http.StatusBadRequest, httpapi.ProblemCodeValidationFailed)
+}
+
+func TestPullChangesNeedsASession(t *testing.T) {
+	a := newRecordsAPI(t)
+
+	decodeProblem(t, a.do(signedIn{}, http.MethodGet, "/api/v1/sync?since=0", nil), http.StatusUnauthorized, httpapi.ProblemCodeUnauthenticated)
+}

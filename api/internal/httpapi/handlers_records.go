@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 
@@ -104,8 +105,18 @@ func newExpense(e NewExpense) store.ExpenseWithShares {
 }
 
 func (s *Server) PullChanges(ctx context.Context, req PullChangesRequestObject) (PullChangesResponseObject, error) {
-	user, _ := auth.CurrentUser(ctx)
+	user, ok := auth.CurrentUser(ctx)
+	if !ok {
+		return PullChanges401ApplicationProblemPlusJSONResponse{UnauthorizedApplicationProblemPlusJSONResponse(unauthenticated)}, nil
+	}
+	if req.Params.Since < 0 {
+		p := recordProblem(http.StatusBadRequest, ProblemCodeValidationFailed, "The request does not match the API contract.", "since cannot be negative")
+		return PullChanges400ApplicationProblemPlusJSONResponse{BadRequestApplicationProblemPlusJSONResponse(p)}, nil
+	}
 	c, err := sync.Pull(ctx, s.deps.DB, user.ID, req.Params.Since)
+	if errors.Is(err, sync.ErrCursorAhead) {
+		return PullChanges410ApplicationProblemPlusJSONResponse(recordProblem(http.StatusGone, ProblemCodeCursorInvalid, "The cursor is ahead of the server.", "")), nil
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -118,15 +129,19 @@ func (s *Server) PullChanges(ctx context.Context, req PullChangesRequestObject) 
 
 func pulledChanges(c sync.Changes) (Changes, error) {
 	out := Changes{
-		Cursor:         c.Cursor,
-		Groups:         []Group{},
-		Friendships:    []Friendship{},
-		Members:        make([]Member, len(c.Members)),
-		Expenses:       make([]Expense, len(c.Expenses)),
-		Settlements:    make([]Settlement, len(c.Settlements)),
-		Activities:     make([]Activity, len(c.Activities)),
-		Debts:          []LedgerDebts{},
-		DroppedLedgers: []DroppedLedger{},
+		Cursor:           c.Cursor,
+		Groups:           []Group{},
+		Friendships:      []Friendship{},
+		Members:          make([]Member, len(c.Members)),
+		Expenses:         make([]Expense, len(c.Expenses)),
+		Settlements:      make([]Settlement, len(c.Settlements)),
+		Activities:       make([]Activity, len(c.Activities)),
+		Debts:            []LedgerDebts{},
+		DroppedLedgers:   []DroppedLedger{},
+		VisibleLedgerIds: make([]openapi_types.UUID, len(c.VisibleLedgerIDs)),
+	}
+	for i, ledgerID := range c.VisibleLedgerIDs {
+		out.VisibleLedgerIds[i] = toUUID(ledgerID)
 	}
 	for _, l := range c.Ledgers {
 		if l.Kind == "group" {
