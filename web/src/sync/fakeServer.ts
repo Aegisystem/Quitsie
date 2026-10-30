@@ -34,7 +34,8 @@ export function fakeServer({ versionsPerPull = Infinity }: { versionsPerPull?: n
   const pulls: number[] = []
   const pushes: RecordBatch[] = []
   let reachable = true
-  let failure: 401 | 503 | undefined
+  let failure: { status: 401 | 503; method?: 'GET' | 'POST' } | undefined
+  let afterNextPush: 'drop the connection' | 'lose the answer' | undefined
   let active = 0
   let busiest = 0
 
@@ -113,8 +114,10 @@ export function fakeServer({ versionsPerPull = Infinity }: { versionsPerPull?: n
 
   async function answer(request: Request): Promise<Response> {
     if (!reachable) throw new TypeError('Failed to fetch')
-    if (failure === 401) return problem(401, 'unauthenticated')
-    if (failure === 503) return new Response('Service Unavailable', { status: 503 })
+    if (failure && (!failure.method || failure.method === request.method)) {
+      if (failure.status === 401) return problem(401, 'unauthenticated')
+      return new Response('Service Unavailable', { status: failure.status })
+    }
     const url = new URL(request.url)
     if (request.method === 'GET' && url.pathname === '/api/v1/sync') {
       const since = Number(url.searchParams.get('since'))
@@ -125,7 +128,17 @@ export function fakeServer({ versionsPerPull = Infinity }: { versionsPerPull?: n
     if (request.method === 'POST' && url.pathname === '/api/v1/records') {
       const batch = (await request.json()) as RecordBatch
       pushes.push(batch)
-      return json(200, { results: push(batch) })
+      if (batch.expenses.length > 100 || batch.settlements.length > 100) return problem(400, 'validation_failed')
+      // The real server decodes the whole body first: one bad date fails the batch.
+      const records = [...batch.expenses, ...batch.settlements]
+      if (records.some(({ date }) => !/^\d{4}-\d{2}-\d{2}$/.test(date))) return problem(400, 'validation_failed')
+      const results = push(batch)
+      if (afterNextPush) {
+        reachable = afterNextPush === 'lose the answer'
+        afterNextPush = undefined
+        throw new TypeError('Failed to fetch')
+      }
+      return json(200, { results })
     }
     return problem(404, 'not_found')
   }
@@ -140,10 +153,19 @@ export function fakeServer({ versionsPerPull = Infinity }: { versionsPerPull?: n
     setReachable(value: boolean) {
       reachable = value
     },
-    // Every request answers with this status, or normally again with undefined.
-    failWith(status: 401 | 503 | undefined) {
-      failure = status
+    // Requests answer with this status, or normally again with undefined.
+    failWith(status: 401 | 503 | undefined, method?: 'GET' | 'POST') {
+      failure = status && { status, method }
     },
+    // The server stores the next push, but the device never hears back.
+    loseNextPushAnswer() {
+      afterNextPush = 'lose the answer'
+    },
+    // The same, and the network stays down until setReachable(true).
+    dropConnectionAfterNextPush() {
+      afterNextPush = 'drop the connection'
+    },
+    expensesIn: (group: FakeGroup) => [...db.expenses.values()].filter(({ ledgerId }) => ledgerId === group.id),
 
     // The most requests that were ever in flight at once.
     busiest: () => busiest,

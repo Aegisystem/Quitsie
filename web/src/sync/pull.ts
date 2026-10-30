@@ -28,14 +28,30 @@ export async function pull(replica: Replica, api: Api): Promise<void> {
   }
 }
 
+// The tables a pull fills, everything but the queue.
+const pulledTables = (replica: Replica) => [
+  replica.ledgers,
+  replica.members,
+  replica.expenses,
+  replica.settlements,
+  replica.activities,
+  replica.debts,
+  replica.meta,
+]
+
+// The queue stays: UnsyncedRecords and RejectedRecords are never discarded. An
+// accepted record may be among what the server lost, so it goes back to the
+// queue; if the server still has it, the pull from 0 will bring it.
 async function clearReplica(replica: Replica): Promise<void> {
-  const tables = [replica.ledgers, replica.members, replica.expenses, replica.settlements, replica.activities, replica.debts, replica.meta]
-  await replica.transaction('rw', tables, () => Promise.all(tables.map((table) => table.clear())))
+  const tables = pulledTables(replica)
+  await replica.transaction('rw', [...tables, replica.queue], async () => {
+    await Promise.all(tables.map((table) => table.clear()))
+    await replica.queue.where({ status: 'accepted' }).modify({ status: 'unsynced' })
+  })
 }
 
 async function applyChanges(replica: Replica, changes: PulledChanges): Promise<void> {
-  const tables = [replica.ledgers, replica.members, replica.expenses, replica.settlements, replica.activities, replica.debts, replica.meta]
-  await replica.transaction('rw', [...tables, replica.queue], async () => {
+  await replica.transaction('rw', [...pulledTables(replica), replica.queue], async () => {
     await replica.ledgers.bulkPut([
       ...changes.groups.map((group) => ({ ...group, kind: 'group' as const })),
       ...changes.friendships.map((friendship) => ({ ...friendship, kind: 'friendship' as const })),
@@ -67,11 +83,14 @@ async function leaveQueueOnceInReplica(replica: Replica): Promise<void> {
   }
 }
 
-// Deletes a ledger the User can no longer see, with everything in it.
+// Deletes a ledger the User can no longer see, with everything in it. Accepted
+// records go too, as no pull will bring them now. UnsyncedRecords stay, for the
+// server to reject them, and so do RejectedRecords: the User decides on those.
 async function dropLedger(replica: Replica, ledgerId: string): Promise<void> {
   await replica.ledgers.delete(ledgerId)
   await replica.debts.delete(ledgerId)
   for (const table of [replica.members, replica.expenses, replica.settlements, replica.activities]) {
     await table.where({ ledgerId }).delete()
   }
+  await replica.queue.where({ ledgerId }).filter(({ status }) => status === 'accepted').delete()
 }

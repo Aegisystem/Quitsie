@@ -53,9 +53,15 @@ export function createSyncEngine({
     for (const listener of listeners) listener()
   }
 
+  // The pull runs even if the push failed: a broken POST /records should not
+  // keep the replica from getting news.
   async function attempt() {
-    await push(replica, api)
+    let pushFailure: unknown
+    await push(replica, api).catch((failure: unknown) => {
+      pushFailure = failure
+    })
     await pull(replica, api)
+    if (pushFailure) throw pushFailure
   }
 
   async function run() {

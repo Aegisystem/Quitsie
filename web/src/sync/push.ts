@@ -1,4 +1,4 @@
-import type { NewExpense, NewSettlement, RecordResult } from '../api/client'
+import type { RecordBatch, RecordResult } from '../api/client'
 import type { QueuedRecord, Replica } from '../local'
 import { type Api, SyncFailure } from './api'
 
@@ -14,31 +14,41 @@ export async function push(replica: Replica, api: Api): Promise<void> {
   const settlements = unsynced.flatMap((record) => (record.kind === 'settlement' ? [record.settlement] : []))
 
   while (expenses.length > 0 || settlements.length > 0) {
-    const body = { expenses: expenses.splice(0, batchSize), settlements: settlements.splice(0, batchSize) }
-    const { data, response } = await api.POST('/records', { body })
-    if (!data) throw new SyncFailure(response.status)
-    await settle(replica, body, data.results)
+    await send(replica, api, { expenses: expenses.splice(0, batchSize), settlements: settlements.splice(0, batchSize) })
   }
 }
 
-async function settle(
-  replica: Replica,
-  sent: { expenses: NewExpense[]; settlements: NewSettlement[] },
-  results: RecordResult[],
-): Promise<void> {
-  const sentIds = new Set([...sent.expenses, ...sent.settlements].map(({ id }) => id))
+// A 400 is a batch the server could not even read, which one record with a bad
+// date is enough for. Retrying would get the same answer forever with the whole
+// queue waiting, so each record goes alone and the one at fault gets rejected.
+async function send(replica: Replica, api: Api, batch: RecordBatch): Promise<void> {
+  const { data, response } = await api.POST('/records', { body: batch })
+  if (data) return settle(replica, data.results)
+  if (response.status !== 400) throw new SyncFailure(response.status)
+
+  const alone = [
+    ...batch.expenses.map((expense) => ({ expenses: [expense], settlements: [] })),
+    ...batch.settlements.map((settlement) => ({ expenses: [], settlements: [settlement] })),
+  ]
+  if (alone.length === 1) {
+    const { id } = batch.expenses[0] ?? batch.settlements[0]!
+    return settle(replica, [{ id, status: 'rejected', reason: 'invalid_record' }])
+  }
+  for (const single of alone) await send(replica, api, single)
+}
+
+type Outcome = Pick<RecordResult, 'id' | 'status' | 'reason' | 'detail'>
+
+async function settle(replica: Replica, results: Outcome[]): Promise<void> {
   await replica.transaction('rw', replica.queue, async () => {
     for (const result of results) {
       const record = await replica.queue.get(result.id)
-      if (!sentIds.has(result.id) || record?.status !== 'unsynced') continue
-      await replica.queue.put(outcome(record, result))
+      if (record?.status === 'unsynced') await replica.queue.put(outcome(record, result))
     }
   })
 }
 
-// Accepted records stay in the table, out of the queue, until a pull brings
-// them into the replica, so they never vanish from the screens in between.
-function outcome(record: QueuedRecord, result: RecordResult): QueuedRecord {
-  if (result.status === 'accepted') return { ...record, status: 'accepted' }
-  return { ...record, status: 'rejected', reason: result.reason ?? 'invalid_record', ...(result.detail ? { detail: result.detail } : {}) }
+function outcome(record: QueuedRecord, { status, reason, detail }: Outcome): QueuedRecord {
+  if (status === 'accepted') return { ...record, status }
+  return { ...record, status, reason: reason ?? 'invalid_record', ...(detail ? { detail } : {}) }
 }

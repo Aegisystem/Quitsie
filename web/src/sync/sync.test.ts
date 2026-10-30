@@ -483,3 +483,224 @@ describe('triggers', () => {
     expect(seen).toEqual(['syncing', 'idle'])
   })
 })
+
+describe('resending', () => {
+  const taxi = (trip: FakeGroup) => newExpense(trip, { description: 'Taxi', currency: 'PEN', paid: { Yo: 2000 }, owed: { Yo: 1000, Ana: 1000 } })
+
+  test('when the answer to a push is lost, resending the same id does not duplicate the Expense', async () => {
+    const server = fakeServer()
+    const trip = server.addGroup({ name: 'Viaje a Cusco', currency: 'PEN', members: ['Ana'] })
+    const { replica, engine, device, retry } = setup(server)
+    await engine.sync()
+
+    device.goOffline()
+    const id = await engine.addExpense(taxi(trip))
+    device.goOnline()
+    server.dropConnectionAfterNextPush()
+    await engine.sync()
+    expect((await firstValue(liveRecords(replica))).unsynced.map((record) => record.id)).toEqual([id])
+
+    server.setReachable(true)
+    await retry()
+
+    expect(server.pushes.map(({ expenses }) => expenses.map((expense) => expense.id))).toEqual([[id], [id]])
+    expect(server.expensesIn(trip)).toHaveLength(1)
+    expect(await firstValue(liveExpenses(replica, trip.id))).toEqual([expect.objectContaining({ id, sync: 'synced' })])
+    expect(await firstValue(liveRecords(replica))).toEqual({ rejected: [], unsynced: [] })
+  })
+
+  test('when the answer to a push is lost but the pull brings the Expense, it leaves the queue without resending', async () => {
+    const server = fakeServer()
+    const trip = server.addGroup({ name: 'Viaje a Cusco', currency: 'PEN', members: ['Ana'] })
+    const { replica, engine, device } = setup(server)
+    await engine.sync()
+
+    device.goOffline()
+    const id = await engine.addExpense(taxi(trip))
+    device.goOnline()
+    server.loseNextPushAnswer()
+    await engine.sync()
+
+    expect(server.pushes).toHaveLength(1)
+    expect(await firstValue(liveExpenses(replica, trip.id))).toEqual([expect.objectContaining({ id, sync: 'synced', createdBy: me })])
+    expect(await firstValue(liveRecords(replica))).toEqual({ rejected: [], unsynced: [] })
+  })
+
+  test('a failing push does not stop the replica from getting news, and the queue waits for the retry', async () => {
+    const server = fakeServer()
+    const trip = server.addGroup({ name: 'Viaje a Cusco', currency: 'PEN', members: ['Ana'] })
+    const { replica, engine, device, retry } = setup(server)
+    await engine.sync()
+
+    device.goOffline()
+    const id = await engine.addExpense(taxi(trip))
+    device.goOnline()
+    const flat = server.addGroup({ name: 'Piso', currency: 'EUR', members: ['Beto'] })
+    server.failWith(503, 'POST')
+    await engine.sync()
+
+    expect(engine.getStatus()).toBe('retrying')
+    expect((await firstValue(liveHome(replica))).map(({ ledger }) => ledger.id).sort()).toEqual([trip.id, flat.id].sort())
+    expect((await firstValue(liveRecords(replica))).unsynced.map((record) => record.id)).toEqual([id])
+
+    server.failWith(undefined)
+    await retry()
+    expect(await firstValue(liveRecords(replica))).toEqual({ rejected: [], unsynced: [] })
+  })
+
+  test('an accepted Expense stays on screen while the pull that would bring it fails', async () => {
+    const server = fakeServer()
+    const trip = server.addGroup({ name: 'Viaje a Cusco', currency: 'PEN', members: ['Ana'] })
+    const { replica, engine, device, retry } = setup(server)
+    await engine.sync()
+
+    device.goOffline()
+    const id = await engine.addExpense(taxi(trip))
+    device.goOnline()
+    server.failWith(503, 'GET')
+    await engine.sync()
+
+    expect(await firstValue(liveRecords(replica))).toEqual({ rejected: [], unsynced: [] })
+    expect(await firstValue(liveExpenses(replica, trip.id))).toEqual([expect.objectContaining({ id, sync: 'synced' })])
+
+    server.failWith(undefined)
+    await retry()
+
+    expect(server.pushes).toHaveLength(1)
+    expect(await firstValue(liveExpenses(replica, trip.id))).toEqual([expect.objectContaining({ id, sync: 'synced', createdBy: me })])
+  })
+})
+
+describe('the queue through a rebuild or a lost ledger', () => {
+  const taxi = (trip: FakeGroup) => newExpense(trip, { description: 'Taxi', currency: 'PEN', paid: { Yo: 2000 }, owed: { Yo: 1000, Ana: 1000 } })
+
+  test('a 410 keeps the unsynced and rejected records', async () => {
+    const server = fakeServer()
+    const trip = server.addGroup({ name: 'Viaje a Cusco', currency: 'PEN', members: ['Ana'] })
+    const backup = server.backup()
+    server.addExpense(trip, { description: 'Cena', paid: { Ana: 1000 }, owed: { Yo: 500, Ana: 500 } })
+    const { replica, engine, device } = setup(server)
+    await engine.sync()
+
+    device.goOffline()
+    const rejected = await engine.addExpense(taxi(trip))
+    server.setCurrency(trip, 'USD')
+    device.goOnline()
+    await engine.sync()
+
+    device.goOffline()
+    const unsynced = await engine.addExpense(taxi(trip))
+    server.restore(backup)
+    device.goOnline()
+    server.failWith(503, 'POST') // so the unsynced one is still there after the rebuild
+    await engine.sync()
+
+    expect(server.pulls.at(-1)).toBe(0)
+    const records = await firstValue(liveRecords(replica))
+    expect(records.rejected.map(({ id }) => id)).toEqual([rejected])
+    expect(records.unsynced.map(({ id }) => id)).toEqual([unsynced])
+  })
+
+  test('a record accepted just before a backup was restored goes back to the queue', async () => {
+    const server = fakeServer()
+    const trip = server.addGroup({ name: 'Viaje a Cusco', currency: 'PEN', members: ['Ana'] })
+    server.addExpense(trip, { description: 'Cena', paid: { Ana: 1000 }, owed: { Yo: 500, Ana: 500 } })
+    const backup = server.backup()
+    server.addExpense(trip, { description: 'Museo', paid: { Ana: 1000 }, owed: { Yo: 500, Ana: 500 } })
+    const { replica, engine, device, retry } = setup(server)
+    await engine.sync()
+
+    device.goOffline()
+    const id = await engine.addExpense(taxi(trip))
+    device.goOnline()
+    server.failWith(503, 'GET')
+    await engine.sync()
+
+    server.restore(backup)
+    server.failWith(undefined)
+    await retry()
+
+    expect((await firstValue(liveRecords(replica))).unsynced.map((record) => record.id)).toEqual([id])
+
+    await engine.sync()
+    expect(server.expensesIn(trip).map((expense) => expense.id)).toContain(id)
+  })
+
+  test('removed from the Group offline: the record is rejected and stays, though the ledger goes', async () => {
+    const server = fakeServer()
+    const trip = server.addGroup({ name: 'Viaje a Cusco', currency: 'PEN', members: ['Ana'] })
+    const { replica, engine, device } = setup(server)
+    await engine.sync()
+
+    device.goOffline()
+    const id = await engine.addExpense(taxi(trip))
+    server.removeMe(trip, { reason: 'removed' })
+    device.goOnline()
+    await engine.sync()
+
+    expect(await firstValue(liveHome(replica))).toEqual([])
+    expect(await firstValue(liveRecords(replica))).toEqual({
+      rejected: [expect.objectContaining({ id, reason: 'ledger_unavailable' })],
+      unsynced: [],
+    })
+  })
+
+  test('a dropped ledger takes with it the records already accepted', async () => {
+    const server = fakeServer()
+    const trip = server.addGroup({ name: 'Viaje a Cusco', currency: 'PEN', members: ['Ana'] })
+    const { replica, engine, device, retry } = setup(server)
+    await engine.sync()
+
+    device.goOffline()
+    await engine.addExpense(taxi(trip))
+    device.goOnline()
+    server.failWith(503, 'GET')
+    await engine.sync()
+
+    server.removeMe(trip, { reason: 'removed' })
+    server.failWith(undefined)
+    await retry()
+
+    expect(await firstValue(liveExpenses(replica, trip.id))).toEqual([])
+  })
+})
+
+describe('sending batches', () => {
+  const taxi = (trip: FakeGroup) => newExpense(trip, { description: 'Taxi', currency: 'PEN', paid: { Yo: 2000 }, owed: { Yo: 1000, Ana: 1000 } })
+
+  test('a long queue goes in batches the server accepts', async () => {
+    const server = fakeServer()
+    const trip = server.addGroup({ name: 'Viaje a Cusco', currency: 'PEN', members: ['Ana'] })
+    const { replica, engine, device } = setup(server)
+    await engine.sync()
+
+    device.goOffline()
+    for (let i = 0; i < 101; i++) await engine.addExpense(taxi(trip))
+    device.goOnline()
+    await engine.sync()
+
+    expect(server.pushes.map(({ expenses }) => expenses.length)).toEqual([100, 1])
+    expect(await firstValue(liveRecords(replica))).toEqual({ rejected: [], unsynced: [] })
+    expect(await firstValue(liveExpenses(replica, trip.id))).toHaveLength(101)
+  })
+
+  test('a record the server cannot even read is rejected alone and does not hold back the others', async () => {
+    const server = fakeServer()
+    const trip = server.addGroup({ name: 'Viaje a Cusco', currency: 'PEN', members: ['Ana'] })
+    const { replica, engine, device } = setup(server)
+    await engine.sync()
+
+    device.goOffline()
+    const good = await engine.addExpense(taxi(trip))
+    const unreadable = await engine.addExpense({ ...taxi(trip), date: 'ayer' })
+    device.goOnline()
+    await engine.sync()
+
+    expect(engine.getStatus()).toBe('idle')
+    expect(server.expensesIn(trip).map(({ id }) => id)).toEqual([good])
+    expect(await firstValue(liveRecords(replica))).toEqual({
+      rejected: [expect.objectContaining({ id: unreadable, reason: 'invalid_record' })],
+      unsynced: [],
+    })
+  })
+})
