@@ -20,9 +20,9 @@ import (
 const maxBatch = 100
 
 // unauthenticated answers a request without a valid session.
-var unauthenticated = problem(http.StatusUnauthorized, ProblemCodeUnauthenticated, "Sign in first.", "")
+var unauthenticated = recordProblem(http.StatusUnauthorized, ProblemCodeUnauthenticated, "Sign in first.", "")
 
-func problem(status int, code ProblemCode, title, detail string) Problem {
+func recordProblem(status int, code ProblemCode, title, detail string) Problem {
 	p := Problem{Status: status, Code: code, Title: title}
 	if detail != "" {
 		p.Detail = &detail
@@ -36,7 +36,7 @@ func (s *Server) PushRecords(ctx context.Context, req PushRecordsRequestObject) 
 		return PushRecords401ApplicationProblemPlusJSONResponse{UnauthorizedApplicationProblemPlusJSONResponse(unauthenticated)}, nil
 	}
 	if len(req.Body.Expenses) > maxBatch || len(req.Body.Settlements) > maxBatch {
-		p := problem(http.StatusBadRequest, ProblemCodeValidationFailed, "The request does not match the API contract.",
+		p := recordProblem(http.StatusBadRequest, ProblemCodeValidationFailed, "The request does not match the API contract.",
 			fmt.Sprintf("a batch takes at most %d expenses and %d settlements", maxBatch, maxBatch))
 		return PushRecords400ApplicationProblemPlusJSONResponse{BadRequestApplicationProblemPlusJSONResponse(p)}, nil
 	}
@@ -100,6 +100,100 @@ func newExpense(e NewExpense) store.ExpenseWithShares {
 		out.OwedShares[i] = store.OwedShare{ExpenseID: out.ID, MemberID: s.MemberId.String(), Amount: s.Amount, SplitValue: s.SplitValue}
 	}
 	return out
+}
+
+func (s *Server) PullChanges(ctx context.Context, req PullChangesRequestObject) (PullChangesResponseObject, error) {
+	user, _ := auth.CurrentUser(ctx)
+	c, err := sync.Pull(ctx, s.deps.DB, user.ID, req.Params.Since)
+	if err != nil {
+		return nil, err
+	}
+	return PullChanges200JSONResponse(pulledChanges(c)), nil
+}
+
+func pulledChanges(c sync.Changes) Changes {
+	out := Changes{
+		Cursor:         c.Cursor,
+		Groups:         []Group{},
+		Friendships:    []Friendship{},
+		Members:        make([]Member, len(c.Members)),
+		Expenses:       make([]Expense, len(c.Expenses)),
+		Settlements:    make([]Settlement, len(c.Settlements)),
+		Activities:     []Activity{},
+		Debts:          []LedgerDebts{},
+		DroppedLedgers: []DroppedLedger{},
+	}
+	for _, l := range c.Ledgers {
+		if l.Kind == "group" {
+			out.Groups = append(out.Groups, Group{
+				Id: toUUID(l.ID), Name: l.Name, Currency: *l.Currency, SimplifyDebts: l.SimplifyDebts,
+				CreatedAt: l.CreatedAt, Version: l.Version,
+			})
+			continue
+		}
+		out.Friendships = append(out.Friendships, Friendship{Id: toUUID(l.ID), CreatedAt: l.CreatedAt, Version: l.Version})
+	}
+	for i, m := range c.Members {
+		out.Members[i] = pulledMember(m)
+	}
+	for i, e := range c.Expenses {
+		out.Expenses[i] = pulledExpense(e)
+	}
+	for i, st := range c.Settlements {
+		out.Settlements[i] = pulledSettlement(st)
+	}
+	return out
+}
+
+func pulledMember(m store.Member) Member {
+	out := Member{Id: toUUID(m.ID), LedgerId: toUUID(m.LedgerID), Name: m.Name, Status: MemberStatus(m.Status), Version: m.Version}
+	if m.UserID != nil {
+		userID := toUUID(*m.UserID)
+		out.UserId = &userID
+	}
+	return out
+}
+
+func pulledExpense(e store.ExpenseWithShares) Expense {
+	out := Expense{
+		Id:          toUUID(e.ID),
+		LedgerId:    toUUID(e.LedgerID),
+		Description: e.Description,
+		Date:        openapi_types.Date{Time: e.Date},
+		Currency:    e.Currency,
+		Total:       e.Total,
+		Category:    (*Category)(e.Category),
+		SplitMethod: SplitMethod(e.SplitMethod),
+		PaidShares:  make([]PaidShare, len(e.PaidShares)),
+		OwedShares:  make([]OwedShare, len(e.OwedShares)),
+		CreatedBy:   toUUID(e.CreatedBy),
+		CreatedAt:   e.CreatedAt,
+		Version:     e.Version,
+		DeletedAt:   e.DeletedAt,
+	}
+	for i, p := range e.PaidShares {
+		out.PaidShares[i] = PaidShare{MemberId: toUUID(p.MemberID), Amount: p.Amount}
+	}
+	for i, o := range e.OwedShares {
+		out.OwedShares[i] = OwedShare{MemberId: toUUID(o.MemberID), Amount: o.Amount, SplitValue: o.SplitValue}
+	}
+	return out
+}
+
+func pulledSettlement(st store.Settlement) Settlement {
+	return Settlement{
+		Id:           toUUID(st.ID),
+		LedgerId:     toUUID(st.LedgerID),
+		FromMemberId: toUUID(st.FromMemberID),
+		ToMemberId:   toUUID(st.ToMemberID),
+		Amount:       st.Amount,
+		Currency:     st.Currency,
+		Date:         openapi_types.Date{Time: st.Date},
+		CreatedBy:    toUUID(st.CreatedBy),
+		CreatedAt:    st.CreatedAt,
+		Version:      st.Version,
+		DeletedAt:    st.DeletedAt,
+	}
 }
 
 // toUUID turns an id from the store into the contract's type. Every id in the

@@ -5,10 +5,13 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"reflect"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -29,7 +32,7 @@ type recordsAPI struct {
 	t       *testing.T
 	db      *sql.DB
 	auth    *auth.Service
-	outbox  *outbox
+	codeBox *codeBox
 	handler http.Handler
 }
 
@@ -44,37 +47,40 @@ func newRecordsAPI(t *testing.T) *recordsAPI {
 	if err := store.Migrate(ctx, db); err != nil {
 		t.Fatal(err)
 	}
-	box := &outbox{}
+	box := &codeBox{}
 	svc, err := auth.New(auth.Config{DB: db, Mail: box, DefaultCurrency: "USD"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	server := httpapi.NewServer(db, "test").WithDeps(httpapi.Deps{DB: db})
-	return &recordsAPI{t: t, db: db, auth: svc, outbox: box, handler: svc.Authenticate(httpapi.NewHandler(server, builtPWA))}
+	return &recordsAPI{t: t, db: db, auth: svc, codeBox: box, handler: svc.Authenticate(httpapi.NewHandler(server, builtPWA))}
 }
 
-// person is a signed-in User.
-type person struct {
+// testOrigin is the app's own origin in these tests.
+const testOrigin = "https://quitsie.test"
+
+// signedIn is a signed-in User.
+type signedIn struct {
 	user  store.User
 	token string
 }
 
 // signIn signs in with a login code, as the PWA does, and returns the session.
-func (a *recordsAPI) signIn(email string) person {
+func (a *recordsAPI) signIn(email string) signedIn {
 	a.t.Helper()
 	ctx := context.Background()
 	if err := a.auth.RequestCode(ctx, email, "203.0.113.7"); err != nil {
 		a.t.Fatal(err)
 	}
-	in, err := a.auth.VerifyCode(ctx, email, a.outbox.lastCode(a.t, email), "test")
+	in, err := a.auth.VerifyCode(ctx, email, a.codeBox.lastCode(a.t, email), "test")
 	if err != nil {
 		a.t.Fatal(err)
 	}
-	return person{user: in.User, token: in.Token}
+	return signedIn{user: in.User, token: in.Token}
 }
 
-// do sends a request as p, or without a session if p is the zero person.
-func (a *recordsAPI) do(p person, method, target string, body any) *httptest.ResponseRecorder {
+// do sends a request as p, or without a session if p is the zero value.
+func (a *recordsAPI) do(p signedIn, method, target string, body any) *httptest.ResponseRecorder {
 	a.t.Helper()
 	var buf bytes.Buffer
 	if body != nil {
@@ -86,6 +92,7 @@ func (a *recordsAPI) do(p person, method, target string, body any) *httptest.Res
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
+	req.Header.Set("Origin", testOrigin)
 	if p.token != "" {
 		req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: p.token})
 	}
@@ -104,8 +111,8 @@ func (a *recordsAPI) write(fn func(q *store.Queries, version int64) error) int64
 	return version
 }
 
-// decode checks the status of rec and decodes its JSON body.
-func decode[T any](t *testing.T, rec *httptest.ResponseRecorder, status int) T {
+// decodeBody checks the status of rec and decodes its JSON body.
+func decodeBody[T any](t *testing.T, rec *httptest.ResponseRecorder, status int) T {
 	t.Helper()
 	var v T
 	if rec.Code != status {
@@ -117,29 +124,29 @@ func decode[T any](t *testing.T, rec *httptest.ResponseRecorder, status int) T {
 	return v
 }
 
-// outbox is a mail.Sender that keeps the emails instead of sending them.
-type outbox struct {
+// codeBox is a mail.Sender that keeps the emails instead of sending them.
+type codeBox struct {
 	mu   sync.Mutex
 	sent []mail.Message
 }
 
-func (o *outbox) Send(_ context.Context, m mail.Message) error {
+func (o *codeBox) Send(_ context.Context, m mail.Message) error {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	o.sent = append(o.sent, m)
 	return nil
 }
 
-var sixDigits = regexp.MustCompile(`\b\d{6}\b`)
+var loginCodeDigits = regexp.MustCompile(`\b\d{6}\b`)
 
 // lastCode returns the login code in the last email sent to `to`.
-func (o *outbox) lastCode(t *testing.T, to string) string {
+func (o *codeBox) lastCode(t *testing.T, to string) string {
 	t.Helper()
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	for i := len(o.sent) - 1; i >= 0; i-- {
 		if o.sent[i].To == to {
-			if code := sixDigits.FindString(o.sent[i].Text); code != "" {
+			if code := loginCodeDigits.FindString(o.sent[i].Text); code != "" {
 				return code
 			}
 		}
@@ -152,7 +159,7 @@ func (o *outbox) lastCode(t *testing.T, to string) string {
 // and Dani already left. Eva has an account but is not in it.
 type trip struct {
 	id                         string
-	ana, beto, eva             person
+	ana, beto, eva             signedIn
 	anaM, betoM, carlaM, daniM string
 }
 
@@ -162,7 +169,7 @@ func (a *recordsAPI) seedTrip() trip {
 }
 
 // seedTripOf creates another trip for the same people.
-func (a *recordsAPI) seedTripOf(ana, beto, eva person) trip {
+func (a *recordsAPI) seedTripOf(ana, beto, eva signedIn) trip {
 	a.t.Helper()
 	ctx := context.Background()
 	tr := trip{
@@ -234,7 +241,7 @@ func TestPushRecordsAcceptsANewExpense(t *testing.T) {
 	tr := a.seedTrip()
 	dinner := tr.dinner()
 
-	got := decode[httpapi.RecordResults](t, a.do(tr.ana, http.MethodPost, "/api/v1/records", expenses(dinner)), http.StatusOK)
+	got := decodeBody[httpapi.RecordResults](t, a.do(tr.ana, http.MethodPost, "/api/v1/records", expenses(dinner)), http.StatusOK)
 
 	if len(got.Results) != 1 {
 		t.Fatalf("results = %+v, want one", got.Results)
@@ -249,9 +256,9 @@ func TestPushRecordsAcceptsANewExpense(t *testing.T) {
 }
 
 // push sends batch as p and returns its results.
-func (a *recordsAPI) push(t *testing.T, p person, batch httpapi.RecordBatch) []httpapi.RecordResult {
+func (a *recordsAPI) push(t *testing.T, p signedIn, batch httpapi.RecordBatch) []httpapi.RecordResult {
 	t.Helper()
-	return decode[httpapi.RecordResults](t, a.do(p, http.MethodPost, "/api/v1/records", batch), http.StatusOK).Results
+	return decodeBody[httpapi.RecordResults](t, a.do(p, http.MethodPost, "/api/v1/records", batch), http.StatusOK).Results
 }
 
 func TestPushRecordsAcceptsAResentExpenseWithoutStoringItTwice(t *testing.T) {
@@ -275,7 +282,7 @@ type friendship struct {
 	aM, bM string
 }
 
-func (a *recordsAPI) seedFriendship(x, y person) friendship {
+func (a *recordsAPI) seedFriendship(x, y signedIn) friendship {
 	a.t.Helper()
 	ctx := context.Background()
 	f := friendship{id: uuid.NewString(), aM: uuid.NewString(), bM: uuid.NewString()}
@@ -286,7 +293,7 @@ func (a *recordsAPI) seedFriendship(x, y person) friendship {
 		}
 		for _, m := range []struct {
 			id string
-			p  person
+			p  signedIn
 		}{{f.aM, x}, {f.bM, y}} {
 			err := q.CreateMember(ctx, store.CreateMemberParams{
 				ID: m.id, LedgerID: f.id, UserID: &m.p.user.ID, Name: m.p.user.Email, Version: version, CreatedAt: time.Now(),
@@ -452,7 +459,7 @@ func TestPushRecordsRejectsSettlementsThatBreakTheRules(t *testing.T) {
 	a.push(t, tr.beto, settlements(taken))
 	tests := []struct {
 		name   string
-		by     person
+		by     signedIn
 		change func(s *httpapi.NewSettlement)
 		want   httpapi.RecordResultReason
 	}{
@@ -476,7 +483,7 @@ func TestPushRecordsNeedsASession(t *testing.T) {
 	a := newRecordsAPI(t)
 	tr := a.seedTrip()
 
-	rec := a.do(person{}, http.MethodPost, "/api/v1/records", expenses(tr.dinner()))
+	rec := a.do(signedIn{}, http.MethodPost, "/api/v1/records", expenses(tr.dinner()))
 
 	decodeProblem(t, rec, http.StatusUnauthorized, httpapi.ProblemCodeUnauthenticated)
 }
@@ -490,4 +497,69 @@ func TestPushRecordsTakesAtMostAHundredOfEach(t *testing.T) {
 	}
 
 	decodeProblem(t, a.do(tr.ana, http.MethodPost, "/api/v1/records", batch), http.StatusBadRequest, httpapi.ProblemCodeValidationFailed)
+}
+
+// pull asks for the changes after since as p.
+func (a *recordsAPI) pull(t *testing.T, p signedIn, since int64) httpapi.Changes {
+	t.Helper()
+	return decodeBody[httpapi.Changes](t, a.do(p, http.MethodGet, fmt.Sprintf("/api/v1/sync?since=%d", since), nil), http.StatusOK)
+}
+
+func TestPullChangesBringsWhatAnotherMemberPushed(t *testing.T) {
+	a := newRecordsAPI(t)
+	tr := a.seedTrip()
+	dinner := tr.dinner()
+	dinner.Category = ptr(httpapi.Category("food"))
+	dinner.SplitMethod = httpapi.Percentage
+	dinner.OwedShares[0].SplitValue, dinner.OwedShares[1].SplitValue, dinner.OwedShares[2].SplitValue = ptr[int64](3334), ptr[int64](3333), ptr[int64](3333)
+	pushed := a.push(t, tr.ana, expenses(dinner))[0]
+
+	got := a.pull(t, tr.beto, 0)
+
+	if got.HasMore || got.Cursor != *pushed.Version {
+		t.Errorf("cursor = %d, hasMore = %v, want %d and false", got.Cursor, got.HasMore, *pushed.Version)
+	}
+	if len(got.Groups) != 1 || got.Groups[0].Id != id(tr.id) || got.Groups[0].Name != "Viaje a Cartagena" || got.Groups[0].Currency != "USD" || !got.Groups[0].SimplifyDebts {
+		t.Errorf("groups = %+v, want the trip", got.Groups)
+	}
+	if len(got.Members) != 4 {
+		t.Errorf("members = %+v, want all four, the former one too", got.Members)
+	}
+	if len(got.Expenses) != 1 {
+		t.Fatalf("expenses = %+v, want the dinner", got.Expenses)
+	}
+	e := got.Expenses[0]
+	if e.Id != dinner.Id || e.LedgerId != dinner.LedgerId || e.Description != "Cena" || e.Date != dinner.Date ||
+		e.Currency != "USD" || e.Total != 3000 || e.SplitMethod != httpapi.Percentage || e.CreatedBy != id(tr.ana.user.ID) ||
+		e.Version != *pushed.Version || e.DeletedAt != nil || e.CreatedAt.IsZero() || e.Category == nil || *e.Category != "food" {
+		t.Errorf("expense = %+v, want the dinner as pushed", e)
+	}
+	byMember := func(a, b httpapi.OwedShare) int { return strings.Compare(a.MemberId.String(), b.MemberId.String()) }
+	slices.SortFunc(e.OwedShares, byMember)
+	slices.SortFunc(dinner.OwedShares, byMember)
+	if !reflect.DeepEqual(e.PaidShares, dinner.PaidShares) || !reflect.DeepEqual(e.OwedShares, dinner.OwedShares) {
+		t.Errorf("shares = %+v and %+v, want %+v and %+v", e.PaidShares, e.OwedShares, dinner.PaidShares, dinner.OwedShares)
+	}
+}
+
+func TestPullChangesBringsPushedSettlementsAndFriendships(t *testing.T) {
+	a := newRecordsAPI(t)
+	tr := a.seedTrip()
+	f := a.seedFriendship(tr.ana, tr.beto)
+	payback := tr.payback()
+	a.push(t, tr.beto, settlements(payback))
+
+	got := a.pull(t, tr.ana, 0)
+
+	if len(got.Friendships) != 1 || got.Friendships[0].Id != id(f.id) {
+		t.Errorf("friendships = %+v, want the Friendship with Beto", got.Friendships)
+	}
+	if len(got.Settlements) != 1 {
+		t.Fatalf("settlements = %+v, want the payback", got.Settlements)
+	}
+	s := got.Settlements[0]
+	if s.Id != payback.Id || s.LedgerId != payback.LedgerId || s.FromMemberId != payback.FromMemberId || s.ToMemberId != payback.ToMemberId ||
+		s.Amount != 1000 || s.Currency != "USD" || s.Date != payback.Date || s.CreatedBy != id(tr.beto.user.ID) || s.DeletedAt != nil {
+		t.Errorf("settlement = %+v, want the payback as pushed", s)
+	}
 }

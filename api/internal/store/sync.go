@@ -24,6 +24,17 @@ type Changes struct {
 	DroppedLedgerIDs []string
 }
 
+// Read runs fn in a read-only transaction, so everything it reads comes from
+// the same snapshot. It does not block the writer.
+func Read(ctx context.Context, db *sql.DB, fn func(q *Queries) error) error {
+	tx, err := db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return fmt.Errorf("begin read: %w", err)
+	}
+	defer tx.Rollback()
+	return fn(New(tx))
+}
+
 // ChangesSince returns what changed after the cursor since in the ledgers
 // where userID has an active Member, and the whole of any ledger where that
 // Member changed after since, which is how a ledger the User just joined
@@ -32,14 +43,19 @@ type Changes struct {
 // It reads in a single transaction, so every row and the new cursor come from
 // the same snapshot and the next pull never skips a change.
 func ChangesSince(ctx context.Context, db *sql.DB, userID string, since int64) (Changes, error) {
-	tx, err := db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
-	if err != nil {
-		return Changes{}, fmt.Errorf("begin pull: %w", err)
-	}
-	defer tx.Rollback()
-	q := New(tx)
-
 	var c Changes
+	err := Read(ctx, db, func(q *Queries) (err error) {
+		c, err = q.ChangesSince(ctx, userID, since)
+		return err
+	})
+	return c, err
+}
+
+// ChangesSince is ChangesSince inside a Read, for a caller that needs to read
+// more from the same snapshot.
+func (q *Queries) ChangesSince(ctx context.Context, userID string, since int64) (Changes, error) {
+	var c Changes
+	var err error
 	if c.Cursor, err = q.CurrentVersion(ctx); err != nil {
 		return Changes{}, fmt.Errorf("current version: %w", err)
 	}

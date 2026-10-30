@@ -28,9 +28,3 @@ func (s *Server) DeleteSettlement(context.Context, DeleteSettlementRequestObject
 func (s *Server) RestoreSettlement(context.Context, RestoreSettlementRequestObject) (RestoreSettlementResponseObject, error) {
 	return nil, errNotImplemented
 }
-
-// --- sync ---
-
-func (s *Server) PullChanges(context.Context, PullChangesRequestObject) (PullChangesResponseObject, error) {
-	return nil, errNotImplemented
-}

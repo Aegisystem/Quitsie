@@ -65,7 +65,6 @@ var unimplementedRecords = []operationRequest{
 	{"RestoreExpense", http.MethodPost, "/api/v1/expenses/" + someID + "/restore", ""},
 	{"DeleteSettlement", http.MethodDelete, "/api/v1/settlements/" + someID, ""},
 	{"RestoreSettlement", http.MethodPost, "/api/v1/settlements/" + someID + "/restore", ""},
-	{"PullChanges", http.MethodGet, "/api/v1/sync?since=0", ""},
 }
 
 // The operations that have a real handler, per area.
@@ -73,7 +72,7 @@ var (
 	implementedBase    = []string{"GetHealth"}
 	implementedAuth    = []string{}
 	implementedLedgers = []string{}
-	implementedRecords = []string{"PushRecords"}
+	implementedRecords = []string{"PushRecords", "PullChanges"}
 	implemented        = slices.Concat(implementedBase, implementedAuth, implementedLedgers, implementedRecords)
 )
 
