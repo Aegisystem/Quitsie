@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -822,4 +823,54 @@ func TestPullChangesAnswersNoDebtsForASettledLedger(t *testing.T) {
 	if len(body.Debts) != 1 || body.Debts[0].Debts == nil || len(body.Debts[0].Debts) != 0 {
 		t.Errorf("debts = %+v, want the trip with an empty list", body.Debts)
 	}
+}
+
+func TestPullChangesShowsOnlyThePendingMembersEmails(t *testing.T) {
+	a := newRecordsAPI(t)
+	tr := a.seedTrip()
+	ctx := context.Background()
+	pending, linked := uuid.NewString(), uuid.NewString()
+	a.write(func(q *store.Queries, version int64) error {
+		err := q.CreateMember(ctx, store.CreateMemberParams{
+			ID: pending, LedgerID: tr.id, Name: "Gabi", Email: ptr("gabi@example.com"), Version: version, CreatedAt: time.Now(),
+		})
+		if err != nil {
+			return err
+		}
+		return q.CreateMember(ctx, store.CreateMemberParams{
+			ID: linked, LedgerID: tr.id, UserID: &tr.eva.user.ID, Name: "Eva", Email: ptr("eva@example.com"), Version: version, CreatedAt: time.Now(),
+		})
+	})
+
+	emails := map[string]string{}
+	for _, m := range a.pull(t, tr.ana, 0).Members {
+		if m.Email != nil {
+			emails[m.Id.String()] = string(*m.Email)
+		}
+	}
+
+	if want := map[string]string{pending: "gabi@example.com"}; !reflect.DeepEqual(emails, want) {
+		t.Errorf("emails = %v, want %v", emails, want)
+	}
+}
+
+func TestPullChangesExposesNothingOfTheInviteLinks(t *testing.T) {
+	a := newRecordsAPI(t)
+	tr := a.seedTrip()
+	a.seedFriendship(tr.ana, tr.beto)
+
+	body := decodeBody[struct {
+		Groups      []map[string]any `json:"groups"`
+		Friendships []map[string]any `json:"friendships"`
+	}](t, a.do(tr.ana, http.MethodGet, "/api/v1/sync?since=0", nil), http.StatusOK)
+
+	wantKeys := func(row map[string]any, want ...string) {
+		t.Helper()
+		got := slices.Sorted(maps.Keys(row))
+		if !slices.Equal(got, want) {
+			t.Errorf("fields = %v, want exactly %v", got, want)
+		}
+	}
+	wantKeys(body.Groups[0], "createdAt", "currency", "id", "name", "simplifyDebts", "version")
+	wantKeys(body.Friendships[0], "createdAt", "id", "version")
 }

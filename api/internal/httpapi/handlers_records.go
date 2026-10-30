@@ -190,7 +190,11 @@ func pulledMember(m store.Member) Member {
 	if m.UserID != nil {
 		userID := toUUID(*m.UserID)
 		out.UserId = &userID
+		return out
 	}
+	// Only a pending Member shows the email given when adding them; a linked
+	// User's is private.
+	out.Email = (*openapi_types.Email)(m.Email)
 	return out
 }
 
