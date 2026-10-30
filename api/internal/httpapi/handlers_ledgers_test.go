@@ -914,3 +914,118 @@ func TestARemovedLinkedMemberLosesAccessToTheGroup(t *testing.T) {
 	}
 	decodeProblem(t, beto.send(http.MethodGet, "/api/v1/groups/"+groupID+"/invite-link", ""), http.StatusNotFound, httpapi.ProblemCodeNotFound)
 }
+
+// createFriendship starts a Friendship and returns its id.
+func (p *person) createFriendship(body string) string {
+	p.w.t.Helper()
+	return decode[httpapi.Friendship](p.w.t, p.send(http.MethodPost, "/api/v1/friendships", body), http.StatusCreated).Id.String()
+}
+
+func TestCreateFriendshipWithAPendingFriend(t *testing.T) {
+	w := newWorld(t)
+	ana := w.signIn("Ana")
+	// Beto has an account with that email, and even so it never links him.
+	w.signIn("Beto")
+
+	friendshipID := ana.createFriendship(`{"name":" Beto ","email":"beto@example.com"}`)
+
+	changes := ana.pull()
+	if len(changes.Ledgers) != 1 || changes.Ledgers[0].Kind != "friendship" || changes.Ledgers[0].Currency != nil {
+		t.Errorf("ledgers = %+v, want one Friendship without a currency", changes.Ledgers)
+	}
+	var linked, pending []string
+	for _, m := range membersOf(changes, friendshipID) {
+		if m.UserID != nil {
+			linked = append(linked, m.Name)
+		} else if m.Email != nil {
+			pending = append(pending, m.Name+" "+*m.Email)
+		}
+	}
+	if strings.Join(linked, ",") != "Ana" || strings.Join(pending, ",") != "Beto beto@example.com" {
+		t.Errorf("linked = %v, pending = %v; want Ana linked and Beto pending with his email", linked, pending)
+	}
+	if kinds := strings.Join(activityKinds(changes, friendshipID), ","); kinds != "friendship_created" {
+		t.Errorf("activities = %s, want friendship_created", kinds)
+	}
+}
+
+func TestCreateFriendshipWithSomeoneFromAGroup(t *testing.T) {
+	w := newWorld(t)
+	ana := w.signIn("Ana")
+	beto := w.signIn("Beto")
+	beto.join(ana.groupLink(ana.createGroup(`{"name":"Casa","currency":"COP"}`)))
+
+	friendshipID := ana.createFriendship(`{"userId":"` + beto.id + `"}`)
+
+	members := membersOf(beto.pull(), friendshipID)
+	if len(members) != 2 {
+		t.Fatalf("members = %+v, want Ana and Beto", members)
+	}
+	for _, m := range members {
+		if m.UserID == nil || m.Status != "active" {
+			t.Errorf("member = %+v, want linked and active", m)
+		}
+	}
+}
+
+func TestAFriendshipWithAUserNeedsAGroupInCommon(t *testing.T) {
+	w := newWorld(t)
+	ana := w.signIn("Ana")
+	beto := w.signIn("Beto")
+	carla := w.signIn("Carla")
+	groupID := ana.createGroup(`{"name":"Casa","currency":"COP"}`)
+	carla.join(ana.groupLink(groupID))
+	carla.send(http.MethodPost, "/api/v1/groups/"+groupID+"/leave", "")
+
+	for name, userID := range map[string]string{
+		"no Group ever":              beto.id,
+		"a Group the other one left": carla.id,
+		"a User that does not exist": someID,
+	} {
+		t.Run(name, func(t *testing.T) {
+			rec := ana.send(http.MethodPost, "/api/v1/friendships", `{"userId":"`+userID+`"}`)
+
+			decodeProblem(t, rec, http.StatusNotFound, httpapi.ProblemCodeNotFound)
+		})
+	}
+}
+
+func TestThereIsOnlyOneFriendshipBetweenTwoUsers(t *testing.T) {
+	w := newWorld(t)
+	ana := w.signIn("Ana")
+	beto := w.signIn("Beto")
+	beto.join(ana.groupLink(ana.createGroup(`{"name":"Casa","currency":"COP"}`)))
+	ana.createFriendship(`{"userId":"` + beto.id + `"}`)
+
+	decodeProblem(t, ana.send(http.MethodPost, "/api/v1/friendships", `{"userId":"`+beto.id+`"}`), http.StatusConflict, httpapi.ProblemCodeFriendshipExists)
+	decodeProblem(t, beto.send(http.MethodPost, "/api/v1/friendships", `{"userId":"`+ana.id+`"}`), http.StatusConflict, httpapi.ProblemCodeFriendshipExists)
+}
+
+func TestCreateFriendshipRejectsWhatBreaksTheContract(t *testing.T) {
+	w := newWorld(t)
+	ana := w.signIn("Ana")
+	beto := w.signIn("Beto")
+
+	for name, body := range map[string]string{
+		"nobody":                 `{}`,
+		"only an email":          `{"email":"beto@example.com"}`,
+		"blank name":             `{"name":"   "}`,
+		"both a User and a name": `{"userId":"` + beto.id + `","name":"Beto"}`,
+		"a User and an email":    `{"userId":"` + beto.id + `","email":"beto@example.com"}`,
+		"the User themselves":    `{"userId":"` + ana.id + `"}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			rec := ana.send(http.MethodPost, "/api/v1/friendships", body)
+
+			decodeProblem(t, rec, http.StatusBadRequest, httpapi.ProblemCodeValidationFailed)
+		})
+	}
+}
+
+func TestCreateFriendshipNeedsASession(t *testing.T) {
+	w := newWorld(t)
+
+	rec := w.anonymous().send(http.MethodPost, "/api/v1/friendships", `{"name":"Beto"}`)
+
+	decodeProblem(t, rec, http.StatusUnauthorized, httpapi.ProblemCodeUnauthenticated)
+}

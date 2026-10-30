@@ -98,6 +98,71 @@ func (q *Queries) GetActiveMemberOfUser(ctx context.Context, arg GetActiveMember
 	return i, err
 }
 
+const getFriendshipBetween = `-- name: GetFriendshipBetween :one
+SELECT ledgers.id, ledgers.kind, ledgers.name, ledgers.currency, ledgers.simplify_debts, ledgers.invite_link_generation, ledgers.version, ledgers.created_at, ledgers.deleted_at FROM ledgers
+JOIN members mine ON mine.ledger_id = ledgers.id
+JOIN members theirs ON theirs.ledger_id = ledgers.id
+WHERE mine.user_id = CAST(?1 AS TEXT)
+  AND theirs.user_id = CAST(?2 AS TEXT)
+  AND ledgers.kind = 'friendship'
+  AND ledgers.deleted_at IS NULL
+LIMIT 1
+`
+
+type GetFriendshipBetweenParams struct {
+	UserID      string
+	OtherUserID string
+}
+
+// The live Friendship between two Users, if any.
+func (q *Queries) GetFriendshipBetween(ctx context.Context, arg GetFriendshipBetweenParams) (Ledger, error) {
+	row := q.db.QueryRowContext(ctx, getFriendshipBetween, arg.UserID, arg.OtherUserID)
+	var i Ledger
+	err := row.Scan(
+		&i.ID,
+		&i.Kind,
+		&i.Name,
+		&i.Currency,
+		&i.SimplifyDebts,
+		&i.InviteLinkGeneration,
+		&i.Version,
+		&i.CreatedAt,
+		&i.DeletedAt,
+	)
+	return i, err
+}
+
+const getUserSharingAGroup = `-- name: GetUserSharingAGroup :one
+SELECT users.id, users.name FROM users
+JOIN members theirs ON theirs.user_id = users.id AND theirs.status = 'active'
+JOIN members mine ON mine.ledger_id = theirs.ledger_id AND mine.status = 'active'
+JOIN ledgers ON ledgers.id = mine.ledger_id
+WHERE users.id = CAST(?1 AS TEXT)
+  AND mine.user_id = CAST(?2 AS TEXT)
+  AND ledgers.kind = 'group'
+  AND ledgers.deleted_at IS NULL
+LIMIT 1
+`
+
+type GetUserSharingAGroupParams struct {
+	OtherUserID string
+	UserID      string
+}
+
+type GetUserSharingAGroupRow struct {
+	ID   string
+	Name string
+}
+
+// The User other_user_id, if they and user_id have an active Member in the same
+// live Group: the only way to start a Friendship directly with an existing User.
+func (q *Queries) GetUserSharingAGroup(ctx context.Context, arg GetUserSharingAGroupParams) (GetUserSharingAGroupRow, error) {
+	row := q.db.QueryRowContext(ctx, getUserSharingAGroup, arg.OtherUserID, arg.UserID)
+	var i GetUserSharingAGroupRow
+	err := row.Scan(&i.ID, &i.Name)
+	return i, err
+}
+
 const listLedgersOfUser = `-- name: ListLedgersOfUser :many
 SELECT ledgers.id, ledgers.kind, ledgers.name, ledgers.currency, ledgers.simplify_debts, ledgers.invite_link_generation, ledgers.version, ledgers.created_at, ledgers.deleted_at FROM ledgers
 JOIN members ON members.ledger_id = ledgers.id

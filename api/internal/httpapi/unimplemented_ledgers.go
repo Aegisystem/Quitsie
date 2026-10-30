@@ -13,10 +13,6 @@ import "context"
 
 // --- friendships ---
 
-func (s *Server) CreateFriendship(context.Context, CreateFriendshipRequestObject) (CreateFriendshipResponseObject, error) {
-	return nil, errNotImplemented
-}
-
 func (s *Server) GetFriendInviteLink(context.Context, GetFriendInviteLinkRequestObject) (GetFriendInviteLinkResponseObject, error) {
 	return nil, errNotImplemented
 }

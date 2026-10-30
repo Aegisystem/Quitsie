@@ -43,7 +43,6 @@ var unimplementedAuth = []operationRequest{
 
 // Groups, Members, invitations and Friendships.
 var unimplementedLedgers = []operationRequest{
-	{"CreateFriendship", http.MethodPost, "/api/v1/friendships", "{}"},
 	{"GetFriendInviteLink", http.MethodGet, "/api/v1/friendships/" + someID + "/invite-link", ""},
 	{"RegenerateFriendInviteLink", http.MethodPost, "/api/v1/friendships/" + someID + "/invite-link", ""},
 }
@@ -66,7 +65,7 @@ var (
 	implementedAuth    = []string{}
 	implementedLedgers = []string{"CreateGroup", "UpdateGroup", "DeleteGroup", "AddPendingMember", "RemoveMember", "LeaveGroup",
 		"GetGroupInviteLink", "RegenerateGroupInviteLink", "GetInvite",
-		"JoinGroup", "ClaimMember", "UndoClaim"}
+		"JoinGroup", "ClaimMember", "UndoClaim", "CreateFriendship"}
 	implementedRecords = []string{}
 	implemented        = slices.Concat(implementedBase, implementedAuth, implementedLedgers, implementedRecords)
 )

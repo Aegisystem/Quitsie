@@ -744,6 +744,7 @@ var (
 	errAlreadyMember    = &failure{status: http.StatusConflict, code: ProblemCodeAlreadyMember, title: "The User already holds a Member here."}
 	errMemberNotPending = &failure{status: http.StatusConflict, code: ProblemCodeMemberNotPending, title: "The Member is already linked to a User."}
 	errMemberNotClaimed = &failure{status: http.StatusConflict, code: ProblemCodeMemberNotClaimed, title: "The Member is not linked to a User."}
+	errFriendshipExists = &failure{status: http.StatusConflict, code: ProblemCodeFriendshipExists, title: "There is already a Friendship with that User."}
 )
 
 func joinedLedger(m store.Member, kind string) JoinedLedger {
@@ -872,4 +873,87 @@ func (s *Server) UndoClaim(ctx context.Context, req UndoClaimRequestObject) (Und
 		return answer(err, respond)
 	}
 	return UndoClaim204Response{}, nil
+}
+
+// --- friendships ---
+
+func (s *Server) CreateFriendship(ctx context.Context, req CreateFriendshipRequestObject) (CreateFriendshipResponseObject, error) {
+	respond := func(status int, p Problem) CreateFriendshipResponseObject {
+		return CreateFriendshipdefaultApplicationProblemPlusJSONResponse{Body: p, StatusCode: status}
+	}
+	user, err := currentUser(ctx)
+	if err != nil {
+		return answer(err, respond)
+	}
+	body := req.Body
+	withUser := body.UserId != nil
+	if withUser == (body.Name != nil) || (withUser && body.Email != nil) {
+		return answer(invalid("send either userId, or name with an optional email"), respond)
+	}
+	if withUser && body.UserId.String() == user.ID {
+		return answer(invalid("a Friendship is with someone else"), respond)
+	}
+	friend := store.CreateMemberParams{ID: newID()}
+	if !withUser {
+		pending, err := cleanPendingMember(NewPendingMember{Name: *body.Name, Email: body.Email})
+		if err != nil {
+			return answer(err, respond)
+		}
+		friend.Name, friend.Email = pending.name, pending.email
+	}
+
+	now := time.Now().UTC()
+	ledgerID := newID()
+	version, err := store.Write(ctx, s.deps.DB, func(q *store.Queries, version int64) error {
+		// An email never links anyone, so only an explicit userId gives a linked Friend.
+		if withUser {
+			other, err := userToBefriend(ctx, q, user.ID, body.UserId.String())
+			if err != nil {
+				return err
+			}
+			friend.UserID, friend.Name = &other.ID, other.Name
+		}
+		err := q.CreateLedger(ctx, store.CreateLedgerParams{ID: ledgerID, Kind: "friendship", SimplifyDebts: true, Version: version, CreatedAt: now})
+		if err != nil {
+			return fmt.Errorf("create friendship: %w", err)
+		}
+		err = q.CreateMember(ctx, store.CreateMemberParams{ID: newID(), LedgerID: ledgerID, UserID: &user.ID, Name: user.Name, Version: version, CreatedAt: now})
+		if err != nil {
+			return fmt.Errorf("create the creator's member: %w", err)
+		}
+		friend.LedgerID, friend.Version, friend.CreatedAt = ledgerID, version, now
+		if err := q.CreateMember(ctx, friend); err != nil {
+			return fmt.Errorf("create friend: %w", err)
+		}
+		return activity(ctx, q, ledgerID, user.ID, "friendship_created", map[string]any{"memberId": friend.ID}, version)
+	})
+	if err != nil {
+		return answer(err, respond)
+	}
+	return CreateFriendship201JSONResponse{Id: uuid.MustParse(ledgerID), CreatedAt: now, Version: version}, nil
+}
+
+// userToBefriend is the User otherID, when a Friendship with them can start
+// directly: they share a Group with userID and there is no Friendship yet.
+func userToBefriend(ctx context.Context, q *store.Queries, userID, otherID string) (store.GetUserSharingAGroupRow, error) {
+	other, err := q.GetUserSharingAGroup(ctx, store.GetUserSharingAGroupParams{UserID: userID, OtherUserID: otherID})
+	if errors.Is(err, sql.ErrNoRows) {
+		return other, errNotFound
+	}
+	if err != nil {
+		return other, fmt.Errorf("find user in a shared group: %w", err)
+	}
+	return other, checkNoFriendship(ctx, q, userID, otherID)
+}
+
+// checkNoFriendship answers errFriendshipExists when the two Users are Friends.
+func checkNoFriendship(ctx context.Context, q *store.Queries, userID, otherID string) error {
+	_, err := q.GetFriendshipBetween(ctx, store.GetFriendshipBetweenParams{UserID: userID, OtherUserID: otherID})
+	if err == nil {
+		return errFriendshipExists
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return fmt.Errorf("find friendship: %w", err)
+	}
+	return nil
 }
