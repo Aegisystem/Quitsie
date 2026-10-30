@@ -22,6 +22,9 @@ type Changes struct {
 	// after the cursor. The User no longer sees them, so the replica drops
 	// them with everything in them.
 	DroppedLedgerIDs []string
+	// RemovedLedgerIDs are those of DroppedLedgerIDs where another Member
+	// removed the User, instead of the User leaving.
+	RemovedLedgerIDs []string
 }
 
 // Read runs fn in a read-only transaction, so everything it reads comes from
@@ -76,6 +79,9 @@ func (q *Queries) ChangesSince(ctx context.Context, userID string, since int64) 
 	}
 	if c.DroppedLedgerIDs, err = q.DroppedLedgers(ctx, DroppedLedgersParams{UserID: userID, Since: since}); err != nil {
 		return Changes{}, fmt.Errorf("dropped ledgers: %w", err)
+	}
+	if c.RemovedLedgerIDs, err = q.RemovedFromLedgers(ctx, RemovedFromLedgersParams{UserID: userID, Since: since}); err != nil {
+		return Changes{}, fmt.Errorf("removed from ledgers: %w", err)
 	}
 	return c, nil
 }

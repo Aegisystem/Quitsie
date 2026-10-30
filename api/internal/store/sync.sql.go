@@ -366,3 +366,42 @@ func (q *Queries) DroppedLedgers(ctx context.Context, arg DroppedLedgersParams) 
 	}
 	return items, nil
 }
+
+const removedFromLedgers = `-- name: RemovedFromLedgers :many
+SELECT members.ledger_id FROM members
+JOIN activities ON activities.ledger_id = members.ledger_id AND activities.version = members.version
+WHERE members.user_id = CAST(?1 AS TEXT) AND members.status = 'former'
+  AND members.version > ?2 AND activities.kind = 'member_removed'
+ORDER BY members.ledger_id
+`
+
+type RemovedFromLedgersParams struct {
+	UserID string
+	Since  int64
+}
+
+// The DroppedLedgers where someone removed the User, rather than the User
+// leaving: the write that removes a Member stamps its member_removed Activity
+// with the same version.
+func (q *Queries) RemovedFromLedgers(ctx context.Context, arg RemovedFromLedgersParams) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, removedFromLedgers, arg.UserID, arg.Since)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var ledger_id string
+		if err := rows.Scan(&ledger_id); err != nil {
+			return nil, err
+		}
+		items = append(items, ledger_id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}

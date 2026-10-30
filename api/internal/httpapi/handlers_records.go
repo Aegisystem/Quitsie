@@ -137,8 +137,11 @@ func pulledChanges(c sync.Changes) (Changes, error) {
 		Settlements:      make([]Settlement, len(c.Settlements)),
 		Activities:       make([]Activity, len(c.Activities)),
 		Debts:            []LedgerDebts{},
-		DroppedLedgers:   []DroppedLedger{},
+		DroppedLedgers:   make([]DroppedLedger, len(c.Dropped)),
 		VisibleLedgerIds: make([]openapi_types.UUID, len(c.VisibleLedgerIDs)),
+	}
+	for i, d := range c.Dropped {
+		out.DroppedLedgers[i] = DroppedLedger{LedgerId: toUUID(d.LedgerID), Reason: DroppedLedgerReason(d.Reason)}
 	}
 	for i, ledgerID := range c.VisibleLedgerIDs {
 		out.VisibleLedgerIds[i] = toUUID(ledgerID)

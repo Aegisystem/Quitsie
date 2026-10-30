@@ -650,3 +650,87 @@ func TestPullChangesNeedsASession(t *testing.T) {
 
 	decodeProblem(t, a.do(signedIn{}, http.MethodGet, "/api/v1/sync?since=0", nil), http.StatusUnauthorized, httpapi.ProblemCodeUnauthenticated)
 }
+
+func TestPullChangesListsEveryLedgerTheUserCanSeeEvenIfUnchanged(t *testing.T) {
+	a := newRecordsAPI(t)
+	tr := a.seedTrip()
+	f := a.seedFriendship(tr.ana, tr.beto)
+	unclaimed := a.seedTripOf(tr.ana, tr.beto, tr.eva)
+	cursor := a.pull(t, tr.ana, 0).Cursor
+	a.write(func(q *store.Queries, version int64) error {
+		_, err := q.UnclaimMember(context.Background(), store.UnclaimMemberParams{ID: unclaimed.anaM, Version: version})
+		return err
+	})
+
+	got := a.pull(t, tr.ana, cursor).VisibleLedgerIds
+
+	want := []openapi_types.UUID{id(tr.id), id(f.id)}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("visibleLedgerIds = %v, want %v", got, want)
+	}
+}
+
+// leave makes m a former member, with the Activity the operation leaves.
+func (a *recordsAPI) leave(ledgerID, memberID, kind string, by signedIn) {
+	a.t.Helper()
+	ctx := context.Background()
+	a.write(func(q *store.Queries, version int64) error {
+		if _, err := q.MarkMemberFormer(ctx, store.MarkMemberFormerParams{ID: memberID, Version: version}); err != nil {
+			return err
+		}
+		return q.CreateActivity(ctx, store.CreateActivityParams{
+			ID: uuid.NewString(), LedgerID: ledgerID, UserID: by.user.ID, Kind: kind, Details: "{}", Version: version, CreatedAt: time.Now(),
+		})
+	})
+}
+
+func TestPullChangesTellsWhyALedgerIsGone(t *testing.T) {
+	a := newRecordsAPI(t)
+	tr := a.seedTrip()
+	a.push(t, tr.ana, expenses(tr.dinner()))
+	removedFrom := a.seedTripOf(tr.ana, tr.beto, tr.eva)
+	deleted := a.seedTripOf(tr.ana, tr.beto, tr.eva)
+	a.push(t, tr.ana, expenses(deleted.dinner()))
+	stays := a.seedFriendship(tr.ana, tr.beto)
+	cursor := a.pull(t, tr.beto, 0).Cursor
+
+	a.leave(tr.id, tr.betoM, "member_left", tr.beto)
+	a.leave(removedFrom.id, removedFrom.betoM, "member_removed", tr.ana)
+	a.write(func(q *store.Queries, version int64) error {
+		_, err := q.DeleteLedger(context.Background(), store.DeleteLedgerParams{ID: deleted.id, DeletedAt: ptr(time.Now()), Version: version})
+		return err
+	})
+
+	got := a.pull(t, tr.beto, cursor)
+
+	want := map[string]httpapi.DroppedLedgerReason{tr.id: httpapi.Left, removedFrom.id: httpapi.Removed, deleted.id: httpapi.Deleted}
+	dropped := map[string]httpapi.DroppedLedgerReason{}
+	for _, d := range got.DroppedLedgers {
+		dropped[d.LedgerId.String()] = d.Reason
+	}
+	if !reflect.DeepEqual(dropped, want) {
+		t.Errorf("dropped ledgers = %v, want %v", dropped, want)
+	}
+	if !reflect.DeepEqual(got.VisibleLedgerIds, []openapi_types.UUID{id(stays.id)}) {
+		t.Errorf("visibleLedgerIds = %v, want only the Friendship", got.VisibleLedgerIds)
+	}
+	if len(got.Groups)+len(got.Members)+len(got.Expenses)+len(got.Activities)+len(got.Debts) != 0 {
+		t.Errorf("changes = %+v, want nothing of the ledgers the replica drops", got)
+	}
+}
+
+func TestPullChangesShowsAFormerMemberToThoseWhoStay(t *testing.T) {
+	a := newRecordsAPI(t)
+	tr := a.seedTrip()
+	cursor := a.pull(t, tr.ana, 0).Cursor
+
+	a.leave(tr.id, tr.betoM, "member_left", tr.beto)
+	got := a.pull(t, tr.ana, cursor)
+
+	if len(got.DroppedLedgers) != 0 {
+		t.Errorf("dropped ledgers = %+v, want none: Ana is still in the trip", got.DroppedLedgers)
+	}
+	if len(got.Members) != 1 || got.Members[0].Id != id(tr.betoM) || got.Members[0].Status != httpapi.Former {
+		t.Errorf("members = %+v, want Beto as a former member", got.Members)
+	}
+}
