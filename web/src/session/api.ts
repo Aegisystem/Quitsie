@@ -1,5 +1,5 @@
 import type { Client } from 'openapi-fetch'
-import type { ProblemCode, Session, User } from '../api/client'
+import type { CurrencyPrecisionProblem, ProblemCode, Session, User } from '../api/client'
 import type { components, paths } from '../api/schema.gen'
 import { fail, ok, type Result } from '../domain/result'
 
@@ -13,9 +13,12 @@ export type UserUpdate = components['schemas']['UserUpdate']
 
 // Why a call failed, in the terms the screens need. `offline` means no answer
 // came back at all: no network, or the server could not be reached.
+// `lossy`: with `currency_precision_loss`, the records to fix first.
 export type CallError =
   | { kind: 'offline' }
-  | { kind: 'problem'; status: number; code?: ProblemCode; retryAfter?: number }
+  | { kind: 'problem'; status: number; code?: ProblemCode; retryAfter?: number; lossy?: LossyRecords }
+
+export type LossyRecords = Pick<CurrencyPrecisionProblem, 'expenseIds' | 'settlementIds'>
 
 export type CallResult<T> = Result<T, CallError>
 
@@ -25,7 +28,7 @@ interface Answer<T> {
   response: Response
 }
 
-async function call<T>(send: () => Promise<Answer<T>>): Promise<CallResult<T>> {
+export async function call<T>(send: () => Promise<Answer<T>>): Promise<CallResult<T>> {
   let answer: Answer<T>
   try {
     answer = await send()
@@ -37,7 +40,14 @@ async function call<T>(send: () => Promise<Answer<T>>): Promise<CallResult<T>> {
   // Middleware errors may still be plain text; then only the status is known.
   const code = typeof error === 'object' && error !== null && 'code' in error ? (error.code as ProblemCode) : undefined
   const retryAfter = Number(response.headers.get('Retry-After') ?? NaN)
-  return fail({ kind: 'problem', status: response.status, code, retryAfter: Number.isFinite(retryAfter) ? retryAfter : undefined })
+  const lossy = code === 'currency_precision_loss' ? (error as LossyRecords) : undefined
+  return fail({
+    kind: 'problem',
+    status: response.status,
+    code,
+    retryAfter: Number.isFinite(retryAfter) ? retryAfter : undefined,
+    ...(lossy && { lossy: { expenseIds: lossy.expenseIds, settlementIds: lossy.settlementIds } }),
+  })
 }
 
 export function requestLoginCode(client: ApiClient, email: string): Promise<CallResult<void>> {

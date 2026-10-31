@@ -9,6 +9,9 @@ export type Route =
   | { name: 'account' }
   | { name: 'records' }
   | { name: 'ledger'; ledgerId: string; tab?: string }
+  | { name: 'ledgerSettings'; ledgerId: string }
+  | { name: 'newGroup' }
+  | { name: 'newFriend' }
   | { name: 'newExpense'; ledgerId?: string; fromRejected?: string }
   | { name: 'settle'; ledgerId: string; from?: string; to?: string; amount?: string; currency?: string }
   | { name: 'inviteLink'; ledgerId: string }
@@ -32,7 +35,14 @@ function parse(hash: string): Route {
       return { name: 'records' }
     case 'ledgers':
       if (parts[1] && parts[2] === 'invite') return { name: 'inviteLink', ledgerId: parts[1] }
+      if (parts[1] && parts[2] === 'settings') return { name: 'ledgerSettings', ledgerId: parts[1] }
       if (parts[1]) return { name: 'ledger', ledgerId: parts[1], tab: opt('tab') }
+      break
+    case 'groups':
+      if (parts[1] === 'new') return { name: 'newGroup' }
+      break
+    case 'friends':
+      if (parts[1] === 'new') return { name: 'newFriend' }
       break
     case 'expenses':
       if (parts[1] === 'new') return { name: 'newExpense', ledgerId: opt('ledger'), fromRejected: opt('fix') }
@@ -63,6 +73,12 @@ export function href(route: Route): string {
       return '#/records'
     case 'ledger':
       return `#/ledgers/${encodeURIComponent(route.ledgerId)}${q({ tab: route.tab })}`
+    case 'ledgerSettings':
+      return `#/ledgers/${encodeURIComponent(route.ledgerId)}/settings`
+    case 'newGroup':
+      return '#/groups/new'
+    case 'newFriend':
+      return '#/friends/new'
     case 'newExpense':
       return `#/expenses/new${q({ ledger: route.ledgerId, fix: route.fromRejected })}`
     case 'settle':

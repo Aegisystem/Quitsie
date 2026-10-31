@@ -2,6 +2,7 @@
 // screens read from it. Writing to it is the sync engine's job (../sync): the
 // screens only read from here.
 export {
+  clearDevice,
   type Ledger,
   openReplica,
   type QueuedRecord,

@@ -1,15 +1,21 @@
-import { useSyncExternalStore } from 'react'
+import { type Observable } from 'dexie'
+import { useEffect, useState, useSyncExternalStore } from 'react'
 import { api } from '../api/client'
+import { openReplica } from '../local'
+import { createSyncEngine } from '../sync'
 import { isGoogleFailure } from './api'
+import { createLedgerCalls } from './ledgers'
+import { createDeviceData } from './replica'
 import { createSession, type KeyValueStorage, type SessionState } from './session'
 
 // Who is signed in, for the whole app. The interface reads it with
 // useSession(); every 401 the API answers signs the User out (ADR 0005).
 
-export { type CallError, type CallResult, googleSignInUrl } from './api'
+export { type CallError, type CallResult, googleSignInUrl, type LossyRecords } from './api'
 export { currencyOptions, suggestCurrency } from './currency'
 export { type Device, describeDevice } from './device'
-export type { SessionState, SignedOutNotice } from './session'
+export type { GroupUpdate, InviteLinkOwner, NewGroup, NewPendingMember } from './ledgers'
+export type { DeviceRecords, SessionState, SignedOutNotice } from './session'
 
 // Private mode or blocked storage: the User is just not remembered offline.
 const storage: KeyValueStorage = {
@@ -46,8 +52,44 @@ function takeGoogleFailure(): boolean {
   return isGoogleFailure(url)
 }
 
-export const session = createSession({ client: api, storage, notice: takeGoogleFailure() ? 'googleFailed' : undefined })
+// The replica and the sync engine belong to whoever is signed in, so they are
+// created here, with the `api` whose 401s sign the User out.
+export const replica = openReplica()
+export const engine = createSyncEngine({ replica, api })
+
+export const session = createSession({
+  client: api,
+  storage,
+  notice: takeGoogleFailure() ? 'googleFailed' : undefined,
+  device: createDeviceData({ replica, engine, storage }),
+})
+
+export const ledgers = createLedgerCalls({ client: api, sync: () => engine.sync() })
+
+// The engine runs while someone is signed in.
+let running = false
+function followSession() {
+  const signedIn = session.getState().status === 'signedIn'
+  if (signedIn === running) return
+  running = signedIn
+  if (signedIn) engine.start()
+  else engine.stop()
+}
+session.subscribe(followSession)
+followSession()
 
 export function useSession(): SessionState {
   return useSyncExternalStore(session.subscribe, session.getState)
+}
+
+// The latest value of a live query of ../local. `loading` tells a query that has
+// not answered yet from one that answered undefined.
+export function useLive<T>(observe: () => Observable<T>, deps: unknown[]): { loading: boolean; value?: T } {
+  const [live, setLive] = useState<{ loading: boolean; value?: T }>({ loading: true })
+  useEffect(() => {
+    const subscription = observe().subscribe({ next: (value) => setLive({ loading: false, value }) })
+    return () => subscription.unsubscribe()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, deps)
+  return live
 }

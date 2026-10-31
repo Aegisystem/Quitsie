@@ -15,19 +15,42 @@ export type SessionState =
 
 export type KeyValueStorage = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>
 
+// Records the server does not have: signing out loses them.
+export interface DeviceRecords {
+  unsynced: number
+  rejected: number
+}
+
+// What the device keeps between sessions: the replica and the queue.
+export interface DeviceData {
+  // Before `userId` sees the app: what another User left here goes.
+  admit(userId: string): Promise<void>
+  // The User left on purpose, so nothing of theirs stays.
+  clear(): Promise<void>
+  // After trying to send them, so only those that could not be sent count.
+  records(): Promise<DeviceRecords>
+}
+
+const nothingOnDevice: DeviceData = {
+  admit: async () => {},
+  clear: async () => {},
+  records: async () => ({ unsynced: 0, rejected: 0 }),
+}
+
 export interface SessionOptions {
   client: ApiClient
   // Keeps the last known User so the app opens signed in without a network.
   storage: KeyValueStorage
   // Shown if the first check of /me finds no session.
   notice?: SignedOutNotice
+  device?: DeviceData
 }
 
 const USER_KEY = 'quitsie.session.user'
 
 export type SessionStore = ReturnType<typeof createSession>
 
-export function createSession({ client, storage, notice: firstNotice }: SessionOptions) {
+export function createSession({ client, storage, notice: firstNotice, device = nothingOnDevice }: SessionOptions) {
   const cached = readUser(storage)
   let state: SessionState = cached ? signedIn(cached, false) : { status: 'loading' }
   // Bumped on every sign-in, sign-out and saved profile, so an answer to a
@@ -75,7 +98,11 @@ export function createSession({ client, storage, notice: firstNotice }: SessionO
     const me = await calls.getMe(client)
     if (sent !== generation) return
     if (me.ok) {
-      if (state.status !== 'signedIn') return enter(me.value, false)
+      if (state.status !== 'signedIn') {
+        await device.admit(me.value.id)
+        if (sent !== generation) return
+        return enter(me.value, false)
+      }
       writeUser(storage, me.value)
       set(signedIn(me.value, state.needsProfile))
     } else if (me.error.kind === 'problem' && me.error.status === 401) {
@@ -89,6 +116,9 @@ export function createSession({ client, storage, notice: firstNotice }: SessionO
   async function settle(result: CallResult<void>, notice?: SignedOutNotice): Promise<CallResult<void>> {
     // A 401 means there was no session to close: the User is signed out either way.
     if (result.ok || (result.error.kind === 'problem' && result.error.status === 401)) {
+      // A 401 from here on is about the session that just ended.
+      generation++
+      await device.clear()
       leave(notice)
       return ok(undefined)
     }
@@ -120,6 +150,7 @@ export function createSession({ client, storage, notice: firstNotice }: SessionO
     async verifyCode(email: string, code: string): Promise<CallResult<void>> {
       const result = await calls.verifyLoginCode(client, email, code)
       if (!result.ok) return result
+      await device.admit(result.value.user.id)
       enter(result.value.user, result.value.newUser)
       return ok(undefined)
     },
@@ -136,7 +167,13 @@ export function createSession({ client, storage, notice: firstNotice }: SessionO
       return result
     },
 
+    // What signing out would lose. The screens warn with it first.
+    recordsOnDevice(): Promise<DeviceRecords> {
+      return device.records()
+    },
+
     // Needs the network: the cookie is HttpOnly, so only the server can clear it.
+    // Once the server has closed the session, the replica and the queue go.
     async signOut(): Promise<CallResult<void>> {
       return settle(await calls.logout(client))
     },
