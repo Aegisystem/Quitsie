@@ -10,6 +10,7 @@ import { NewExpense } from './screens/ExpenseForm'
 import { Home } from './screens/Home'
 import { Invite, InviteLink } from './screens/Invite'
 import { Ledger } from './screens/Ledger'
+import { LedgerSettings } from './screens/LedgerSettings'
 import { NewFriend } from './screens/NewFriend'
 import { NewGroup } from './screens/NewGroup'
 import { Records } from './screens/Records'
@@ -58,6 +59,8 @@ export function App() {
       return <Records />
     case 'ledger':
       return <Ledger ledgerId={route.ledgerId} tab={route.tab} />
+    case 'ledgerSettings':
+      return <LedgerSettings ledgerId={route.ledgerId} user={state.user} />
     case 'newGroup':
       return <NewGroup user={state.user} />
     case 'newFriend':
