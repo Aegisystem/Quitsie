@@ -53,7 +53,7 @@ export function App() {
     case 'account':
       return <Account user={state.user} />
     case 'records':
-      return <Records />
+      return <Records user={state.user} />
     case 'ledger':
       return <Ledger ledgerId={route.ledgerId} tab={route.tab} user={state.user} />
     case 'newExpense':
