@@ -28,8 +28,14 @@ func writeProblem(w http.ResponseWriter, status int, code ProblemCode, title, de
 	_ = json.NewEncoder(w).Encode(p)
 }
 
-// badRequest answers requests whose parameters or body do not match openapi.yaml.
+// badRequest answers requests whose parameters or body do not match
+// openapi.yaml, or whose body limitBody cut short.
 func badRequest(w http.ResponseWriter, _ *http.Request, err error) {
+	var tooLarge *http.MaxBytesError
+	if errors.As(err, &tooLarge) {
+		writeProblem(w, http.StatusRequestEntityTooLarge, ProblemCodeBodyTooLarge, "The request body is too large.", "")
+		return
+	}
 	writeProblem(w, http.StatusBadRequest, ProblemCodeValidationFailed, "The request does not match the API contract.", err.Error())
 }
 

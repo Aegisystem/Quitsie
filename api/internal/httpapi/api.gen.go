@@ -255,6 +255,7 @@ func (e MemberStatus) Valid() bool {
 // Defines values for ProblemCode.
 const (
 	ProblemCodeAlreadyMember         ProblemCode = "already_member"
+	ProblemCodeBodyTooLarge          ProblemCode = "body_too_large"
 	ProblemCodeCurrencyMismatch      ProblemCode = "currency_mismatch"
 	ProblemCodeCurrencyPrecisionLoss ProblemCode = "currency_precision_loss"
 	ProblemCodeCursorInvalid         ProblemCode = "cursor_invalid"
@@ -283,6 +284,8 @@ const (
 func (e ProblemCode) Valid() bool {
 	switch e {
 	case ProblemCodeAlreadyMember:
+		return true
+	case ProblemCodeBodyTooLarge:
 		return true
 	case ProblemCodeCurrencyMismatch:
 		return true

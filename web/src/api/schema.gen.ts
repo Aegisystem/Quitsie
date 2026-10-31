@@ -608,7 +608,7 @@ export interface components {
          * @description Stable machine-readable error code. New codes may be added; clients treat an unknown code as a generic error for its status.
          * @enum {string}
          */
-        ProblemCode: "validation_failed" | "unauthenticated" | "origin_mismatch" | "not_found" | "rate_limited" | "login_code_invalid" | "login_code_expired" | "too_many_attempts" | "invite_link_invalid" | "version_conflict" | "nonzero_balance" | "currency_mismatch" | "currency_precision_loss" | "invalid_amounts" | "invalid_participants" | "member_not_pending" | "member_not_claimed" | "already_member" | "friendship_exists" | "name_required" | "cursor_invalid" | "internal_error" | "not_implemented";
+        ProblemCode: "validation_failed" | "unauthenticated" | "origin_mismatch" | "not_found" | "rate_limited" | "login_code_invalid" | "login_code_expired" | "too_many_attempts" | "invite_link_invalid" | "version_conflict" | "nonzero_balance" | "currency_mismatch" | "currency_precision_loss" | "invalid_amounts" | "invalid_participants" | "member_not_pending" | "member_not_claimed" | "already_member" | "friendship_exists" | "name_required" | "body_too_large" | "cursor_invalid" | "internal_error" | "not_implemented";
         /** @description The `currency_precision_loss` problem, with the records the User must fix first. */
         CurrencyPrecisionProblem: components["schemas"]["Problem"] & {
             expenseIds: string[];
@@ -1081,7 +1081,7 @@ export interface components {
         };
     };
     responses: {
-        /** @description Any other error, such as `origin_mismatch` (403), `rate_limited` (429), `internal_error` (500) or `not_implemented` (501). */
+        /** @description Any other error, such as `origin_mismatch` (403), `body_too_large` (413), `rate_limited` (429), `internal_error` (500) or `not_implemented` (501). */
         Problem: {
             headers: {
                 [name: string]: unknown;
