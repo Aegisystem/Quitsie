@@ -34,6 +34,7 @@ Reglas acordadas durante el diseño. El vocabulario sigue [CONTEXT.md](../CONTEX
 - El nombre y el email de un Miembro pendiente se pueden editar.
 - Un Usuario ocupa como máximo un Miembro por Grupo.
 - Un Grupo solo se puede borrar cuando todos los Saldos están en cero.
+- El último Miembro vinculado puede salir aunque queden Miembros pendientes: el Grupo sigue existiendo y su Enlace de invitación sigue sirviendo para Reclamarlos.
 
 ## Moneda del grupo
 
@@ -42,14 +43,15 @@ Reglas acordadas durante el diseño. El vocabulario sigue [CONTEXT.md](../CONTEX
 - Los Registros sin sincronizar creados antes del cambio llegan como Registros rechazados, para que su autor confirme la moneda.
 - El cambio queda en la Actividad.
 - Las monedas de fondos de ISO 4217 (por ejemplo CLF, COU o UYI) no se ofrecen en la interfaz.
+- Los selectores de moneda muestran primero la Moneda preferida y las más usadas; debajo, las demás en orden alfabético.
 
 ## Personas
 
 - Para Reclamar se usa el Enlace de invitación. Si el email de quien entra coincide con el de un Miembro pendiente, se le sugiere, pero nunca se vincula automáticamente.
 - El Enlace de invitación de un Grupo se puede volver a mostrar cuantas veces haga falta; regenerarlo invalida el anterior (ver [ADR 0010](adr/0010-enlaces-de-invitacion-derivados.md)).
-- Cualquier Miembro puede deshacer una Reclamación hecha por error; queda en la Actividad, y el Usuario desvinculado deja de ver el Grupo.
-- Al borrar su cuenta, los Miembros y Amigos de un Usuario vuelven a quedar pendientes con su nombre, así que los Saldos de los demás no cambian.
-- Quien entra por primera vez con un código llega sin nombre; la aplicación le pide su nombre y su Moneda preferida, proponiendo la del idioma del navegador. Con Google, el nombre viene de la cuenta.
+- Cualquier Miembro vinculado puede deshacer la vinculación de otro, sin importar cómo entró al Grupo; su Miembro vuelve a quedar pendiente, queda en la Actividad y ese Usuario deja de ver el Grupo. Puede volver a entrar con el Enlace de invitación.
+- Al borrar su cuenta, los Miembros y Amigos de un Usuario vuelven a quedar pendientes con su nombre, así que los Saldos de los demás no cambian. De la cuenta se borran el email y el nombre; solo queda el nombre guardado en cada Miembro.
+- Quien entra por primera vez con un código llega sin nombre; la aplicación le pide su nombre y su Moneda preferida, proponiendo la del idioma del navegador. Con Google, el nombre viene de la cuenta. Sin nombre no se pueden crear Grupos ni Amistades.
 - Pedir un código nuevo invalida el anterior.
 
 ## Gastos sin grupo y Amistades
@@ -77,3 +79,4 @@ Reglas acordadas durante el diseño. El vocabulario sigue [CONTEXT.md](../CONTEX
 
 - Se pueden crear Gastos y Liquidaciones; no Grupos, Miembros ni Amigos (ver [ADR 0001](adr/0001-offline-solo-creacion.md)).
 - Un Registro rechazado nunca se descarta en silencio.
+- Al cerrar sesión se borran del dispositivo la réplica y la cola. Si hay registros sin sincronizar o rechazados, la aplicación avisa antes y permite cancelar.
