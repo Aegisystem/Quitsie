@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useId, useState } from 'react'
+import { type ReactNode, useId, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { Invite as InviteDetails } from '../../api/client'
 import { liveLedger } from '../../local'
@@ -108,7 +108,8 @@ function InviteChoice({ token, details, reload }: { token: string; details: Invi
     >
       <div className="invite-head">
         <span className="invite-glyph">{isFriendship ? <Figure size={40} /> : <GroupGlyph size={40} />}</span>
-        <h2 className="invite-name">{name}</h2>
+        {/* Once linked, the API may name either of the two Friends as the inviter. */}
+        {!(isFriendship && details.joinedMemberId) && <h2 className="invite-name">{name}</h2>}
         {!isFriendship && pending.length > 0 && (
           <p className="invite-people" aria-label={pending.map((member) => member.name).join(', ')}>
             {pending.map((member) => (
@@ -183,13 +184,12 @@ function InviteChoice({ token, details, reload }: { token: string; details: Invi
 
 export function InviteLink({ ledgerId }: { ledgerId: string }) {
   const { t } = useTranslation()
-  const live = useLive(() => liveLedger(replica, ledgerId), [ledgerId])
-  const summary = live.value
+  const [summary, loaded] = useLive(`ledger:${ledgerId}`, () => liveLedger(replica, ledgerId))
 
   if (!summary) {
     return (
       <Screen back={{ name: 'home' }} title={t('inviteLink.title')}>
-        {!live.loading && <p className="empty">{t('ledger.unknown')}</p>}
+        {loaded && <p className="empty">{t('ledger.unknown')}</p>}
       </Screen>
     )
   }
@@ -200,36 +200,36 @@ export function InviteLink({ ledgerId }: { ledgerId: string }) {
 
   return (
     <Screen back={{ name: 'ledger', ledgerId }} title={t('inviteLink.title')}>
-      <h2 className="page-title">{name}</h2>
+      {name && <h2 className="page-title">{name}</h2>}
       {ledger.kind === 'friendship' && pending.length === 0 ? (
         <p className="empty">{t('inviteLink.friendLinked')}</p>
       ) : (
         <>
           <p className="lead">{ledger.kind === 'group' ? t('inviteLink.body') : t('inviteLink.bodyFriend', { name })}</p>
-          <LinkBox ledger={ledger} name={name} />
-
-          {ledger.kind === 'group' && (
-            <>
-              <h3 className="section-title">{t('inviteLink.pending')}</h3>
-              {pending.length === 0 ? (
-                <p className="empty">{t('inviteLink.noPending')}</p>
-              ) : (
-                <ul className="rows">
-                  {pending.map((member) => (
-                    <li key={member.id} className="row">
-                      <span className="row-glyph">
-                        <Figure state="pending" />
-                      </span>
-                      <span className="row-main">
-                        <span className="row-title">{member.name}</span>
-                        <span className="row-sub">{member.email ?? t('ledger.pending')}</span>
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </>
-          )}
+          <LinkBox ledger={ledger} name={name}>
+            {ledger.kind === 'group' && (
+              <>
+                <h3 className="section-title">{t('inviteLink.pending')}</h3>
+                {pending.length === 0 ? (
+                  <p className="empty">{t('inviteLink.noPending')}</p>
+                ) : (
+                  <ul className="rows">
+                    {pending.map((member) => (
+                      <li key={member.id} className="row">
+                        <span className="row-glyph">
+                          <Figure state="pending" />
+                        </span>
+                        <span className="row-main">
+                          <span className="row-title">{member.name}</span>
+                          <span className="row-sub">{member.email ?? t('ledger.pending')}</span>
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </>
+            )}
+          </LinkBox>
         </>
       )}
     </Screen>
@@ -237,8 +237,9 @@ export function InviteLink({ ledgerId }: { ledgerId: string }) {
 }
 
 // The link is derived on the server, so it can be shown every time (ADR 0010),
-// but only online: the device does not keep it.
-function LinkBox({ ledger, name }: { ledger: InviteLinkOwner; name: string }) {
+// but only online: the device does not keep it. `children` go between the link
+// and regenerating it.
+function LinkBox({ ledger, name, children }: { ledger: InviteLinkOwner; name: string; children: ReactNode }) {
   const { t } = useTranslation()
   const online = useOnline()
   const queryClient = useQueryClient()
@@ -296,6 +297,8 @@ function LinkBox({ ledger, name }: { ledger: InviteLinkOwner; name: string }) {
           </button>
         )}
       </div>
+
+      {children}
 
       <div className="danger-zone">
         {confirming ? (

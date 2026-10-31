@@ -34,9 +34,13 @@ export function Account({ user }: { user: User }) {
   )
 }
 
-// "2 registros sin sincronizar, 1 registro rechazado"; empty when there are none.
-function recordsText(t: ReturnType<typeof useTranslation>['t'], { unsynced, rejected }: DeviceRecords): string {
-  return [unsynced ? t('connection.unsyncedBadge', { count: unsynced }) : '', rejected ? t('connection.rejectedBadge', { count: rejected }) : ''].filter(Boolean).join(', ')
+// What a text about the records at risk needs: "2 registros sin sincronizar, 1
+// registro rechazado" and their count, to agree with it.
+function atRiskText(t: ReturnType<typeof useTranslation>['t'], { unsynced, rejected }: DeviceRecords) {
+  return {
+    count: unsynced + rejected,
+    records: [unsynced ? t('connection.unsyncedBadge', { count: unsynced }) : '', rejected ? t('connection.rejectedBadge', { count: rejected }) : ''].filter(Boolean).join(', '),
+  }
 }
 
 // Signing out empties the device. The queue is tried once more, and what still
@@ -46,7 +50,7 @@ function SignOut() {
   const ids = useId()
   const online = useOnline()
   const [step, setStep] = useState<'idle' | 'checking' | 'leaving'>('idle')
-  const [atRisk, setAtRisk] = useState<string>()
+  const [atRisk, setAtRisk] = useState<DeviceRecords>()
 
   const leave = async () => {
     setStep('leaving')
@@ -61,8 +65,8 @@ function SignOut() {
 
   const start = async () => {
     setStep('checking')
-    const records = recordsText(t, await session.recordsOnDevice())
-    if (records) {
+    const records = await session.recordsOnDevice()
+    if (records.unsynced + records.rejected > 0) {
       setAtRisk(records)
       setStep('idle')
     } else {
@@ -71,12 +75,13 @@ function SignOut() {
   }
 
   if (atRisk) {
+    const text = atRiskText(t, atRisk)
     return (
-      <div className="confirm" role="alertdialog" aria-labelledby={`${ids}-warning`}>
-        <p id={`${ids}-warning`}>{t('account.signOutPending', { records: atRisk })}</p>
+      <div className="section confirm" role="alertdialog" aria-labelledby={`${ids}-warning`}>
+        <p id={`${ids}-warning`}>{t('account.signOutPending', text)}</p>
         <div className="button-row">
           <button type="button" className="button button-danger button-small" disabled={step !== 'idle' || !online} onClick={() => void leave()}>
-            {step === 'leaving' ? t('account.signingOut') : t('account.signOutAnyway')}
+            {step === 'leaving' ? t('account.signingOut') : t('account.signOutAnyway', text)}
           </button>
           <a className="button button-secondary button-small" href={href({ name: 'records' })}>
             {t('account.signOutReview')}
@@ -90,7 +95,7 @@ function SignOut() {
   }
 
   return (
-    <>
+    <div className="section">
       <button
         type="button"
         className="button button-secondary"
@@ -101,7 +106,7 @@ function SignOut() {
         {step === 'checking' ? t('account.signOutChecking') : step === 'leaving' ? t('account.signingOut') : t('account.signOut')}
       </button>
       <p className="hint">{t('account.signOutHint')}</p>
-    </>
+    </div>
   )
 }
 
@@ -290,11 +295,11 @@ function DeleteAccount() {
   const online = useOnline()
   const [confirming, setConfirming] = useState(false)
   const [deleting, setDeleting] = useState(false)
-  const [atRisk, setAtRisk] = useState<string>()
+  const [atRisk, setAtRisk] = useState<DeviceRecords>()
 
   const confirm = () => {
     setConfirming(true)
-    void session.recordsOnDevice().then((records) => setAtRisk(recordsText(t, records)))
+    void session.recordsOnDevice().then(setAtRisk)
   }
 
   const remove = async () => {
@@ -314,7 +319,7 @@ function DeleteAccount() {
         <div className="confirm" role="group" aria-labelledby={`${ids}-confirm`}>
           <p id={`${ids}-confirm`}>{t('account.deleteConfirm')}</p>
           <p className="hint">{t('account.deleteHint')}</p>
-          {atRisk && <p className="hint">{t('account.deletePending', { records: atRisk })}</p>}
+          {atRisk && atRisk.unsynced + atRisk.rejected > 0 && <p className="hint">{t('account.deletePending', atRiskText(t, atRisk))}</p>}
           <div className="button-row">
             <button type="button" className="button button-danger button-small" disabled={deleting || !online} onClick={() => void remove()}>
               {deleting ? t('account.deleting') : t('account.deleteYes')}

@@ -82,14 +82,14 @@ export function useSession(): SessionState {
   return useSyncExternalStore(session.subscribe, session.getState)
 }
 
-// The latest value of a live query of ../local. `loading` tells a query that has
-// not answered yet from one that answered undefined.
-export function useLive<T>(observe: () => Observable<T>, deps: unknown[]): { loading: boolean; value?: T } {
-  const [live, setLive] = useState<{ loading: boolean; value?: T }>({ loading: true })
+// Renders every value of a live query of ../local. `key` names the query, and
+// `loaded` tells one that has not answered yet from one that answered undefined.
+export function useLive<T>(key: string, query: () => Observable<T>): [value: T | undefined, loaded: boolean] {
+  const [latest, setLatest] = useState<{ key: string; value: T }>()
   useEffect(() => {
-    const subscription = observe().subscribe({ next: (value) => setLive({ loading: false, value }) })
+    const subscription = query().subscribe((value) => setLatest({ key, value }))
     return () => subscription.unsubscribe()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, deps)
-  return live
+    // The key stands for the query, which is a new function on every render.
+  }, [key])
+  return latest?.key === key ? [latest.value, true] : [undefined, false]
 }

@@ -17,13 +17,12 @@ const underTheName = { marginLeft: 44, paddingBottom: 14 }
 
 export function LedgerSettings({ ledgerId, user }: { ledgerId: string; user: User }) {
   const { t } = useTranslation()
-  const live = useLive(() => liveLedger(replica, ledgerId), [ledgerId])
-  const summary = live.value
+  const [summary, loaded] = useLive(`ledger:${ledgerId}`, () => liveLedger(replica, ledgerId))
 
   if (!summary) {
     return (
       <Screen back={{ name: 'home' }} title={t('ledgerSettings.title')}>
-        {!live.loading && <p className="empty">{t('ledger.unknown')}</p>}
+        {loaded && <p className="empty">{t('ledger.unknown')}</p>}
       </Screen>
     )
   }
@@ -60,7 +59,8 @@ function FriendshipSettings({ summary, user }: { summary: LedgerSummary; user: U
 
 function GroupSettings({ group, summary, user }: { group: Group; summary: LedgerSummary; user: User }) {
   const { t } = useTranslation()
-  const active = summary.members.filter((member) => member.status === 'active')
+  // The User comes first.
+  const active = summary.members.filter((member) => member.status === 'active').sort((a, b) => Number(b.userId === user.id) - Number(a.userId === user.id))
   const balancesOf = (memberId: string) => summary.balances.filter((balance) => balance.participantId === memberId)
   const me = active.find((member) => member.userId === user.id)
 
@@ -206,10 +206,10 @@ function GroupForm({ group }: { group: Group }) {
 // records count, as they can be restored (docs/reglas-de-negocio.md).
 function LossyAmounts({ groupId, currency, records }: { groupId: string; currency: string; records: LossyRecords }) {
   const { t } = useTranslation()
-  const expenses = useLive(() => liveExpenses(replica, groupId), [groupId])
-  const settlements = useLive(() => liveSettlements(replica, groupId), [groupId])
-  const lossyExpenses = (expenses.value ?? []).filter(({ id }) => records.expenseIds.includes(id))
-  const lossySettlements = (settlements.value ?? []).filter(({ id }) => records.settlementIds.includes(id))
+  const [expenses = []] = useLive(`expenses:${groupId}`, () => liveExpenses(replica, groupId))
+  const [settlements = []] = useLive(`settlements:${groupId}`, () => liveSettlements(replica, groupId))
+  const lossyExpenses = expenses.filter(({ id }) => records.expenseIds.includes(id))
+  const lossySettlements = settlements.filter(({ id }) => records.settlementIds.includes(id))
   const count = records.expenseIds.length + records.settlementIds.length
 
   return (
@@ -244,14 +244,16 @@ function LossyAmounts({ groupId, currency, records }: { groupId: string; currenc
   )
 }
 
-function BalanceOf({ balances }: { balances: Balance[] }) {
+function BalanceOf({ balances, mine }: { balances: Balance[]; mine: boolean }) {
   const { t } = useTranslation()
-  if (balances.length === 0) return <span className="row-sub">{t('balance.memberSettled')}</span>
+  if (balances.length === 0) return <span className="row-sub">{mine ? t('balance.youSettledShort') : t('balance.memberSettled')}</span>
   return (
     <span className="row-end">
       {balances.map(({ amount, currency }) => (
         <span key={currency} className="row-balance">
-          <span className={`row-balance-label tone-${toneOf(amount)}`}>{amount > 0 ? t('balance.memberOwed') : t('balance.memberOwes')}</span>
+          <span className={`row-balance-label tone-${toneOf(amount)}`}>
+            {amount > 0 ? t(mine ? 'balance.youOwedShort' : 'balance.memberOwed') : t(mine ? 'balance.youOweShort' : 'balance.memberOwes')}
+          </span>
           <Amount minor={Math.abs(amount)} currency={currency} tone={toneOf(amount)} />
         </span>
       ))}
@@ -315,7 +317,7 @@ function MemberRow({ groupId, member, mine, balances }: { groupId: string; membe
           <span className="row-title">{mine ? t('common.you') : name}</span>
           {pending && <span className="row-sub">{member.email ?? t('ledger.pending')}</span>}
         </span>
-        <BalanceOf balances={balances} />
+        <BalanceOf balances={balances} mine={mine} />
       </div>
 
       {!mine && (
