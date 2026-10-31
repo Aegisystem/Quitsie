@@ -2,30 +2,15 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useId, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { Session, User } from '../../api/client'
-import { describeDevice, session, type CallResult } from '../../session'
+import { type CallResult, describeDevice, type DeviceRecords, session } from '../../session'
 import { Figure, Icon } from '../components/icons'
 import { Screen, toast, useOnline } from '../components/Shell'
 import { formatRelative } from '../dates'
-import { demo, ledgerById, useDemo } from '../demo/store'
 import { href, navigate } from '../router'
 import { CurrencySelect } from './Welcome'
 
 export function Account({ user }: { user: User }) {
   const { t } = useTranslation()
-  const s = useDemo()
-  const online = useOnline()
-  const [signingOut, setSigningOut] = useState(false)
-
-  const signOut = async () => {
-    setSigningOut(true)
-    const result = await session.signOut()
-    if (result.ok) {
-      navigate({ name: 'home' }, { replace: true })
-      return
-    }
-    setSigningOut(false)
-    toast(result.error.kind === 'offline' ? t('common.onlineOnly') : t('account.signOutFailed'))
-  }
 
   return (
     <Screen tab="account">
@@ -42,49 +27,81 @@ export function Account({ user }: { user: User }) {
 
       <Sessions userId={user.id} />
 
+      <SignOut />
+
+      <DeleteAccount />
+    </Screen>
+  )
+}
+
+// "2 registros sin sincronizar, 1 registro rechazado"; empty when there are none.
+function recordsText(t: ReturnType<typeof useTranslation>['t'], { unsynced, rejected }: DeviceRecords): string {
+  return [unsynced ? t('connection.unsyncedBadge', { count: unsynced }) : '', rejected ? t('connection.rejectedBadge', { count: rejected }) : ''].filter(Boolean).join(', ')
+}
+
+// Signing out empties the device. The queue is tried once more, and what still
+// cannot be sent is only lost after a warning (docs/reglas-de-negocio.md).
+function SignOut() {
+  const { t } = useTranslation()
+  const ids = useId()
+  const online = useOnline()
+  const [step, setStep] = useState<'idle' | 'checking' | 'leaving'>('idle')
+  const [atRisk, setAtRisk] = useState<string>()
+
+  const leave = async () => {
+    setStep('leaving')
+    const result = await session.signOut()
+    if (result.ok) {
+      navigate({ name: 'home' }, { replace: true })
+      return
+    }
+    setStep('idle')
+    toast(result.error.kind === 'offline' ? t('common.onlineOnly') : t('account.signOutFailed'))
+  }
+
+  const start = async () => {
+    setStep('checking')
+    const records = recordsText(t, await session.recordsOnDevice())
+    if (records) {
+      setAtRisk(records)
+      setStep('idle')
+    } else {
+      await leave()
+    }
+  }
+
+  if (atRisk) {
+    return (
+      <div className="confirm" role="alertdialog" aria-labelledby={`${ids}-warning`}>
+        <p id={`${ids}-warning`}>{t('account.signOutPending', { records: atRisk })}</p>
+        <div className="button-row">
+          <button type="button" className="button button-danger button-small" disabled={step !== 'idle' || !online} onClick={() => void leave()}>
+            {step === 'leaving' ? t('account.signingOut') : t('account.signOutAnyway')}
+          </button>
+          <a className="button button-secondary button-small" href={href({ name: 'records' })}>
+            {t('account.signOutReview')}
+          </a>
+          <button type="button" className="button button-quiet button-small" disabled={step !== 'idle'} onClick={() => setAtRisk(undefined)}>
+            {t('common.cancel')}
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <>
       <button
         type="button"
         className="button button-secondary"
-        disabled={!online || signingOut}
+        disabled={!online || step !== 'idle'}
         title={online ? undefined : t('common.onlineOnly')}
-        onClick={() => void signOut()}
+        onClick={() => void start()}
       >
-        {signingOut ? t('account.signingOut') : t('account.signOut')}
+        {step === 'checking' ? t('account.signOutChecking') : step === 'leaving' ? t('account.signingOut') : t('account.signOut')}
       </button>
-
-      <DeleteAccount />
-
-      <section className="section demo-panel" aria-labelledby="demo-title">
-        <h2 id="demo-title" className="section-title">
-          {t('account.demoTitle')}
-        </h2>
-        <p className="hint">{t('account.demoHint')}</p>
-        <label className="switch-row">
-          <span className="switch-title">{t('account.simulateOffline')}</span>
-          <input type="checkbox" role="switch" className="switch" checked={s.simulateOffline} onChange={(e) => demo.setSimulateOffline(e.target.checked)} />
-        </label>
-        <label className="switch-row">
-          <span className="switch-title">{t('account.showInstall')}</span>
-          <input type="checkbox" role="switch" className="switch" checked={s.forceInstallPrompt} onChange={(e) => demo.setForceInstallPrompt(e.target.checked)} />
-        </label>
-        <div className="button-row">
-          <a className="button button-secondary button-small" href={href({ name: 'invite', token: ledgerById(s, 'g-cumple')?.inviteToken ?? '' })}>
-            {t('account.openInvite')}
-          </a>
-          <button
-            type="button"
-            className="button button-quiet button-small"
-            onClick={() => {
-              demo.reset()
-              toast(t('account.resetDone'))
-            }}
-          >
-            <Icon name="restore" size={18} />
-            {t('account.reset')}
-          </button>
-        </div>
-      </section>
-    </Screen>
+      <p className="hint">{t('account.signOutHint')}</p>
+    </>
   )
 }
 
@@ -273,6 +290,12 @@ function DeleteAccount() {
   const online = useOnline()
   const [confirming, setConfirming] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [atRisk, setAtRisk] = useState<string>()
+
+  const confirm = () => {
+    setConfirming(true)
+    void session.recordsOnDevice().then((records) => setAtRisk(recordsText(t, records)))
+  }
 
   const remove = async () => {
     setDeleting(true)
@@ -291,6 +314,7 @@ function DeleteAccount() {
         <div className="confirm" role="group" aria-labelledby={`${ids}-confirm`}>
           <p id={`${ids}-confirm`}>{t('account.deleteConfirm')}</p>
           <p className="hint">{t('account.deleteHint')}</p>
+          {atRisk && <p className="hint">{t('account.deletePending', { records: atRisk })}</p>}
           <div className="button-row">
             <button type="button" className="button button-danger button-small" disabled={deleting || !online} onClick={() => void remove()}>
               {deleting ? t('account.deleting') : t('account.deleteYes')}
@@ -307,7 +331,7 @@ function DeleteAccount() {
             className="button button-quiet"
             disabled={!online}
             title={online ? undefined : t('common.onlineOnly')}
-            onClick={() => setConfirming(true)}
+            onClick={confirm}
           >
             {t('account.deleteAccount')}
           </button>
