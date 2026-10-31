@@ -5,7 +5,6 @@ import (
 	"errors"
 	"log/slog"
 	"math"
-	"net"
 	"net/http"
 	"regexp"
 	"strings"
@@ -275,19 +274,4 @@ func device(r *http.Request) string {
 		ua = strings.ToValidUTF8(ua[:maxDeviceLength], "")
 	}
 	return ua
-}
-
-// clientIP is the address the request came from. Behind cloudflared every
-// request comes from 127.0.0.1, and Cloudflare puts the real one in
-// CF-Connecting-IP; the server only listens on loopback, so nobody else
-// can set that header.
-func clientIP(r *http.Request) string {
-	if ip := r.Header.Get("CF-Connecting-IP"); ip != "" {
-		return ip
-	}
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		return r.RemoteAddr
-	}
-	return host
 }

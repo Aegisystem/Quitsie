@@ -29,6 +29,10 @@ info:
       otherwise they get `403 origin_mismatch`.
     * A ledger the User cannot see answers `404 not_found`, the same as one
       that does not exist.
+    * **Request limit.** Each IP (each /64 in IPv6) gets 300 requests per
+      minute and refills evenly; only `GET /health` does not count. Over the
+      limit, any operation answers `429 rate_limited` with a `Retry-After`
+      header in seconds.
     * **Body limit.** A request body over 2 MiB gets `413 body_too_large`.
       That is about twice the largest batch `POST /records` can take in a
       Group of 50 Members.
@@ -1139,7 +1143,7 @@ components:
 
   responses:
     Problem:
-      description: Any other error, such as `origin_mismatch` (403), `body_too_large` (413), `rate_limited` (429), `internal_error` (500) or `not_implemented` (501).
+      description: Any other error, such as `origin_mismatch` (403), `body_too_large` (413), `rate_limited` (429, with `Retry-After` in seconds), `internal_error` (500) or `not_implemented` (501).
       content:
         application/problem+json:
           schema:

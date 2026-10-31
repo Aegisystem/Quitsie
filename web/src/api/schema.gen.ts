@@ -1081,7 +1081,7 @@ export interface components {
         };
     };
     responses: {
-        /** @description Any other error, such as `origin_mismatch` (403), `body_too_large` (413), `rate_limited` (429), `internal_error` (500) or `not_implemented` (501). */
+        /** @description Any other error, such as `origin_mismatch` (403), `body_too_large` (413), `rate_limited` (429, with `Retry-After` in seconds), `internal_error` (500) or `not_implemented` (501). */
         Problem: {
             headers: {
                 [name: string]: unknown;

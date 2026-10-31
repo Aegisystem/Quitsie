@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -97,4 +98,162 @@ func TestABodyJustUnderTheLimitIsRead(t *testing.T) {
 	rec := ana.send(http.MethodPost, "/api/v1/groups", fits)
 
 	decodeProblem(t, rec, http.StatusBadRequest, httpapi.ProblemCodeValidationFailed)
+}
+
+// limited is a server with a clock the test moves.
+func limited(t *testing.T) (http.Handler, *clock) {
+	t.Helper()
+	c := &clock{now: time.Date(2026, 10, 27, 12, 0, 0, 0, time.UTC)}
+	return httpapi.NewHandler(httpapi.NewServer(fakeDB{}, "test").WithDeps(httpapi.Deps{Now: c.Now}), builtPWA), c
+}
+
+// A connection that comes straight from the Internet, and the one from
+// cloudflared, which runs on the same machine.
+const (
+	direct = "203.0.113.9:40000"
+	tunnel = "127.0.0.1:40000"
+)
+
+// visit asks for target over a connection from peer. visitor is the
+// CF-Connecting-IP the request carries, if any.
+func visit(h http.Handler, peer, visitor, target string) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(http.MethodGet, target, nil)
+	req.RemoteAddr = peer
+	if visitor != "" {
+		req.Header.Set("CF-Connecting-IP", visitor)
+	}
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	return rec
+}
+
+// spend uses up the 300 requests per minute of a client, half on the API and
+// half on the PWA, and fails if any of them is refused.
+func spend(t *testing.T, h http.Handler, peer, visitor string) {
+	t.Helper()
+	for i := range 300 {
+		target := "/"
+		if i%2 == 0 {
+			target = "/api/v1/nope"
+		}
+		if rec := visit(h, peer, visitor, target); rec.Code == http.StatusTooManyRequests {
+			t.Fatalf("request %d: code = 429, want it within the limit", i+1)
+		}
+	}
+}
+
+func TestAClientOverTheLimitGets429AndWhenToComeBack(t *testing.T) {
+	h, c := limited(t)
+	spend(t, h, direct, "")
+
+	rec := visit(h, direct, "", "/api/v1/nope")
+
+	if got := rec.Header().Get("Retry-After"); got != "1" {
+		t.Errorf("Retry-After = %q, want 1", got)
+	}
+	decodeProblem(t, rec, http.StatusTooManyRequests, httpapi.ProblemCodeRateLimited)
+	if rec := visit(h, direct, "", "/"); rec.Code != http.StatusTooManyRequests {
+		t.Errorf("PWA over the limit: code = %d, want 429", rec.Code)
+	}
+
+	c.Advance(time.Second)
+
+	if rec := visit(h, direct, "", "/"); rec.Code != http.StatusOK {
+		t.Errorf("after Retry-After: code = %d, want 200", rec.Code)
+	}
+}
+
+func TestEachClientHasItsOwnLimit(t *testing.T) {
+	h, _ := limited(t)
+	spend(t, h, direct, "")
+
+	if rec := visit(h, "198.51.100.7:40000", "", "/"); rec.Code != http.StatusOK {
+		t.Errorf("another client: code = %d, want 200", rec.Code)
+	}
+}
+
+func TestHealthIsNeverLimitedNorCounted(t *testing.T) {
+	h, _ := limited(t)
+	for i := range 500 {
+		if rec := visit(h, direct, "", "/api/v1/health"); rec.Code != http.StatusOK {
+			t.Fatalf("health check %d: code = %d, want 200", i+1, rec.Code)
+		}
+	}
+	spend(t, h, direct, "")
+
+	if rec := visit(h, direct, "", "/api/v1/health"); rec.Code != http.StatusOK {
+		t.Errorf("health over the limit: code = %d, want 200", rec.Code)
+	}
+}
+
+func TestBehindTheTunnelEachVisitorHasItsOwnLimit(t *testing.T) {
+	h, _ := limited(t)
+	spend(t, h, tunnel, "198.51.100.7")
+
+	if rec := visit(h, tunnel, "198.51.100.7", "/"); rec.Code != http.StatusTooManyRequests {
+		t.Errorf("same visitor: code = %d, want 429", rec.Code)
+	}
+	if rec := visit(h, tunnel, "198.51.100.8", "/"); rec.Code != http.StatusOK {
+		t.Errorf("another visitor: code = %d, want 200", rec.Code)
+	}
+}
+
+// Only cloudflared can vouch for that header. Whoever reaches the server
+// directly could write a new address on each request and never be limited.
+func TestAClientOutsideTheTunnelCannotForgeItsAddress(t *testing.T) {
+	h, _ := limited(t)
+	for i := range 300 {
+		visit(h, direct, fmt.Sprintf("198.51.100.%d", i%256), "/")
+	}
+
+	if rec := visit(h, direct, "198.51.100.200", "/"); rec.Code != http.StatusTooManyRequests {
+		t.Errorf("forged address: code = %d, want 429", rec.Code)
+	}
+}
+
+func TestAnAddressThatIsNotOneFallsBackToTheConnection(t *testing.T) {
+	h, _ := limited(t)
+	spend(t, h, tunnel, "not an address")
+
+	if rec := visit(h, tunnel, "another fake", "/"); rec.Code != http.StatusTooManyRequests {
+		t.Errorf("code = %d, want 429: both count as the connection", rec.Code)
+	}
+}
+
+// An IPv6 customer gets a whole /64: one person can use 2^64 addresses.
+func TestAnIPv6NetworkCountsAsOneClient(t *testing.T) {
+	h, _ := limited(t)
+	spend(t, h, tunnel, "2001:db8:1:2::1")
+
+	if rec := visit(h, tunnel, "2001:db8:1:2:ffff::9", "/"); rec.Code != http.StatusTooManyRequests {
+		t.Errorf("same /64: code = %d, want 429", rec.Code)
+	}
+	if rec := visit(h, tunnel, "2001:db8:1:3::1", "/"); rec.Code != http.StatusOK {
+		t.Errorf("another /64: code = %d, want 200", rec.Code)
+	}
+}
+
+// The limit on login codes per IP reads the same address.
+func TestAForgedAddressDoesNotDodgeTheLimitOfLoginCodes(t *testing.T) {
+	w := newWorld(t)
+	code := func(i int) int {
+		body := fmt.Sprintf(`{"email":"user%d@example.com"}`, i)
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login-code", strings.NewReader(body))
+		req.RemoteAddr = direct
+		req.Header.Set("CF-Connecting-IP", fmt.Sprintf("198.51.100.%d", i))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Origin", testOrigin)
+		rec := httptest.NewRecorder()
+		w.h.ServeHTTP(rec, req)
+		return rec.Code
+	}
+	for i := range 30 {
+		if got := code(i); got != http.StatusNoContent {
+			t.Fatalf("code %d: status = %d, want 204", i+1, got)
+		}
+	}
+
+	if got := code(30); got != http.StatusTooManyRequests {
+		t.Errorf("31st code from one connection: status = %d, want 429", got)
+	}
 }

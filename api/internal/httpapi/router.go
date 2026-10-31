@@ -28,26 +28,14 @@ func NewHandler(s *Server, pwa fs.FS) http.Handler {
 		writeProblem(w, http.StatusNotFound, ProblemCodeNotFound, "There is no such API endpoint.", "")
 	})
 
+	limit := s.requestLimit()
 	mux := http.NewServeMux()
-	mux.Handle("/api/", limitBody(s.guard(api)))
-	// Health needs no User, and it must keep working when the session lookup cannot.
+	mux.Handle("/api/", limit(limitBody(s.guard(api))))
+	// Health needs no User, it must keep working when the session lookup
+	// cannot, and whatever watches it must never be limited.
 	mux.Handle("GET /api/v1/health", api)
-	mux.Handle("/", pwaHandler(pwa))
+	mux.Handle("/", limit(pwaHandler(pwa)))
 	return mux
-}
-
-// maxBodyBytes is the largest request body the API reads. POST /records sets
-// it: 100 Expenses and 100 Settlements in a Group of 50 Members, all of them
-// paying and owing, take about 1 MiB.
-const maxBodyBytes = 2 << 20
-
-// limitBody stops reading a request at maxBodyBytes. Decoding the body then
-// fails with an *http.MaxBytesError, which badRequest answers.
-func limitBody(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
-		next.ServeHTTP(w, r)
-	})
 }
 
 // guard refuses API requests that change data from another origin (CSRF),
