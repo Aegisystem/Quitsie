@@ -10,6 +10,8 @@ import { NewExpense } from './screens/ExpenseForm'
 import { Home } from './screens/Home'
 import { Invite, InviteLink } from './screens/Invite'
 import { Ledger } from './screens/Ledger'
+import { NewFriend } from './screens/NewFriend'
+import { NewGroup } from './screens/NewGroup'
 import { Records } from './screens/Records'
 import { SettlementForm } from './screens/SettlementForm'
 import { SignIn } from './screens/SignIn'
@@ -56,6 +58,10 @@ export function App() {
       return <Records />
     case 'ledger':
       return <Ledger ledgerId={route.ledgerId} tab={route.tab} />
+    case 'newGroup':
+      return <NewGroup user={state.user} />
+    case 'newFriend':
+      return <NewFriend user={state.user} />
     case 'newExpense':
       return <NewExpense ledgerId={route.ledgerId} fromRejected={route.fromRejected} />
     case 'settle':
