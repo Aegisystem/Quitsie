@@ -1,8 +1,8 @@
-import { useEffect, useRef } from 'react'
+import { useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { session, useSession } from '../session'
 import { Screen, useOnline } from './components/Shell'
-import { demo } from './demo/store'
+import { engine } from './data'
 import { href, useRoute } from './router'
 import { Account } from './screens/Account'
 import { Activity } from './screens/Activity'
@@ -27,13 +27,13 @@ export function App() {
     if (online || session.getState().status === 'loading') void session.check()
   }, [online])
 
-  // The queue empties when the app opens and when the connection comes back
-  // (docs/arquitectura.md).
-  const wasOnline = useRef<boolean | null>(null)
+  // The engine runs for whoever is signed in: it syncs now, also right after
+  // signing in, and whenever the app comes back or reconnects.
   useEffect(() => {
-    if (signedIn && online && wasOnline.current !== true) demo.sync()
-    wasOnline.current = online
-  }, [online, signedIn])
+    if (!signedIn) return
+    engine.start()
+    return () => engine.stop()
+  }, [signedIn])
 
   useEffect(() => {
     window.scrollTo(0, 0)
