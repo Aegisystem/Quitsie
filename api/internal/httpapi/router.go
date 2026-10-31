@@ -28,11 +28,13 @@ func NewHandler(s *Server, pwa fs.FS) http.Handler {
 		writeProblem(w, http.StatusNotFound, ProblemCodeNotFound, "There is no such API endpoint.", "")
 	})
 
+	limit := s.requestLimit()
 	mux := http.NewServeMux()
-	mux.Handle("/api/", s.guard(api))
-	// Health needs no User, and it must keep working when the session lookup cannot.
+	mux.Handle("/api/", limit(limitBody(s.guard(api))))
+	// Health needs no User, it must keep working when the session lookup
+	// cannot, and whatever watches it must never be limited.
 	mux.Handle("GET /api/v1/health", api)
-	mux.Handle("/", pwaHandler(pwa))
+	mux.Handle("/", limit(pwaHandler(pwa)))
 	return mux
 }
 

@@ -184,7 +184,7 @@ finish() {
 # Replace the example below. Set TOTAL_STAGES to match the stages you write.
 # ──────────────────────────────────────────────────────────────────────────
 
-TOTAL_STAGES=13
+TOTAL_STAGES=14
 
 # ── Wizard-local settings and helpers ─────────────────────────────────────
 
@@ -241,6 +241,23 @@ http_status() { curl -s -o /dev/null -m 15 -w '%{http_code}' "$1" 2>/dev/null ||
 
 # vm_ssh [gcloud compute ssh args] reaches the VM through Google's IAP, so port 22 is never public.
 vm_ssh() { gcloud compute ssh "$VM_NAME" --zone "$GCP_ZONE" --tunnel-through-iap "$@"; }
+
+# The server refuses to start without these (api/cmd/server/main.go).
+APP_ENV_REQUIRED="QUITSIE_PUBLIC_ORIGIN QUITSIE_RESEND_API_KEY QUITSIE_MAIL_FROM QUITSIE_INVITE_SECRET"
+APP_ENV_MISSING="?"
+
+# app_env_missing prints which of them have no value in the VM's quitsie.env,
+# or "?" if the VM cannot be read. It looks at their names and never prints a value.
+app_env_missing() {
+  local out
+  out=$(vm_ssh --command "for v in $APP_ENV_REQUIRED; do sudo grep -Eq \"^\$v=[^[:space:]]\" /etc/quitsie/quitsie.env || echo \"\$v\"; done; echo env-checked" \
+    </dev/null 2>/dev/null | tr -d '\r' || true)
+  if [[ "$out" != *env-checked* ]]; then
+    printf '?'
+    return 0
+  fi
+  printf '%s\n' "$out" | grep -E '^QUITSIE_' | tr '\n' ' ' || true
+}
 
 banner "Quitsie: primer despliegue"
 
@@ -489,10 +506,49 @@ case "$check" in
 esac
 
 # ── 12 ────────────────────────────────────────────────────────────────────
+stage "Variables de la aplicación en la VM"
+warn "Paso obligatorio antes del primer arranque: sin estas cuatro variables el servidor no arranca y el despliegue falla."
+say "Viven en /etc/quitsie/quitsie.env (modo 600). provision.sh lo creó con todo comentado."
+printf '\n'
+say "A) Resend, que envía los códigos de acceso"
+open_url "https://resend.com/domains"
+step "Crea tu cuenta de Resend (o entra)."
+step "Domains → Add Domain: $QUITSIE_DOMAIN. Añade en el DNS de Cloudflare los registros que muestra y pulsa Verify."
+step "API Keys → Create API Key. Nombre: quitsie. Permiso: Sending access."
+warn "No la pegues aquí ni en ningún chat: la escribes en la VM. Se muestra una sola vez, así que no cierres esa pestaña."
+pause "Cuando el dominio esté verificado y tengas la clave a la vista, pulsa Enter"
+printf '\n'
+say "B) El archivo. Se abre en la VM con sudoedit: descomenta estas cuatro líneas y rellénalas."
+note "QUITSIE_PUBLIC_ORIGIN=https://$QUITSIE_DOMAIN"
+note "QUITSIE_RESEND_API_KEY=<la clave de Resend>"
+note "QUITSIE_MAIL_FROM=\"Quitsie <codigos@$QUITSIE_DOMAIN>\""
+note "QUITSIE_INVITE_SECRET=<lo que imprima: openssl rand -base64 32>"
+note "Guarda QUITSIE_INVITE_SECRET también en tu gestor de contraseñas: este archivo no está en el respaldo, y cambiarlo revoca todos los Enlaces de invitación."
+while true; do
+  if confirm "¿Abrir /etc/quitsie/quitsie.env en la VM?"; then
+    run vm_ssh --command 'sudoedit /etc/quitsie/quitsie.env' -- -t || true
+  fi
+  APP_ENV_MISSING=$(app_env_missing)
+  case "$APP_ENV_MISSING" in
+    "") say "Las cuatro variables tienen valor."; break ;;
+    "?") warn "No pude leer el archivo en la VM, así que no sé si está completo." ;;
+    *) warn "Siguen sin valor: $APP_ENV_MISSING" ;;
+  esac
+  confirm "¿Volver a intentarlo?" || break
+done
+if [[ -n "$APP_ENV_MISSING" ]]; then
+  SKIPPED+=("Rellenar /etc/quitsie/quitsie.env en la VM: sin eso el servidor no arranca (docs/despliegue.md)")
+fi
+pause
+
+# ── 13 ────────────────────────────────────────────────────────────────────
 stage "Primer despliegue"
 say "Configuro las variables de GitHub y lanzo el workflow Deploy sobre el último CI en verde de main."
 note "La variable DEPLOY_SSH_HOST es el interruptor: con ella, cada push a main que pase la CI se despliega solo."
-if ! gh workflow view deploy.yml >/dev/null 2>&1; then
+if [[ -n "$APP_ENV_MISSING" ]]; then
+  warn "No lanzo el despliegue: el servidor no arrancaría sin /etc/quitsie/quitsie.env completo (etapa 12). Repite esa etapa."
+  SKIPPED+=("Primer despliegue: falta rellenar /etc/quitsie/quitsie.env (después: gh workflow run deploy.yml --ref main)")
+elif ! gh workflow view deploy.yml >/dev/null 2>&1; then
   warn "GitHub aún no conoce .github/workflows/deploy.yml: integra la rama en main, haz push y repite esta etapa."
   SKIPPED+=("Primer despliegue: falta deploy.yml en main (después: gh workflow run deploy.yml --ref main)")
 elif [[ -z "$(_existing DEPLOY_SSH_HOST_KEY || true)" ]]; then
@@ -514,7 +570,7 @@ elif confirm "¿Activar el despliegue automático y lanzar el primero ahora?"; t
 fi
 pause
 
-# ── 13 ────────────────────────────────────────────────────────────────────
+# ── 14 ────────────────────────────────────────────────────────────────────
 stage "Prueba de restauración del respaldo"
 say "Restauro el último respaldo de R2 en una carpeta temporal de la VM y compruebo su integridad."
 say "La base real no se toca. Hazlo ahora y repítelo cada mes (docs/despliegue.md)."

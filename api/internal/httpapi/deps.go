@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"database/sql"
+	"time"
 
 	"github.com/Aegisystem/Quitsie/api/internal/auth"
 )
@@ -21,6 +22,8 @@ type Deps struct {
 	// InviteSecret signs the Invite links (ADR 0010): at least
 	// invites.MinSecretLength random bytes. Changing it revokes every link.
 	InviteSecret []byte
+	// Now is the clock of the limit of requests per IP; nil is time.Now.
+	Now func() time.Time
 }
 
 // WithDeps gives the handlers their dependencies.

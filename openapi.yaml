@@ -29,6 +29,13 @@ info:
       otherwise they get `403 origin_mismatch`.
     * A ledger the User cannot see answers `404 not_found`, the same as one
       that does not exist.
+    * **Request limit.** Each IP (each /64 in IPv6) gets 300 requests per
+      minute and refills evenly; only `GET /health` does not count. Over the
+      limit, any operation answers `429 rate_limited` with a `Retry-After`
+      header in seconds.
+    * **Body limit.** A request body over 2 MiB gets `413 body_too_large`.
+      That is about twice the largest batch `POST /records` can take in a
+      Group of 50 Members.
 servers:
   - url: /api/v1
 tags:
@@ -345,6 +352,9 @@ paths:
     post:
       operationId: createGroup
       summary: Creates a Group with the User as its first Member.
+      description: >
+        The Member is named after the User, so a User without a name yet gets
+        `409 name_required`.
       tags: [groups]
       requestBody:
         required: true
@@ -363,6 +373,12 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "409":
+          description: The User has no name yet (`name_required`).
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
         default:
           $ref: "#/components/responses/Problem"
 
@@ -701,7 +717,9 @@ paths:
       description: >
         A User who left the Group recovers their former member instead, with
         its whole history. Only Group links allow it; a pending Friend's link
-        can only be claimed (`400 validation_failed`).
+        can only be claimed (`400 validation_failed`). A new Member takes the
+        User's name, so a User without one gets `409 name_required`; claiming
+        a pending Member keeps that Member's name and has no such limit.
       tags: [invites]
       responses:
         "201":
@@ -721,7 +739,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/Problem"
         "409":
-          description: The User already holds a Member in this Group (`already_member`).
+          description: >
+            The User already holds a Member in this Group (`already_member`),
+            or would be a new Member and has no name yet (`name_required`).
           content:
             application/problem+json:
               schema:
@@ -736,7 +756,8 @@ paths:
       description: >
         Send `name` (and optionally `email`) for a pending Friend, or
         `userId` for another User the caller already shares a Group with.
-        Never both. An email never links to a User automatically.
+        Never both. An email never links to a User automatically. A User
+        without a name yet gets `409 name_required`.
       tags: [friendships]
       requestBody:
         required: true
@@ -762,7 +783,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/Problem"
         "409":
-          description: There is already a Friendship with that User (`friendship_exists`).
+          description: >
+            There is already a Friendship with that User (`friendship_exists`),
+            or the caller has no name yet (`name_required`).
           content:
             application/problem+json:
               schema:
@@ -1120,7 +1143,7 @@ components:
 
   responses:
     Problem:
-      description: Any other error, such as `origin_mismatch` (403), `rate_limited` (429), `internal_error` (500) or `not_implemented` (501).
+      description: Any other error, such as `origin_mismatch` (403), `body_too_large` (413), `rate_limited` (429, with `Retry-After` in seconds), `internal_error` (500) or `not_implemented` (501).
       content:
         application/problem+json:
           schema:
@@ -1209,6 +1232,8 @@ components:
         - member_not_claimed
         - already_member
         - friendship_exists
+        - name_required
+        - body_too_large
         - cursor_invalid
         - internal_error
         - not_implemented

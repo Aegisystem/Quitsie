@@ -133,7 +133,7 @@ func (q *Queries) GetFriendshipBetween(ctx context.Context, arg GetFriendshipBet
 }
 
 const getUserSharingAGroup = `-- name: GetUserSharingAGroup :one
-SELECT users.id, users.name FROM users
+SELECT users.id, CAST(coalesce(nullif(users.name, ''), theirs.name) AS TEXT) AS name FROM users
 JOIN members theirs ON theirs.user_id = users.id AND theirs.status = 'active'
 JOIN members mine ON mine.ledger_id = theirs.ledger_id AND mine.status = 'active'
 JOIN ledgers ON ledgers.id = mine.ledger_id
@@ -156,6 +156,8 @@ type GetUserSharingAGroupRow struct {
 
 // The User other_user_id, if they and user_id have an active Member in the same
 // live Group: the only way to start a Friendship directly with an existing User.
+// Someone who only claimed a Member has no name of their own yet, so the name
+// falls back to that Member's.
 func (q *Queries) GetUserSharingAGroup(ctx context.Context, arg GetUserSharingAGroupParams) (GetUserSharingAGroupRow, error) {
 	row := q.db.QueryRowContext(ctx, getUserSharingAGroup, arg.OtherUserID, arg.UserID)
 	var i GetUserSharingAGroupRow
