@@ -2329,3 +2329,27 @@ select.input,
     transition: none;
   }
 }
+
+/* A User with nothing yet: no Balance to show, only where to start. */
+
+.first-run {
+  max-width: 34em;
+  margin-top: 32px;
+}
+
+.first-run-figures {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 16px;
+  color: var(--ink-2);
+}
+
+.first-run .page-title {
+  margin-bottom: 8px;
+}
+
+.first-run-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}

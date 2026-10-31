@@ -1,18 +1,70 @@
+import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
+import { liveHome } from '../../local'
 import { Amount, BalanceBands, toneOf } from '../components/Balance'
-import { Figure, GroupGlyph, Icon } from '../components/icons'
-import { InstallPrompt, Screen, toast, useOnline } from '../components/Shell'
-import { ledgerMembers, ledgerName, memberById, myLedgerBalance, myLedgers, myTotals, useDemo } from '../demo/store'
-import type { Ledger } from '../demo/types'
+import { Figure, figureState, GroupGlyph, Icon } from '../components/icons'
+import { FirstSync, InstallPrompt, Screen, useOnline } from '../components/Shell'
+import { friendOf, ledgerName, myBalance, myMember, myTotals, replica, useLive, useReplicaFilled } from '../data'
 import { href } from '../router'
+import type { LedgerSummary, User } from '../types'
 
-export function Home() {
+// Those screens are built apart, so the addresses are written out here.
+const newGroupHref = '#/groups/new'
+const newFriendHref = '#/friends/new'
+
+// Creating Groups and Friends goes straight to the API (ADR 0001).
+function CreateLink({ to, className, children }: { to: string; className: string; children: ReactNode }) {
   const { t } = useTranslation()
-  const s = useDemo()
   const online = useOnline()
-  const ledgers = myLedgers(s)
-  const groups = ledgers.filter((l) => l.kind === 'group')
-  const friends = ledgers.filter((l) => l.kind === 'friendship')
+  return (
+    <a className={`button ${className}`} href={online ? to : undefined} aria-disabled={!online} title={online ? undefined : t('common.onlineOnly')}>
+      {children}
+    </a>
+  )
+}
+
+export function Home({ user }: { user: User }) {
+  const { t } = useTranslation()
+  const online = useOnline()
+  const [home] = useLive('home', () => liveHome(replica))
+  const filled = useReplicaFilled()
+
+  const mine = (home ?? []).filter(({ members }) => myMember(members, user.id))
+  const byName = (a: LedgerSummary, b: LedgerSummary) => ledgerName(a, user.id).localeCompare(ledgerName(b, user.id))
+  const groups = mine.filter(({ ledger }) => ledger.kind === 'group').sort(byName)
+  const friends = mine.filter(({ ledger }) => ledger.kind === 'friendship').sort(byName)
+
+  if (mine.length === 0) {
+    return (
+      <Screen tab="home" wide className="screen-home">
+        <h1 className="sr-only">{t('home.title')}</h1>
+        {home && filled === false && <FirstSync />}
+        {home && filled && (
+          <section className="first-run">
+            <span className="first-run-figures" aria-hidden="true">
+              <Figure size={40} />
+              <Figure state="pending" size={40} />
+              <Figure state="pending" size={40} />
+            </span>
+            <h2 className="page-title">{t('home.firstRunTitle')}</h2>
+            <p className="lead">{t('home.firstRunBody')}</p>
+            <div className="first-run-actions">
+              <CreateLink to={newGroupHref} className="button-primary">
+                <Icon name="plus" />
+                {t('home.newGroup')}
+              </CreateLink>
+              <CreateLink to={newFriendHref} className="button-secondary">
+                <Icon name="plus" />
+                {t('home.newFriend')}
+              </CreateLink>
+            </div>
+            {!online && <p className="hint">{t('common.onlineOnly')}</p>}
+          </section>
+        )}
+        <InstallPrompt />
+      </Screen>
+    )
+  }
 
   return (
     <Screen
@@ -28,7 +80,7 @@ export function Home() {
     >
       <h1 className="sr-only">{t('home.title')}</h1>
       <section aria-label={t('home.summary')} className="full-bleed">
-        <BalanceBands balances={myTotals(s)} settledTitle={t('balance.settledAll')} settledBody={t('balance.settledAllWink')} />
+        <BalanceBands balances={myTotals(mine, user)} settledTitle={t('balance.settledAll')} settledBody={t('balance.settledAllWink')} />
       </section>
 
       <div className="home-actions">
@@ -45,12 +97,12 @@ export function Home() {
           <h2 id="groups-title" className="section-title">
             {t('home.groups')}
           </h2>
-          <button type="button" className="button button-small button-quiet" disabled={!online} title={online ? undefined : t('common.onlineOnly')} onClick={() => toast(t('home.notInDemo'))}>
+          <CreateLink to={newGroupHref} className="button-small button-quiet">
             <Icon name="plus" size={18} />
             {t('home.newGroup')}
-          </button>
+          </CreateLink>
         </div>
-        {groups.length === 0 ? <p className="empty">{t('home.emptyGroups')}</p> : <LedgerList ledgers={groups} />}
+        {groups.length === 0 ? <p className="empty">{t('home.emptyGroups')}</p> : <LedgerList ledgers={groups} user={user} />}
       </section>
 
       <section className="section" aria-labelledby="friends-title">
@@ -58,12 +110,12 @@ export function Home() {
           <h2 id="friends-title" className="section-title">
             {t('home.friends')}
           </h2>
-          <button type="button" className="button button-small button-quiet" disabled={!online} title={online ? undefined : t('common.onlineOnly')} onClick={() => toast(t('home.notInDemo'))}>
+          <CreateLink to={newFriendHref} className="button-small button-quiet">
             <Icon name="plus" size={18} />
             {t('home.newFriend')}
-          </button>
+          </CreateLink>
         </div>
-        {friends.length === 0 ? <p className="empty">{t('home.emptyFriends')}</p> : <LedgerList ledgers={friends} />}
+        {friends.length === 0 ? <p className="empty">{t('home.emptyFriends')}</p> : <LedgerList ledgers={friends} user={user} />}
       </section>
       </div>
 
@@ -72,27 +124,28 @@ export function Home() {
   )
 }
 
-function LedgerList({ ledgers }: { ledgers: Ledger[] }) {
+function LedgerList({ ledgers, user }: { ledgers: LedgerSummary[]; user: User }) {
   const { t } = useTranslation()
-  const s = useDemo()
   return (
     <ul className="rows">
-      {ledgers.map((ledger) => {
-        const balances = [...myLedgerBalance(s, ledger.id)]
-        const friend = ledger.kind === 'friendship' ? memberById(s, ledger.friendMemberId) : undefined
+      {ledgers.map((summary) => {
+        const { ledger, members } = summary
+        const me = myMember(members, user.id)
+        const balances = me ? [...myBalance(summary, me.id, user.preferredCurrency)] : []
+        const friend = ledger.kind === 'friendship' ? friendOf(members, user.id) : undefined
         const pending = friend && !friend.userId
         const sub =
           ledger.kind === 'group'
-            ? t('ledger.members', { count: ledgerMembers(s, ledger.id).filter((m) => m.status === 'active').length })
+            ? t('ledger.members', { count: members.filter((m) => m.status === 'active').length })
             : pending
               ? t('ledger.pending')
               : undefined
         return (
           <li key={ledger.id}>
             <a className="row row-link" href={href({ name: 'ledger', ledgerId: ledger.id })}>
-              <span className="row-glyph">{ledger.kind === 'group' ? <GroupGlyph /> : <Figure state={pending ? 'pending' : 'linked'} />}</span>
+              <span className="row-glyph">{ledger.kind === 'group' ? <GroupGlyph /> : <Figure state={figureState(friend)} />}</span>
               <span className="row-main">
-                <span className="row-title">{ledgerName(s, ledger)}</span>
+                <span className="row-title">{ledgerName(summary, user.id)}</span>
                 {sub && <span className="row-sub">{sub}</span>}
               </span>
               <span className="row-end">

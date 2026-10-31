@@ -73,6 +73,8 @@ export const es = {
     notInDemo: 'Crear grupos y amigos no está en estas pantallas de prueba todavía.',
     emptyGroups: 'Aún no tienes grupos. Crea uno para un viaje, la casa o cualquier plan compartido.',
     emptyFriends: 'Añade un amigo para apuntar gastos entre los dos.',
+    firstRunTitle: 'Todavía no hay nada que repartir.',
+    firstRunBody: 'Crea un grupo para un viaje o la casa, o añade un amigo para apuntar gastos entre los dos.',
     settledCount_one: '{{count}} a mano',
     settledCount_other: '{{count}} a mano',
   },

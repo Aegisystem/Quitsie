@@ -47,7 +47,7 @@ export function App() {
 
   switch (route.name) {
     case 'home':
-      return <Home />
+      return <Home user={state.user} />
     case 'activity':
       return <Activity />
     case 'account':
