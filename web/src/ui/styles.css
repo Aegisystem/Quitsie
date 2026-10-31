@@ -2330,6 +2330,32 @@ select.input,
   }
 }
 
+/* A record of the list opens to show what can be done with it. */
+
+.row-button {
+  width: calc(100% + 16px);
+  margin-inline: -8px;
+  padding-inline: 8px;
+  border: 0;
+  background: none;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.row-button:hover {
+  background: var(--sunken);
+}
+
+.row-button[aria-expanded='true'] {
+  padding-bottom: 6px;
+}
+
+.row-panel {
+  margin-left: 44px;
+  padding-bottom: 12px;
+}
+
 /* A User with nothing yet: no Balance to show, only where to start. */
 
 .first-run {

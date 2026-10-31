@@ -49,13 +49,13 @@ export function App() {
     case 'home':
       return <Home user={state.user} />
     case 'activity':
-      return <Activity />
+      return <Activity user={state.user} />
     case 'account':
       return <Account user={state.user} />
     case 'records':
       return <Records />
     case 'ledger':
-      return <Ledger ledgerId={route.ledgerId} tab={route.tab} />
+      return <Ledger ledgerId={route.ledgerId} tab={route.tab} user={state.user} />
     case 'newExpense':
       return <NewExpense ledgerId={route.ledgerId} fromRejected={route.fromRejected} />
     case 'settle':

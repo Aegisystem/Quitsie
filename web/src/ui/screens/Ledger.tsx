@@ -1,69 +1,67 @@
+import { useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
+import { liveBalances, liveDebts, liveExpenses, liveLedger, liveRecords, liveSettlements } from '../../local'
 import { Amount, BalanceBands, SyncMark, Tally, TallyLegend, toneOf } from '../components/Balance'
-import { CategoryGlyph, Figure, Icon, SettlementGlyph } from '../components/icons'
-import { Screen, toast, useOnline } from '../components/Shell'
-import { ActivityList } from './Activity'
-import { balanceProof, pairwiseDebts, simplifyDebts, type Debt } from '../demo/balances'
-import {
-  demo,
-  ledgerBalances,
-  ledgerById,
-  ledgerExpenses,
-  ledgerMembers,
-  ledgerName,
-  ledgerSettlements,
-  memberById,
-  myLedgerBalance,
-  myMemberId,
-  useDemo,
-  type DemoState,
-} from '../demo/store'
-import type { Expense, Group, Ledger as LedgerT, Member, Settlement } from '../demo/types'
+import { CategoryGlyph, Figure, figureState, Icon, SettlementGlyph } from '../components/icons'
+import { FirstSync, Screen, toast, useOnline } from '../components/Shell'
+import { actions, balanceProof, friendOf, ledgerName, myBalance, myMember, replica, useLive, useReplicaFilled, type RecordKind } from '../data'
 import { formatDay } from '../dates'
 import { formatMoney, tallyUnit } from '../money'
-import { href } from '../router'
+import { href, type Route } from '../router'
+import type { Debt, ExpenseView, Group, Ledger as LedgerT, Member, SettlementView, SyncState, User } from '../types'
+import { ActivityList } from './Activity'
 
 type Tab = 'expenses' | 'balances' | 'debts' | 'activity'
 
-export function Ledger({ ledgerId, tab }: { ledgerId: string; tab?: string }) {
-  const { t } = useTranslation()
-  const s = useDemo()
-  const online = useOnline()
-  const ledger = ledgerById(s, ledgerId)
-  const me = ledger && myMemberId(s, ledger.id)
+// That screen is built apart, so its address is written out here.
+const settingsHref = (ledgerId: string) => `#/ledgers/${encodeURIComponent(ledgerId)}/settings`
 
-  if (!ledger || !me) {
+export function Ledger({ ledgerId, tab, user }: { ledgerId: string; tab?: string; user: User }) {
+  const { t } = useTranslation()
+  const online = useOnline()
+  const [summary, loaded] = useLive(`ledger:${ledgerId}`, () => liveLedger(replica, ledgerId))
+  const [debts = []] = useLive(`debts:${ledgerId}`, () => liveDebts(replica, ledgerId))
+  const filled = useReplicaFilled()
+  const me = summary && myMember(summary.members, user.id)
+
+  if (!summary || !me) {
     return (
       <Screen back={{ name: 'home' }} title={t('nav.home')}>
-        <p className="empty">{t('ledger.unknown')}</p>
+        {filled === false ? <FirstSync /> : loaded && <p className="empty">{t('ledger.unknown')}</p>}
       </Screen>
     )
   }
 
+  const { ledger, members } = summary
   const tabs: Tab[] = ledger.kind === 'group' ? ['expenses', 'balances', 'debts', 'activity'] : ['expenses', 'activity']
   const current: Tab = tabs.includes(tab as Tab) ? (tab as Tab) : 'expenses'
-  const mine = myLedgerBalance(s, ledger.id)
-  const name = ledgerName(s, ledger)
-  const friend = ledger.kind === 'friendship' ? memberById(s, ledger.friendMemberId) : undefined
+  const mine = myBalance(summary, me.id, user.preferredCurrency)
+  const name = ledgerName(summary, user.id)
+  const friend = ledger.kind === 'friendship' ? friendOf(members, user.id) : undefined
   const canInvite = ledger.kind === 'group' || (friend && !friend.userId)
-  const settleRoute = firstSettlement(s, ledger, me)
+  const settleRoute = firstSettlement(ledger, me.id, friend, mine, debts)
 
   return (
     <Screen
       back={{ name: 'home' }}
       title={name}
       actions={
-        canInvite && (
-          <a
-            className={`icon-button${online ? '' : ' is-disabled'}`}
-            href={online ? href({ name: 'inviteLink', ledgerId: ledger.id }) : undefined}
-            aria-disabled={!online}
-            aria-label={t('ledger.invite')}
-            title={online ? t('ledger.invite') : t('common.onlineOnly')}
-          >
-            <Icon name="share" />
+        <>
+          {canInvite && (
+            <a
+              className={`icon-button${online ? '' : ' is-disabled'}`}
+              href={online ? href({ name: 'inviteLink', ledgerId: ledger.id }) : undefined}
+              aria-disabled={!online}
+              aria-label={t('ledger.invite')}
+              title={online ? t('ledger.invite') : t('common.onlineOnly')}
+            >
+              <Icon name="share" />
+            </a>
+          )}
+          <a className="icon-button" href={settingsHref(ledger.id)} aria-label={t('ledger.settings')} title={t('ledger.settings')}>
+            <Icon name="settings" />
           </a>
-        )
+        </>
       }
       dock={
         <>
@@ -94,7 +92,7 @@ export function Ledger({ ledgerId, tab }: { ledgerId: string; tab?: string }) {
 
       <p className="ledger-meta">
         {ledger.kind === 'group'
-          ? `${t('ledger.groupCurrency', { currency: ledger.currency })} · ${t('ledger.members', { count: ledgerMembers(s, ledger.id).filter((m) => m.status === 'active').length })}`
+          ? `${t('ledger.groupCurrency', { currency: ledger.currency })} · ${t('ledger.members', { count: members.filter((m) => m.status === 'active').length })}`
           : t('ledger.friendship')}
         {friend && !friend.userId && <span className="tag tag-pending">{t('ledger.pending')}</span>}
       </p>
@@ -108,66 +106,69 @@ export function Ledger({ ledgerId, tab }: { ledgerId: string; tab?: string }) {
       </nav>
 
       <div className="tab-panel">
-        {current === 'expenses' && <ExpensesTab ledger={ledger} me={me} />}
-        {current === 'balances' && ledger.kind === 'group' && <BalancesTab group={ledger} me={me} />}
-        {current === 'debts' && ledger.kind === 'group' && <DebtsTab group={ledger} me={me} />}
-        {current === 'activity' && <ActivityList ledgerId={ledger.id} />}
+        {current === 'expenses' && <ExpensesTab ledger={ledger} members={members} me={me.id} />}
+        {current === 'balances' && ledger.kind === 'group' && <BalancesTab group={ledger} members={members} me={me.id} />}
+        {current === 'debts' && ledger.kind === 'group' && <DebtsTab group={ledger} members={members} me={me.id} debts={debts} />}
+        {current === 'activity' && <ActivityList ledgerId={ledger.id} user={user} />}
       </div>
     </Screen>
   )
 }
 
 // Where "Liquidar" starts: the first suggested Debt that involves the User, if any.
-function firstSettlement(s: DemoState, ledger: LedgerT, me: string) {
+function firstSettlement(ledger: LedgerT, me: string, friend: Member | undefined, mine: ReadonlyMap<string, number>, debts: readonly Debt[]): Route {
+  const settle = { name: 'settle' as const, ledgerId: ledger.id }
   if (ledger.kind === 'friendship') {
-    const [currency, amount] = [...myLedgerBalance(s, ledger.id)][0] ?? []
-    if (currency && amount) {
-      const friend = ledger.friendMemberId
-      return amount < 0
-        ? { name: 'settle' as const, ledgerId: ledger.id, from: me, to: friend, amount: String(-amount), currency }
-        : { name: 'settle' as const, ledgerId: ledger.id, from: friend, to: me, amount: String(amount), currency }
-    }
-    return { name: 'settle' as const, ledgerId: ledger.id }
+    const [currency, amount] = [...mine][0] ?? []
+    if (!currency || !amount || !friend) return settle
+    return amount < 0 ? { ...settle, from: me, to: friend.id, amount: String(-amount), currency } : { ...settle, from: friend.id, to: me, amount: String(amount), currency }
   }
-  const debt = groupDebts(s, ledger).find((d) => d.fromMemberId === me || d.toMemberId === me)
-  return debt
-    ? { name: 'settle' as const, ledgerId: ledger.id, from: debt.fromMemberId, to: debt.toMemberId, amount: String(debt.amount) }
-    : { name: 'settle' as const, ledgerId: ledger.id }
+  const debt = debts.find((d) => d.fromMemberId === me || d.toMemberId === me)
+  return debt ? { ...settle, from: debt.fromMemberId, to: debt.toMemberId, amount: String(debt.amount) } : settle
 }
 
-function groupDebts(s: DemoState, group: Group): Debt[] {
-  if (group.simplifyDebts) {
-    const byMember = new Map<string, number>()
-    for (const [memberId, byCurrency] of ledgerBalances(s, group.id)) byMember.set(memberId, byCurrency.get(group.currency) ?? 0)
-    return simplifyDebts(byMember)
-  }
-  return pairwiseDebts(ledgerExpenses(s, group.id), ledgerSettlements(s, group.id), group.currency)
-}
-
-function useNames(s: DemoState, me: string) {
+function useNames(members: readonly Member[], me: string) {
   const { t } = useTranslation()
-  return (memberId: string) => (memberId === me ? t('common.you') : (memberById(s, memberId)?.name ?? '?'))
+  return (memberId: string) => (memberId === me ? t('common.you') : (members.find((m) => m.id === memberId)?.name ?? '?'))
 }
 
-type Item = { kind: 'expense'; date: string; at: string; expense: Expense } | { kind: 'settlement'; date: string; at: string; settlement: Settlement }
+type Item = { kind: 'expense'; date: string; at: string; sync: SyncState; expense: ExpenseView } | { kind: 'settlement'; date: string; at: string; sync: SyncState; settlement: SettlementView }
 
-function ExpensesTab({ ledger, me }: { ledger: LedgerT; me: string }) {
+function ExpensesTab({ ledger, members, me }: { ledger: LedgerT; members: readonly Member[]; me: string }) {
   const { t } = useTranslation()
-  const s = useDemo()
   const online = useOnline()
-  const name = useNames(s, me)
+  const name = useNames(members, me)
+  const [expenses] = useLive(`expenses:${ledger.id}`, () => liveExpenses(replica, ledger.id))
+  const [settlements] = useLive(`settlements:${ledger.id}`, () => liveSettlements(replica, ledger.id))
+  if (!expenses || !settlements) return null
 
   const items: Item[] = [
-    ...ledgerExpenses(s, ledger.id).map((expense) => ({ kind: 'expense' as const, date: expense.date, at: expense.createdAt, expense })),
-    ...ledgerSettlements(s, ledger.id).map((settlement) => ({ kind: 'settlement' as const, date: settlement.date, at: settlement.createdAt, settlement })),
+    ...expenses.map((expense) => ({ kind: 'expense' as const, date: expense.date, at: expense.createdAt, sync: expense.sync, expense })),
+    ...settlements.map((settlement) => ({ kind: 'settlement' as const, date: settlement.date, at: settlement.createdAt, sync: settlement.sync, settlement })),
   ].sort((a, b) => b.date.localeCompare(a.date) || b.at.localeCompare(a.at))
 
-  if (items.length === 0) return <p className="empty">{t('ledger.emptyExpenses')}</p>
+  if (items.length === 0) {
+    const alone = ledger.kind === 'group' && members.filter((m) => m.status === 'active').length === 1
+    return (
+      <>
+        <p className="empty">{t('ledger.emptyExpenses')}</p>
+        {alone && (
+          <>
+            <p className="hint">{t('ledger.aloneHint')}</p>
+            <a className="button button-secondary" href={settingsHref(ledger.id)}>
+              {t('ledger.addMembers')}
+            </a>
+          </>
+        )}
+      </>
+    )
+  }
 
   const days = [...new Set(items.map((i) => i.date))]
 
   return (
     <div className="day-list">
+      {!online && items.some((i) => i.sync === 'synced') && <p className="hint">{t('ledger.recordsOffline')}</p>}
       {days.map((day) => (
         <section key={day} aria-label={formatDay(day)}>
           <h3 className="day-title">{formatDay(day)}</h3>
@@ -176,25 +177,9 @@ function ExpensesTab({ ledger, me }: { ledger: LedgerT; me: string }) {
               .filter((i) => i.date === day)
               .map((item) =>
                 item.kind === 'expense' ? (
-                  <ExpenseRow key={item.expense.id} expense={item.expense} me={me} online={online} name={name} />
+                  <ExpenseRow key={item.expense.id} expense={item.expense} me={me} name={name} />
                 ) : (
-                  <li key={item.settlement.id} className="row row-settlement">
-                    <span className="row-glyph">
-                      <SettlementGlyph />
-                    </span>
-                    <span className="row-main">
-                      <span className="row-title">
-                        {t('ledger.settlementLine', {
-                          from: name(item.settlement.fromMemberId),
-                          to: name(item.settlement.toMemberId),
-                          amount: formatMoney(item.settlement.amount, item.settlement.currency),
-                        })}
-                      </span>
-                      <span className="row-sub">{t('ledger.settlementLabel')}</span>
-                    </span>
-                    <span className="row-end" />
-                    <SyncMark state={item.settlement.sync} />
-                  </li>
+                  <SettlementRow key={item.settlement.id} settlement={item.settlement} me={me} name={name} />
                 ),
               )}
           </ul>
@@ -204,7 +189,127 @@ function ExpensesTab({ ledger, me }: { ledger: LedgerT; me: string }) {
   )
 }
 
-function ExpenseRow({ expense, me, online, name }: { expense: Expense; me: string; online: boolean; name: (id: string) => string }) {
+// One Expense or Settlement in the list. What it offers depends on where it is:
+// on the server it can be deleted or restored, online only (ADR 0001); in the
+// queue it can not, and a rejected one leads to the Records tray. Nothing here
+// assumes the server said yes: the row only changes when the sync brings it.
+function RecordRow({
+  kind,
+  id,
+  sync,
+  deleted,
+  className = '',
+  glyph,
+  title,
+  sub,
+  end,
+}: {
+  kind: RecordKind
+  id: string
+  sync: SyncState
+  deleted: boolean
+  className?: string
+  glyph: ReactNode
+  title: ReactNode
+  sub: ReactNode
+  end?: ReactNode
+}) {
+  const { t } = useTranslation()
+  const online = useOnline()
+  const [open, setOpen] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [problem, setProblem] = useState<string>()
+
+  const run = async (action: 'delete' | 'restore') => {
+    setBusy(true)
+    setProblem(undefined)
+    const result = await (action === 'delete' ? actions.deleteRecord(kind, id) : actions.restoreRecord(kind, id))
+    setBusy(false)
+    if (result === 'done') {
+      setOpen(false)
+      if (action === 'delete') toast(kind === 'expense' ? t('ledger.expenseDeletedDone') : t('ledger.settlementDeletedDone'))
+      else toast(kind === 'expense' ? t('ledger.expenseRestoredDone') : t('ledger.settlementRestoredDone'))
+    } else if (result === 'formerMember') {
+      setProblem(action === 'delete' ? t('ledger.deleteFormerMember') : t('ledger.restoreFormerMember'))
+    } else {
+      setProblem(result === 'gone' ? t('ledger.recordGone') : result === 'offline' ? t('common.noAnswer') : t('common.tryAgain'))
+    }
+  }
+
+  const content = (
+    <>
+      <span className="row-glyph">{glyph}</span>
+      <span className="row-main">
+        <span className="row-title">{deleted ? <s>{title}</s> : title}</span>
+        <span className="row-sub">{sub}</span>
+      </span>
+      <span className="row-end">
+        {deleted ? (
+          <button
+            type="button"
+            className="button button-small button-quiet"
+            disabled={!online || busy}
+            title={online ? undefined : t('common.onlineOnly')}
+            onClick={() => void run('restore')}
+          >
+            <Icon name="restore" size={18} />
+            {busy ? t('ledger.restoring') : t('ledger.restore')}
+          </button>
+        ) : (
+          end
+        )}
+      </span>
+      {deleted ? <span className="sync-cell" /> : <SyncMark state={sync} />}
+    </>
+  )
+
+  if (sync === 'rejected') {
+    return (
+      <li>
+        <a className={`row row-link ${className}`} href={href({ name: 'records' })}>
+          {content}
+        </a>
+      </li>
+    )
+  }
+  if (sync === 'unsynced' || deleted) {
+    return (
+      <li>
+        <div className={`row ${deleted ? 'row-deleted' : ''} ${className}`}>{content}</div>
+        {problem && <p className="rejected-reason">{problem}</p>}
+      </li>
+    )
+  }
+
+  const toggle = () => {
+    setOpen(!open)
+    setProblem(undefined)
+  }
+
+  return (
+    <li>
+      <button type="button" className={`row row-button ${className}`} aria-expanded={open} onClick={toggle}>
+        {content}
+      </button>
+      {open && (
+        <div className="row-panel">
+          <button
+            type="button"
+            className="button button-small button-secondary"
+            disabled={!online || busy}
+            title={online ? undefined : t('common.onlineOnly')}
+            onClick={() => void run('delete')}
+          >
+            {busy ? t('ledger.deleting') : kind === 'expense' ? t('ledger.deleteExpense') : t('ledger.deleteSettlement')}
+          </button>
+        </div>
+      )}
+      {problem && <p className="rejected-reason">{problem}</p>}
+    </li>
+  )
+}
+
+function ExpenseRow({ expense, me, name }: { expense: ExpenseView; me: string; name: (id: string) => string }) {
   const { t } = useTranslation()
   const paid = expense.paidShares.find((p) => p.memberId === me)?.amount ?? 0
   const owed = expense.owedShares.find((o) => o.memberId === me)?.amount ?? 0
@@ -218,74 +323,66 @@ function ExpenseRow({ expense, me, online, name }: { expense: Expense; me: strin
   else if (net > 0) share = { text: t('ledger.youLent', { amount: formatMoney(net, expense.currency) }), tone: 'favor' }
   else if (net < 0) share = { text: t('ledger.yourShare', { amount: formatMoney(-net, expense.currency) }), tone: 'against' }
 
-  if (expense.deletedAt) {
-    return (
-      <li className="row row-deleted">
-        <span className="row-glyph">
-          <CategoryGlyph category={expense.category} />
-        </span>
-        <span className="row-main">
-          <span className="row-title">
-            <s>{expense.description}</s>
-          </span>
-          <span className="row-sub">{t('ledger.deleted')}</span>
-        </span>
-        <span className="row-end">
-          <button
-            type="button"
-            className="button button-small button-quiet"
-            disabled={!online}
-            title={online ? undefined : t('common.onlineOnly')}
-            onClick={() => {
-              demo.restoreExpense(expense.id)
-              toast(`${t('ledger.restore')}: ${expense.description}`)
-            }}
-          >
-            <Icon name="restore" size={18} />
-            {t('ledger.restore')}
-          </button>
-        </span>
-        <span className="sync-cell" />
-      </li>
-    )
-  }
-
   return (
-    <li className="row">
-      <span className="row-glyph">
-        <CategoryGlyph category={expense.category} />
-      </span>
-      <span className="row-main">
-        <span className="row-title">{expense.description}</span>
-        <span className="row-sub">
-          {payer} · <span className={`tone-${share.tone}`}>{share.text}</span>
-        </span>
-      </span>
-      <span className="row-end">
-        <Amount minor={expense.total} currency={expense.currency} />
-      </span>
-      <SyncMark state={expense.sync} />
-    </li>
+    <RecordRow
+      kind="expense"
+      id={expense.id}
+      sync={expense.sync}
+      deleted={!!expense.deletedAt}
+      glyph={<CategoryGlyph category={expense.category} />}
+      title={expense.description}
+      sub={
+        expense.sync === 'rejected' ? (
+          t('ledger.rejectedRow')
+        ) : expense.deletedAt ? (
+          t('ledger.deleted')
+        ) : (
+          <>
+            {payer} · <span className={`tone-${share.tone}`}>{share.text}</span>
+          </>
+        )
+      }
+      end={<Amount minor={expense.total} currency={expense.currency} />}
+    />
   )
 }
 
-function figureState(m: Member | undefined) {
-  if (!m) return 'linked' as const
-  return m.status === 'former' ? ('former' as const) : m.userId ? ('linked' as const) : ('pending' as const)
+function SettlementRow({ settlement, me, name }: { settlement: SettlementView; me: string; name: (id: string) => string }) {
+  const { t } = useTranslation()
+  const { fromMemberId, toMemberId } = settlement
+  const amount = formatMoney(settlement.amount, settlement.currency)
+  const title =
+    fromMemberId === me
+      ? t('ledger.settlementLineYouPaid', { amount, to: name(toMemberId) })
+      : toMemberId === me
+        ? t('ledger.settlementLinePaidYou', { amount, from: name(fromMemberId) })
+        : t('ledger.settlementLine', { amount, from: name(fromMemberId), to: name(toMemberId) })
+
+  return (
+    <RecordRow
+      kind="settlement"
+      id={settlement.id}
+      sync={settlement.sync}
+      deleted={!!settlement.deletedAt}
+      className="row-settlement"
+      glyph={<SettlementGlyph />}
+      title={title}
+      sub={settlement.sync === 'rejected' ? t('ledger.rejectedRow') : settlement.deletedAt ? t('ledger.settlementDeleted') : t('ledger.settlementLabel')}
+    />
+  )
 }
 
-function BalancesTab({ group, me }: { group: Group; me: string }) {
+function BalancesTab({ group, members, me }: { group: Group; members: readonly Member[]; me: string }) {
   const { t } = useTranslation()
-  const s = useDemo()
-  const name = useNames(s, me)
-  const balances = ledgerBalances(s, group.id)
-  const members = ledgerMembers(s, group.id)
-    .filter((m) => m.status === 'active' || (balances.get(m.id)?.get(group.currency) ?? 0) !== 0 || m.status === 'former')
-    .sort((a, b) => (a.id === me ? -1 : b.id === me ? 1 : 0))
-  const amounts = members.map((m) => balances.get(m.id)?.get(group.currency) ?? 0)
+  const name = useNames(members, me)
+  const [balances] = useLive(`balances:${group.id}`, () => liveBalances(replica, group.id))
+  const [expenses] = useLive(`expenses:${group.id}`, () => liveExpenses(replica, group.id))
+  const [settlements] = useLive(`settlements:${group.id}`, () => liveSettlements(replica, group.id))
+  if (!balances || !expenses || !settlements) return null
+
+  const shown = [...members].sort((a, b) => (a.id === me ? -1 : b.id === me ? 1 : 0))
+  const amounts = shown.map((m) => balances.find((b) => b.participantId === m.id && b.currency === group.currency)?.amount ?? 0)
   const unit = tallyUnit(Math.max(1, ...amounts.map(Math.abs)), group.currency, 9)
-  const expenses = ledgerExpenses(s, group.id)
-  const settlements = ledgerSettlements(s, group.id)
 
   return (
     <>
@@ -294,7 +391,7 @@ function BalancesTab({ group, me }: { group: Group; me: string }) {
         <TallyLegend unit={unit} currency={group.currency} />
       </div>
       <ul className="chart">
-        {members.map((m, i) => {
+        {shown.map((m, i) => {
           const amount = amounts[i] ?? 0
           const tone = toneOf(amount)
           const proof = balanceProof(m.id, expenses, settlements, name)
@@ -347,18 +444,26 @@ function BalancesTab({ group, me }: { group: Group; me: string }) {
           )
         })}
       </ul>
-      {members.some((m) => figureState(m) === 'pending') && <p className="hint">{t('ledger.pendingHint')}</p>}
+      {shown.some((m) => figureState(m) === 'pending') && <p className="hint">{t('ledger.pendingHint')}</p>}
     </>
   )
 }
 
-function DebtsTab({ group, me }: { group: Group; me: string }) {
+function DebtsTab({ group, members, me, debts }: { group: Group; members: readonly Member[]; me: string; debts: readonly Debt[] }) {
   const { t } = useTranslation()
-  const s = useDemo()
   const online = useOnline()
-  const name = useNames(s, me)
-  const debts = groupDebts(s, group)
+  const name = useNames(members, me)
+  const [records] = useLive('records', () => liveRecords(replica))
+  const [saving, setSaving] = useState(false)
   const unit = tallyUnit(Math.max(1, ...debts.map((d) => d.amount)), group.currency, 7)
+  const memberById = (id: string) => members.find((m) => m.id === id)
+
+  const setSimplify = async (on: boolean) => {
+    setSaving(true)
+    const result = await actions.setSimplifyDebts(group.id, on)
+    setSaving(false)
+    if (result !== 'done') toast(result === 'offline' ? t('common.noAnswer') : t('common.tryAgain'))
+  }
 
   return (
     <>
@@ -366,19 +471,21 @@ function DebtsTab({ group, me }: { group: Group; me: string }) {
         <span>
           <span className="switch-title">{t('ledger.simplifyToggle')}</span>
           <span className="switch-hint">{group.simplifyDebts ? t('ledger.simplifyOn') : t('ledger.simplifyOff')}</span>
+          {!online && <span className="switch-hint">{t('ledger.simplifyOffline')}</span>}
         </span>
         <input
           type="checkbox"
           role="switch"
           className="switch"
           checked={group.simplifyDebts}
-          disabled={!online}
+          disabled={!online || saving}
           title={online ? undefined : t('common.onlineOnly')}
-          onChange={(e) => demo.setSimplifyDebts(group.id, e.target.checked)}
+          onChange={(e) => void setSimplify(e.target.checked)}
         />
       </label>
 
       <h2 className="section-title">{t('ledger.debtsTitle')}</h2>
+      {records?.unsynced.some((record) => record.ledgerId === group.id) && <p className="hint">{t('ledger.debtsWithoutQueue')}</p>}
       {debts.length === 0 ? (
         <div className="empty empty-even">
           <span className="band-figures" aria-hidden="true">
@@ -403,16 +510,16 @@ function DebtsTab({ group, me }: { group: Group; me: string }) {
                     ? t('ledger.paysYou', { name: name(d.fromMemberId) })
                     : t('ledger.debtArrow', { from: name(d.fromMemberId), to: name(d.toMemberId) })
               return (
-                <li key={`${d.fromMemberId}-${d.toMemberId}`} className={`debt${mine ? ' debt-mine' : ''}`}>
+                <li key={`${d.fromMemberId}-${d.toMemberId}-${d.currency}`} className={`debt${mine ? ' debt-mine' : ''}`}>
                   <div className="debt-people" aria-hidden="true">
-                    <Figure state={figureState(memberById(s, d.fromMemberId))} size={26} />
+                    <Figure state={figureState(memberById(d.fromMemberId))} size={26} />
                     <Icon name="arrow" size={20} />
-                    <Figure state={figureState(memberById(s, d.toMemberId))} size={26} />
+                    <Figure state={figureState(memberById(d.toMemberId))} size={26} />
                   </div>
                   <div className="debt-main">
                     <p className="debt-label">{label}</p>
                     <div className="debt-figure">
-                      <Amount minor={d.amount} currency={group.currency} tone={d.fromMemberId === me ? 'against' : d.toMemberId === me ? 'favor' : undefined} />
+                      <Amount minor={d.amount} currency={d.currency} tone={d.fromMemberId === me ? 'against' : d.toMemberId === me ? 'favor' : undefined} />
                       <Tally amount={d.amount} unit={unit} />
                     </div>
                   </div>
@@ -431,4 +538,3 @@ function DebtsTab({ group, me }: { group: Group; me: string }) {
     </>
   )
 }
-
