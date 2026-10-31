@@ -161,10 +161,11 @@ write_secrets() {
     note "escrito $f (modo 600)"
   fi
 
-  # The app's own secrets (Resend, Google) come later; the unit reads this file if it exists.
+  # The app's own values come after provisioning, because the Resend key needs
+  # the domain verified first. The server does not start until they are in.
   if [[ ! -f $ETC_DIR/quitsie.env ]]; then
     install -m 0600 -o root -g root "$DEPLOY_DIR/quitsie.env.example" "$ETC_DIR/quitsie.env"
-    note "creado $ETC_DIR/quitsie.env vacío (modo 600) para los secretos de la aplicación"
+    note "creado $ETC_DIR/quitsie.env (modo 600), todo comentado: hay que rellenarlo antes del primer arranque"
   fi
 }
 
@@ -262,7 +263,9 @@ summary() {
   echo "    Clave pública de esta VM (no es secreta; va en la variable DEPLOY_SSH_HOST_KEY de GitHub):"
   echo "    $(awk '{print $1, $2}' /etc/ssh/ssh_host_ed25519_key.pub)"
   echo
-  echo "    Siguiente: publica la ruta del túnel y despliega (docs/despliegue.md)."
+  echo "    Siguiente: rellena $ETC_DIR/quitsie.env con sudoedit. Es obligatorio antes del primer arranque:"
+  echo "    sin QUITSIE_PUBLIC_ORIGIN, QUITSIE_RESEND_API_KEY, QUITSIE_MAIL_FROM y QUITSIE_INVITE_SECRET el"
+  echo "    servidor no arranca. Después publica la ruta del túnel y despliega (docs/despliegue.md)."
 }
 
 check_platform

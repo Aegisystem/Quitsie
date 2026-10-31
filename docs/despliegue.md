@@ -36,10 +36,24 @@ Requisitos en tu ordenador: `gh` con sesión iniciada (`gh auth login`) y `gclou
 | 9 | Copia `deploy/` a la VM y ejecuta `provision.sh`, donde escribes las claves de R2 y el token del túnel. |
 | 10 | Creas un token de servicio de Cloudflare Access; sus dos valores van a secretos de GitHub. |
 | 11 | Creas la aplicación de Access para `ssh.<dominio>` y después publicas esa ruta en el túnel. |
-| 12 | Configura las variables de GitHub y lanza el primer despliegue. |
-| 13 | Ejecuta la prueba de restauración. |
+| 12 | Creas la clave de Resend y rellenas `/etc/quitsie/quitsie.env`, que es obligatorio; el asistente comprueba que no falte ninguna variable. |
+| 13 | Configura las variables de GitHub y lanza el primer despliegue. |
+| 14 | Ejecuta la prueba de restauración. |
 
 Al terminar, `https://<dominio>/` muestra la página de estado de la PWA y `https://<dominio>/api/v1/health` responde `{"status":"ok","database":"ok","version":"<commit>"}`.
+
+### Variables de la aplicación
+
+**Rellenar `/etc/quitsie/quitsie.env` es obligatorio antes del primer arranque.** Sin estas cuatro variables el servidor se niega a arrancar: el primer despliegue falla y no queda nada sirviendo. `provision.sh` crea el archivo desde `deploy/quitsie.env.example` con todo comentado, y la etapa 12 del asistente te lo abre con `sudoedit`. No lanza el despliegue hasta que estén las cuatro.
+
+| Variable | Valor |
+| --- | --- |
+| `QUITSIE_PUBLIC_ORIGIN` | URL base de la aplicación, con `https` y sin barra final: `https://<dominio>`. |
+| `QUITSIE_RESEND_API_KEY` | Clave de API de Resend con permiso de envío. |
+| `QUITSIE_MAIL_FROM` | Remitente de un dominio verificado en Resend: `"Quitsie <codigos@<dominio>>"`. |
+| `QUITSIE_INVITE_SECRET` | 32 bytes o más que firman los Enlaces de invitación; genéralos con `openssl rand -base64 32`. Cambiarlo revoca todos los enlaces, así que guárdalo también en tu gestor de contraseñas: este archivo no está en el respaldo. |
+
+Son opcionales `QUITSIE_GOOGLE_CLIENT_ID` y `QUITSIE_GOOGLE_CLIENT_SECRET` (sin los dos no hay inicio de sesión con Google) y `QUITSIE_DEFAULT_CURRENCY`. Después de cambiar el archivo, reinicia con `sudo systemctl restart quitsie`.
 
 ### Dónde vive cada secreto
 
@@ -49,7 +63,7 @@ Nada secreto está en el repositorio ni pasa por un chat. Las plantillas `deploy
 | --- | --- | --- |
 | Account ID, Access Key ID y Secret Access Key de R2 | `/etc/quitsie/litestream.env` en la VM (modo 600) | `provision.sh`, con entrada oculta |
 | Token del túnel de Cloudflare | `/etc/quitsie/cloudflared.env` en la VM (modo 600) | `provision.sh`, con entrada oculta |
-| Claves de Resend y Google (cuando existan) | `/etc/quitsie/quitsie.env` en la VM (modo 600) | tú, con `sudoedit` |
+| Variables de la aplicación: clave de Resend, secreto de invitaciones, cliente de Google | `/etc/quitsie/quitsie.env` en la VM (modo 600) | tú, con `sudoedit` (etapa 12) |
 | Clave SSH privada de despliegue | secreto `DEPLOY_SSH_KEY` de GitHub | el asistente, directo desde `ssh-keygen` |
 | Token de servicio de Access | secretos `CF_ACCESS_CLIENT_ID` y `CF_ACCESS_CLIENT_SECRET` de GitHub | el asistente, con entrada oculta |
 | Dominio, clave pública de la VM | variables `QUITSIE_URL`, `DEPLOY_SSH_HOST` y `DEPLOY_SSH_HOST_KEY` de GitHub (públicas) | el asistente |
@@ -73,7 +87,7 @@ flowchart LR
 - **Un solo despliegue a la vez.** Uno en curso nunca se cancela.
 - **Entra por Access y por SSH.** `ssh.<dominio>` solo acepta el token de servicio de GitHub; después, la clave SSH. En la VM, esa clave tiene un comando forzado: solo puede ejecutar `quitsie-deploy`, sin shell ni reenvíos, y `sudoers` solo deja a ese usuario ejecutar ese script, sin argumentos. El binario viaja por stdin.
 - **Se verifica y se revierte.** `quitsie-deploy` guarda el binario anterior, reinicia el servicio y espera hasta 30 s a que `/api/v1/health` responda. Si no, restaura el anterior y el workflow falla. Después el workflow comprueba que la URL pública devuelva el commit desplegado en `version`.
-- **Interruptor.** Sin la variable `DEPLOY_SSH_HOST` el workflow no hace nada, así que `main` no se pone en rojo antes de terminar la instalación. El asistente la crea en la etapa 12.
+- **Interruptor.** Sin la variable `DEPLOY_SSH_HOST` el workflow no hace nada, así que `main` no se pone en rojo antes de terminar la instalación. El asistente la crea en la etapa 13.
 - **A mano.** Desde la pestaña Actions, o con `gh workflow run deploy.yml --ref main`, se vuelve a desplegar el último CI en verde de `main`.
 
 Las migraciones se aplican al arrancar y solo avanzan. Si un despliegue revierte, el binario viejo arranca contra el esquema nuevo: mantén cada migración compatible con la versión anterior (añadir antes de quitar).
@@ -105,6 +119,8 @@ curl -s http://127.0.0.1:8080/api/v1/health
 
 **Aplicar cambios de `deploy/`** (unidades, `litestream.yml`, versión de Litestream): conecta por IAP, actualiza el checkout y ejecuta otra vez `sudo bash deploy/provision.sh`. Es idempotente y no vuelve a pedir lo que ya tiene. Para subir Litestream, cambia `LITESTREAM_VERSION` y `LITESTREAM_SHA256` en `provision.sh` (el digest sale de `gh api repos/benbjohnson/litestream/releases/tags/v<versión>`).
 
+**Límites de peticiones.** Cada IP tiene 300 peticiones por minuto, además del límite de Cloudflare, y un cuerpo no puede pasar de 2 MiB. El health no cuenta. La IP real sale de `CF-Connecting-IP`, pero el servidor solo se fía de ese encabezado en conexiones desde loopback, que es por donde entra `cloudflared`; cualquier otra conexión cuenta por su propia dirección. Por eso `QUITSIE_ADDR` se queda en `127.0.0.1` y `cloudflared` debe ser el único proceso que reenvíe tráfico al puerto 8080: otro proxy en la VM dejaría pasar direcciones falsas.
+
 **Actualizaciones del sistema.** `unattended-upgrades` aplica las de seguridad. Cuando haya una de kernel, reinicia la VM de vez en cuando (`sudo reboot`): todo arranca solo.
 
 **Rotar secretos**
@@ -115,6 +131,8 @@ curl -s http://127.0.0.1:8080/api/v1/health
 | Token del túnel | Gíralo en el panel del túnel, `sudoedit /etc/quitsie/cloudflared.env`, `sudo systemctl restart cloudflared`. Hazlo por IAP: el reinicio corta el túnel. |
 | Token de servicio de Access | Caduca (el asistente te pide anotar la fecha). Crea otro y repite la etapa 10; mientras tanto el despliegue falla con un error de Access. |
 | Clave SSH de despliegue | Repite la etapa 7 (generar una nueva) y la 9 (reinstalar la pública). |
+| Clave de Resend | Crea una nueva en Resend, `sudoedit /etc/quitsie/quitsie.env`, `sudo systemctl restart quitsie`, y revoca la vieja. |
+| Secreto de invitaciones | `sudoedit /etc/quitsie/quitsie.env` y `sudo systemctl restart quitsie`. Revoca todos los Enlaces de invitación a la vez. |
 
 ## Respaldo y restauración
 
@@ -143,7 +161,8 @@ Para volver a un instante anterior (por ejemplo, tras un borrado masivo), añade
 
 1. **Apaga o borra la VM vieja** si sigue viva: dos máquinas replicando a la misma ruta de R2 estropean el respaldo.
 2. Crea una VM nueva (etapa 5 del asistente) y ejecuta `provision.sh` con las mismas claves de R2 y el token del túnel. Al arrancar Litestream, `quitsie-restore` trae la base de R2 antes de que nada la use.
-3. Actualiza la variable `DEPLOY_SSH_HOST_KEY` de GitHub (la VM nueva tiene otra clave de host; `provision.sh` la imprime al final) y lanza el despliegue: `gh workflow run deploy.yml --ref main`.
+3. Rellena otra vez `/etc/quitsie/quitsie.env`, que no está en el respaldo, con el mismo `QUITSIE_INVITE_SECRET`: uno nuevo revocaría todos los Enlaces de invitación.
+4. Actualiza la variable `DEPLOY_SSH_HOST_KEY` de GitHub (la VM nueva tiene otra clave de host; `provision.sh` la imprime al final) y lanza el despliegue: `gh workflow run deploy.yml --ref main`.
 
 ## Dominio secundario
 
@@ -155,6 +174,7 @@ Con `quitsie.com` como principal, haz que `quitsie.app` redirija a él: añade a
 | --- | --- |
 | `https://<dominio>` responde 530 (error 1033) | `cloudflared` no está conectado: `journalctl -u cloudflared`, o el token es incorrecto. |
 | Responde 502 | El túnel funciona pero no hay aplicación: aún no hay despliegue, o `quitsie.service` no arrancó (`journalctl -u quitsie`). |
+| El primer despliegue falla con «did not become healthy» y `journalctl -u quitsie` nombra una variable `QUITSIE_…` | `/etc/quitsie/quitsie.env` está incompleto: rellénalo ([Variables de la aplicación](#variables-de-la-aplicación)), reinicia el servicio y vuelve a desplegar. |
 | `quitsie.service` dice «dependency failed» | `quitsie-restore.service` falló: credenciales de R2 incorrectas o R2 inaccesible (`journalctl -u quitsie-restore`). No arranca a propósito. |
 | El workflow falla en «Install the binary…» con un error de Access o 255 | Token de servicio caducado o mal copiado, o la aplicación de Access no incluye el token en una política Service Auth. |
 | El workflow falla con «host key verification failed» | La variable `DEPLOY_SSH_HOST_KEY` no es la de la VM actual. |

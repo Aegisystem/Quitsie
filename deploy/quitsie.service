@@ -19,12 +19,14 @@ StateDirectoryMode=0750
 WorkingDirectory=/var/lib/quitsie
 UMask=0077
 
-# Only cloudflared connects to it: no public port.
+# Only cloudflared connects to it: no public port. Keep it that way: the server
+# believes the visitor's address in CF-Connecting-IP only over loopback, so any
+# other local proxy could forward forged ones (api/internal/httpapi/limits.go).
 Environment=QUITSIE_ADDR=127.0.0.1:8080
 Environment=QUITSIE_DB_PATH=/var/lib/quitsie/quitsie.db
-# App secrets (Resend, Google OAuth) live only on the VM. Optional until the
-# app needs them.
-EnvironmentFile=-/etc/quitsie/quitsie.env
+# The app's configuration and secrets live only on the VM. The server does not
+# start until the required ones are filled in (quitsie.env.example lists them).
+EnvironmentFile=/etc/quitsie/quitsie.env
 
 # /usr/local/bin/quitsie is installed by quitsie-deploy (see deploy.yml).
 ExecStart=/usr/local/bin/quitsie
