@@ -174,6 +174,10 @@ export const es = {
     weights: 'Pon un peso a cada uno (por ejemplo 2:1:1).',
     adjustment: 'A partes iguales, sumando o restando una cantidad a alguien.',
   },
+  currencies: {
+    yours: 'Tus monedas',
+    others: 'Las demás',
+  },
   expenseForm: {
     title: 'Nuevo gasto',
     fixTitle: 'Corregir gasto rechazado',

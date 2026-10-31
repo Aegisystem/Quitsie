@@ -1,8 +1,9 @@
 import { useId, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { User } from '../../api/client'
-import { currencyOptions, session, suggestCurrency } from '../../session'
+import { session, suggestCurrency } from '../../session'
 import { useOnline } from '../components/Shell'
+import { CurrencyOptions } from '../forms/CurrencyOptions'
 import { SignInHero } from './SignIn'
 
 // A User who signs in with a code for the first time has no name. Before
@@ -102,18 +103,26 @@ export function Welcome({ user }: { user: User }) {
 }
 
 // Every currency a User can prefer, by code with its name: "MXN · peso mexicano".
-export function CurrencySelect({ id, value, onChange, describedBy }: { id: string; value: string; onChange: (currency: string) => void; describedBy?: string }) {
+// The one it starts on goes first, and stays there while the User looks around.
+export function CurrencySelect({
+  id,
+  value,
+  onChange,
+  describedBy,
+  used,
+}: {
+  id: string
+  value: string
+  onChange: (currency: string) => void
+  describedBy?: string
+  used?: readonly string[]
+}) {
   const { i18n } = useTranslation()
   const names = useMemo(() => new Intl.DisplayNames([i18n.language], { type: 'currency' }), [i18n.language])
-  // A currency set before this list existed still shows, rather than a blank.
-  const options = currencyOptions.includes(value) ? currencyOptions : [value, ...currencyOptions]
+  const [preferred] = useState(value)
   return (
     <select id={id} className="input" value={value} onChange={(e) => onChange(e.target.value)} aria-describedby={describedBy}>
-      {options.map((code) => (
-        <option key={code} value={code}>
-          {`${code} · ${names.of(code) ?? code}`}
-        </option>
-      ))}
+      <CurrencyOptions value={value} preferred={preferred} used={used} label={(code) => `${code} · ${names.of(code) ?? code}`} />
     </select>
   )
 }
