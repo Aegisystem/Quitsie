@@ -267,6 +267,7 @@ const (
 	ProblemCodeLoginCodeInvalid      ProblemCode = "login_code_invalid"
 	ProblemCodeMemberNotClaimed      ProblemCode = "member_not_claimed"
 	ProblemCodeMemberNotPending      ProblemCode = "member_not_pending"
+	ProblemCodeNameRequired          ProblemCode = "name_required"
 	ProblemCodeNonzeroBalance        ProblemCode = "nonzero_balance"
 	ProblemCodeNotFound              ProblemCode = "not_found"
 	ProblemCodeNotImplemented        ProblemCode = "not_implemented"
@@ -306,6 +307,8 @@ func (e ProblemCode) Valid() bool {
 	case ProblemCodeMemberNotClaimed:
 		return true
 	case ProblemCodeMemberNotPending:
+		return true
+	case ProblemCodeNameRequired:
 		return true
 	case ProblemCodeNonzeroBalance:
 		return true
@@ -3226,6 +3229,20 @@ func (response CreateGroup401ApplicationProblemPlusJSONResponse) VisitCreateGrou
 	}
 	w.Header().Set("Content-Type", "application/problem+json")
 	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateGroup409ApplicationProblemPlusJSONResponse Problem
+
+func (response CreateGroup409ApplicationProblemPlusJSONResponse) VisitCreateGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(409)
 	_, err := buf.WriteTo(w)
 	return err
 }

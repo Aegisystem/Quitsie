@@ -188,7 +188,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Creates a Group with the User as its first Member. */
+        /**
+         * Creates a Group with the User as its first Member.
+         * @description The Member is named after the User, so a User without a name yet gets `409 name_required`.
+         */
         post: operations["createGroup"];
         delete?: never;
         options?: never;
@@ -390,7 +393,7 @@ export interface paths {
         put?: never;
         /**
          * Joins a Group as a new Member, named after the User.
-         * @description A User who left the Group recovers their former member instead, with its whole history. Only Group links allow it; a pending Friend's link can only be claimed (`400 validation_failed`).
+         * @description A User who left the Group recovers their former member instead, with its whole history. Only Group links allow it; a pending Friend's link can only be claimed (`400 validation_failed`). A new Member takes the User's name, so a User without one gets `409 name_required`; claiming a pending Member keeps that Member's name and has no such limit.
          */
         post: operations["joinGroup"];
         delete?: never;
@@ -410,7 +413,7 @@ export interface paths {
         put?: never;
         /**
          * Creates a Friendship with a pending Friend or with an existing User.
-         * @description Send `name` (and optionally `email`) for a pending Friend, or `userId` for another User the caller already shares a Group with. Never both. An email never links to a User automatically.
+         * @description Send `name` (and optionally `email`) for a pending Friend, or `userId` for another User the caller already shares a Group with. Never both. An email never links to a User automatically. A User without a name yet gets `409 name_required`.
          */
         post: operations["createFriendship"];
         delete?: never;
@@ -605,7 +608,7 @@ export interface components {
          * @description Stable machine-readable error code. New codes may be added; clients treat an unknown code as a generic error for its status.
          * @enum {string}
          */
-        ProblemCode: "validation_failed" | "unauthenticated" | "origin_mismatch" | "not_found" | "rate_limited" | "login_code_invalid" | "login_code_expired" | "too_many_attempts" | "invite_link_invalid" | "version_conflict" | "nonzero_balance" | "currency_mismatch" | "currency_precision_loss" | "invalid_amounts" | "invalid_participants" | "member_not_pending" | "member_not_claimed" | "already_member" | "friendship_exists" | "cursor_invalid" | "internal_error" | "not_implemented";
+        ProblemCode: "validation_failed" | "unauthenticated" | "origin_mismatch" | "not_found" | "rate_limited" | "login_code_invalid" | "login_code_expired" | "too_many_attempts" | "invite_link_invalid" | "version_conflict" | "nonzero_balance" | "currency_mismatch" | "currency_precision_loss" | "invalid_amounts" | "invalid_participants" | "member_not_pending" | "member_not_claimed" | "already_member" | "friendship_exists" | "name_required" | "cursor_invalid" | "internal_error" | "not_implemented";
         /** @description The `currency_precision_loss` problem, with the records the User must fix first. */
         CurrencyPrecisionProblem: components["schemas"]["Problem"] & {
             expenseIds: string[];
@@ -1454,6 +1457,15 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
+            /** @description The User has no name yet (`name_required`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
             default: components["responses"]["Problem"];
         };
     };
@@ -1859,7 +1871,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description The User already holds a Member in this Group (`already_member`). */
+            /** @description The User already holds a Member in this Group (`already_member`), or would be a new Member and has no name yet (`name_required`). */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -1904,7 +1916,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description There is already a Friendship with that User (`friendship_exists`). */
+            /** @description There is already a Friendship with that User (`friendship_exists`), or the caller has no name yet (`name_required`). */
             409: {
                 headers: {
                     [name: string]: unknown;

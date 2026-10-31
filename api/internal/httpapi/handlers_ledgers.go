@@ -161,6 +161,18 @@ func currentUser(ctx context.Context) (store.User, error) {
 	return user, nil
 }
 
+var errNameRequired = &failure{status: http.StatusConflict, code: ProblemCodeNameRequired, title: "The User has no name yet."}
+
+// requireName refuses what would store user's name in a new Member. Whoever
+// signs in with a code has none until they give it, and nobody else could
+// tell that Member apart.
+func requireName(user store.User) error {
+	if strings.TrimSpace(user.Name) == "" {
+		return errNameRequired
+	}
+	return nil
+}
+
 // newID returns a UUIDv7 for a ledger, Member or Activity.
 func newID() string {
 	return uuid.Must(uuid.NewV7()).String()
@@ -212,6 +224,9 @@ func (s *Server) CreateGroup(ctx context.Context, req CreateGroupRequestObject) 
 	}
 	user, err := currentUser(ctx)
 	if err != nil {
+		return answer(err, respond)
+	}
+	if err := requireName(user); err != nil {
 		return answer(err, respond)
 	}
 	body := req.Body
@@ -831,6 +846,9 @@ func (s *Server) JoinGroup(ctx context.Context, req JoinGroupRequestObject) (Joi
 			}
 			details["rejoined"] = true
 		} else {
+			if err := requireName(user); err != nil {
+				return err
+			}
 			member = store.Member{ID: newID(), LedgerID: snap.Ledger.ID, UserID: &user.ID, Name: user.Name}
 			err := q.CreateMember(ctx, store.CreateMemberParams{
 				ID:        member.ID,
@@ -944,6 +962,9 @@ func (s *Server) CreateFriendship(ctx context.Context, req CreateFriendshipReque
 	}
 	user, err := currentUser(ctx)
 	if err != nil {
+		return answer(err, respond)
+	}
+	if err := requireName(user); err != nil {
 		return answer(err, respond)
 	}
 	body := req.Body
