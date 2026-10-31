@@ -1,19 +1,16 @@
 import { liveQuery, type Observable } from 'dexie'
 import { useEffect, useState, useSyncExternalStore } from 'react'
 import { api } from '../../api/client'
-import { openReplica } from '../../local'
-import { session } from '../../session'
-import { createSyncEngine } from '../../sync'
+import { engine, replica, session } from '../../session'
 import { createActions } from './actions'
 
 export { type ActionResult, type RecordKind } from './actions'
 export { type ActivityLine, describeActivity } from './activity'
 export { balanceProof, friendOf, ledgerName, myBalance, myMember, myTotals, relabelAmount } from './ledgers'
 
-// The device's replica and the sync engine, one of each for the whole app. The
-// engine uses the shared `api` client, so its 401s sign the User out as well.
-export const replica = openReplica()
-export const engine = createSyncEngine({ replica, api })
+// The device's one replica and sync engine live in the session, which starts,
+// stops and empties them.
+export { engine, replica }
 export const actions = createActions({ api, engine })
 
 // The last value of each query, so that coming back to a screen draws it at

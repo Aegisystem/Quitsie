@@ -34,6 +34,7 @@ export function fakeServer({ versionsPerPull = Infinity }: { versionsPerPull?: n
   const pulls: number[] = []
   const pushes: RecordBatch[] = []
   let reachable = true
+  let maxBatch = Infinity
   let failure: { status: 401 | 503; method?: 'GET' | 'POST' } | undefined
   let afterNextPush: 'drop the connection' | 'lose the answer' | undefined
   let active = 0
@@ -155,6 +156,7 @@ export function fakeServer({ versionsPerPull = Infinity }: { versionsPerPull?: n
       if (batch.expenses.length > 100 || batch.settlements.length > 100) return problem(400, 'validation_failed')
       // The real server decodes the whole body first: one bad date fails the batch.
       const records = [...batch.expenses, ...batch.settlements]
+      if (records.length > maxBatch) return problem(413, 'body_too_large')
       if (records.some(({ date }) => !/^\d{4}-\d{2}-\d{2}$/.test(date))) return problem(400, 'validation_failed')
       const results = push(batch)
       if (afterNextPush) {
@@ -180,6 +182,10 @@ export function fakeServer({ versionsPerPull = Infinity }: { versionsPerPull?: n
     // Requests answer with this status, or normally again with undefined.
     failWith(status: 401 | 503 | undefined, method?: 'GET' | 'POST') {
       failure = status && { status, method }
+    },
+    // Batches with more records than this are too big for the server (413).
+    limitBatchesTo(records: number) {
+      maxBatch = records
     },
     // The server stores the next push, but the device never hears back.
     loseNextPushAnswer() {

@@ -2,14 +2,16 @@ import { useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { session, useSession } from '../session'
 import { Screen, useOnline } from './components/Shell'
-import { engine } from './data'
 import { href, useRoute } from './router'
 import { Account } from './screens/Account'
 import { Activity } from './screens/Activity'
-import { NewExpense } from './screens/ExpenseForm'
+import { EditExpense, NewExpense } from './screens/ExpenseForm'
 import { Home } from './screens/Home'
 import { Invite, InviteLink } from './screens/Invite'
 import { Ledger } from './screens/Ledger'
+import { LedgerSettings } from './screens/LedgerSettings'
+import { NewFriend } from './screens/NewFriend'
+import { NewGroup } from './screens/NewGroup'
 import { Records } from './screens/Records'
 import { SettlementForm } from './screens/SettlementForm'
 import { SignIn } from './screens/SignIn'
@@ -17,7 +19,6 @@ import { Welcome } from './screens/Welcome'
 
 export function App() {
   const state = useSession()
-  const signedIn = state.status === 'signedIn'
   const route = useRoute()
   const online = useOnline()
 
@@ -26,14 +27,6 @@ export function App() {
   useEffect(() => {
     if (online || session.getState().status === 'loading') void session.check()
   }, [online])
-
-  // The engine runs for whoever is signed in: it syncs now, also right after
-  // signing in, and whenever the app comes back or reconnects.
-  useEffect(() => {
-    if (!signedIn) return
-    engine.start()
-    return () => engine.stop()
-  }, [signedIn])
 
   useEffect(() => {
     window.scrollTo(0, 0)
@@ -56,8 +49,16 @@ export function App() {
       return <Records user={state.user} />
     case 'ledger':
       return <Ledger ledgerId={route.ledgerId} tab={route.tab} user={state.user} />
+    case 'ledgerSettings':
+      return <LedgerSettings ledgerId={route.ledgerId} user={state.user} />
+    case 'newGroup':
+      return <NewGroup user={state.user} />
+    case 'newFriend':
+      return <NewFriend user={state.user} />
     case 'newExpense':
       return <NewExpense ledgerId={route.ledgerId} fromRejected={route.fromRejected} />
+    case 'editExpense':
+      return <EditExpense ledgerId={route.ledgerId} expenseId={route.expenseId} />
     case 'settle':
       return <SettlementForm key={`${route.from}-${route.to}`} {...route} />
     case 'inviteLink':

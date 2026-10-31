@@ -2,13 +2,13 @@ import { useEffect, useId, useState, type CSSProperties } from 'react'
 import { useTranslation } from 'react-i18next'
 import { api, type Category, type Member, type NewExpense as NewExpenseRecord, type SplitMethod, type User } from '../../api/client'
 import { liveExpenses, liveHome, liveLedger, liveRecords, type ExpenseView, type LedgerSummary, type RejectionReason } from '../../local'
-import { CategoryGlyph, Figure, GroupGlyph, Icon } from '../components/icons'
+import { CategoryGlyph, Figure, figureState, GroupGlyph, Icon } from '../components/icons'
 import { Screen, toast, useOnline } from '../components/Shell'
 import { amountError } from '../forms/amountError'
 import { CurrencyOptions } from '../forms/CurrencyOptions'
-import { engine, liveUsedCurrencies, replica, useLive, useUser } from '../forms/data'
+import { engine, ledgerName, myMember, replica, useLive } from '../data'
+import { liveUsedCurrencies, useUser } from '../forms/data'
 import {
-  categories,
   changedFormerShare,
   formerParticipant,
   formerShares,
@@ -19,8 +19,9 @@ import {
   toOwedShares,
   type SplitValues,
 } from '../forms/expense'
-import { activeMembers, figureState, isActive, ledgerName, myMember } from '../forms/people'
+import { activeMembers, isActive } from '../forms/people'
 import { updateExpense, type UpdateOutcome } from '../forms/updateExpense'
+import { categories } from '../types'
 import { previewOwedShares, type SplitParticipant } from '../split'
 import { formatDay, todayISO } from '../dates'
 import { amountPlaceholder, formatAmountInput, formatMoney, formatPercent, parseAmount, parsePercent, readAmount } from '../money'

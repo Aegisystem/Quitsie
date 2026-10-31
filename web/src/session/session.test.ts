@@ -294,3 +294,73 @@ describe('Google', () => {
     expect(isGoogleFailure(new URL('https://quitsie.app/login'))).toBe(false)
   })
 })
+
+describe('the data on the device', () => {
+  function device() {
+    const log: string[] = []
+    return {
+      log,
+      data: {
+        admit: async (userId: string) => void log.push(`admit ${userId}`),
+        clear: async () => void log.push('clear'),
+        records: async () => ({ unsynced: 2, rejected: 1 }),
+      },
+    }
+  }
+
+  function withDevice(routes: Record<string, Handler>, remembered?: User) {
+    const server = fakeServer(routes)
+    const { log, data } = device()
+    const session = createSession({ client: server.client, storage: memoryStorage(remembered), device: data })
+    return { session, log }
+  }
+
+  it('goes once the server closed the session, and before the app leaves', async () => {
+    const { session, log } = withDevice({ 'POST /auth/logout': noContent }, ana)
+    session.subscribe(() => log.push(session.getState().status))
+    expect((await session.signOut()).ok).toBe(true)
+    expect(log).toEqual(['clear', 'signedOut'])
+  })
+
+  it('stays if the server could not close the session', async () => {
+    const { session, log } = withDevice({ 'POST /auth/logout': unreachable }, ana)
+    expect((await session.signOut()).ok).toBe(false)
+    expect(log).toEqual([])
+    expect(session.getState().status).toBe('signedIn')
+  })
+
+  it('goes with a deleted account', async () => {
+    const { session, log } = withDevice({ 'DELETE /me': noContent }, ana)
+    await session.deleteAccount()
+    expect(log).toEqual(['clear'])
+  })
+
+  it('stays when the session ends by itself, for the same User to carry on', async () => {
+    const { session, log } = withDevice({ 'GET /me': () => problem(401, 'unauthenticated') }, ana)
+    await session.check()
+    expect(session.getState().status).toBe('signedOut')
+    expect(log).toEqual([])
+  })
+
+  it('is checked before the app opens for whoever signs in with a code', async () => {
+    const { session, log } = withDevice({
+      'POST /auth/login-code/verify': () => json(200, { user: ana, newUser: false }),
+    })
+    session.subscribe(() => log.push(session.getState().status))
+    await session.verifyCode(ana.email, '123456')
+    expect(log.indexOf(`admit ${ana.id}`)).toBeLessThan(log.indexOf('signedIn'))
+    expect(log).toContain(`admit ${ana.id}`)
+  })
+
+  it('is checked before the app opens for whoever comes back from Google', async () => {
+    const { session, log } = withDevice({ 'GET /me': () => json(200, ana) })
+    session.subscribe(() => log.push(session.getState().status))
+    await session.check()
+    expect(log).toEqual([`admit ${ana.id}`, 'signedIn'])
+  })
+
+  it('says what signing out would lose', async () => {
+    const { session } = withDevice({}, ana)
+    expect(await session.recordsOnDevice()).toEqual({ unsynced: 2, rejected: 1 })
+  })
+})

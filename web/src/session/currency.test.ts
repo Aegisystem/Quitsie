@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { isCurrency } from '../domain'
-import { currencyOptions, suggestCurrency } from './currency'
+import { suggestCurrency } from './currency'
 
 // ISO 4217 funds: units of account that nobody pays with.
 const funds = ['BOV', 'CHE', 'CHW', 'CLF', 'COU', 'MXV', 'USN', 'UYI', 'UYW']
@@ -37,23 +36,5 @@ describe('suggestCurrency', () => {
     expect(suggestCurrency('es-419')).toBeUndefined()
     expect(suggestCurrency('')).toBeUndefined()
     expect(suggestCurrency('not a language')).toBeUndefined()
-  })
-})
-
-describe('currencyOptions', () => {
-  it('offers current ISO 4217 currencies only, sorted by code', () => {
-    expect(currencyOptions.filter((c) => !isCurrency(c))).toEqual([])
-    expect([...currencyOptions].sort()).toEqual(currencyOptions)
-    expect(new Set(currencyOptions).size).toBe(currencyOptions.length)
-  })
-
-  it('never offers a fund', () => {
-    expect(currencyOptions.filter((c) => funds.includes(c))).toEqual([])
-  })
-
-  it('offers the currencies of the demo data and of Latin America', () => {
-    for (const c of ['EUR', 'USD', 'MXN', 'CLP', 'COP', 'ARS', 'PEN', 'UYU', 'BOB', 'BRL', 'GBP']) {
-      expect(currencyOptions).toContain(c)
-    }
   })
 })

@@ -131,7 +131,8 @@ Los Saldos no se guardan: se calculan sumando, lo cual es rápido a esta escala.
 - Cookie `HttpOnly`, `Secure` y `SameSite=Lax`. Además, las peticiones que modifican datos deben traer un encabezado `Origin` del propio dominio (protección CSRF).
 - Los códigos de acceso caducan a los 10 minutos y admiten 5 intentos como máximo. También se limitan los envíos por email y por IP.
 - Los tokens de sesión son aleatorios y en la base solo se guarda su hash. Los Enlaces de invitación se derivan con un HMAC de una clave del servidor, así que no se guardan ([ADR 0010](adr/0010-enlaces-de-invitacion-derivados.md)).
-- Hay un límite de peticiones por IP en Go, además del de Cloudflare.
+- Hay un límite de 300 peticiones por minuto por IP en Go, además del de Cloudflare. Detrás del túnel la IP real sale de `CF-Connecting-IP`, y ese encabezado solo se cree si la conexión llega por loopback, porque `cloudflared` corre en la misma VM. Por eso debe ser el único proceso que reenvía tráfico al puerto del servidor.
+- El cuerpo de las peticiones a la API tiene un tope de 2 MiB, suficiente para el lote más grande de `POST /records`.
 
 ## Repositorio
 
@@ -151,7 +152,10 @@ Los Saldos no se guardan: se calculan sumando, lo cual es rápido a esta escala.
 │   │   ├── store/            consultas SQL y código generado por sqlc
 │   │   ├── auth/             códigos de acceso, Google, sesiones
 │   │   ├── sync/             cursores, pull y push
-│   │   └── mail/             envío con Resend
+│   │   ├── mail/             envío con Resend
+│   │   ├── ledgers/          carga un libro con sus registros en términos del dominio
+│   │   ├── invites/          Enlaces de invitación derivados
+│   │   └── ratelimit/        límite de peticiones por IP
 │   └── migrations/           goose
 ├── web/                      React + Vite
 │   └── src/
@@ -159,7 +163,8 @@ Los Saldos no se guardan: se calculan sumando, lo cual es rápido a esta escala.
 │       ├── local/            réplica y cola en IndexedDB (Dexie)
 │       ├── sync/             motor de sincronización
 │       ├── api/              cliente generado desde openapi.yaml
-│       ├── ui/
+│       ├── session/          quién entró, y dueño de la réplica y del motor
+│       ├── ui/               pantallas; lectura en data/ y formularios en forms/
 │       └── i18n/
 ├── deploy/                   servicios systemd, litestream.yml, cloudflared
 └── .github/workflows/

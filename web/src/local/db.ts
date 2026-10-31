@@ -57,3 +57,12 @@ export function openReplica(name = 'quitsie', options?: DexieOptions): Replica {
   })
   return replica
 }
+
+// Leaves nothing of the User on the device: the replica, the queue and the
+// cursor, so the next sign-in starts from zero. Warning about the records that
+// would be lost is up to the caller (docs/reglas-de-negocio.md).
+export async function clearDevice(replica: Replica): Promise<void> {
+  await replica.transaction('rw', replica.tables, async () => {
+    await Promise.all(replica.tables.map((table) => table.clear()))
+  })
+}

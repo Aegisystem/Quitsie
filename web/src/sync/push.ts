@@ -19,12 +19,13 @@ export async function push(replica: Replica, api: Api): Promise<void> {
 }
 
 // A 400 is a batch the server could not even read, which one record with a bad
-// date is enough for. Retrying would get the same answer forever with the whole
-// queue waiting, so each record goes alone and the one at fault gets rejected.
+// date is enough for, and a 413 is a batch too big for it. Retrying would get
+// the same answer forever with the whole queue waiting, so each record goes
+// alone and the one at fault gets rejected.
 async function send(replica: Replica, api: Api, batch: RecordBatch): Promise<void> {
   const { data, response } = await api.POST('/records', { body: batch })
   if (data) return settle(replica, data.results)
-  if (response.status !== 400) throw new SyncFailure(response.status)
+  if (response.status !== 400 && response.status !== 413) throw new SyncFailure(response.status)
 
   const alone = [
     ...batch.expenses.map((expense) => ({ expenses: [expense], settlements: [] })),

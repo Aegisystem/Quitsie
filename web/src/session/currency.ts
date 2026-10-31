@@ -56,6 +56,3 @@ export function suggestCurrency(language: string): CurrencyCode | undefined {
   }
   return region ? regionCurrency.get(region) : undefined
 }
-
-// The currencies a User can pick, by code: those of some region, so never a fund.
-export const currencyOptions: readonly CurrencyCode[] = [...new Set(regionCurrency.values())].sort()

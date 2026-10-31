@@ -705,6 +705,24 @@ describe('sending batches', () => {
       unsynced: [],
     })
   })
+
+  test('a batch too big for the server goes record by record, so the queue never gets stuck', async () => {
+    const server = fakeServer()
+    const trip = server.addGroup({ name: 'Viaje a Cusco', currency: 'PEN', members: ['Ana'] })
+    const { replica, engine, device } = setup(server)
+    await engine.sync()
+    server.limitBatchesTo(1)
+
+    device.goOffline()
+    const first = await engine.addExpense(taxi(trip))
+    const second = await engine.addExpense(taxi(trip))
+    device.goOnline()
+    await engine.sync()
+
+    expect(engine.getStatus()).toBe('idle')
+    expect(server.expensesIn(trip).map(({ id }) => id).sort()).toEqual([first, second].sort())
+    expect(await firstValue(liveRecords(replica))).toEqual({ rejected: [], unsynced: [] })
+  })
 })
 
 describe('Settlements', () => {

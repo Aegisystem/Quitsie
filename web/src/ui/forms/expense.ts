@@ -1,24 +1,8 @@
-import type { Category, Member, NewExpense, OwedShare, SplitMethod } from '../../api/client'
+import type { Member, NewExpense, OwedShare, SplitMethod } from '../../api/client'
 import type { OwedShare as SplitShare } from '../../domain'
 import { formatAmountInput, formatPercentInput } from '../money'
 import type { SplitParticipant } from '../split'
-
-// The eleven Categories of the contract (openapi.yaml), in its order.
-export const categories: readonly Category[] = [
-  'food',
-  'groceries',
-  'transport',
-  'lodging',
-  'housing',
-  'utilities',
-  'entertainment',
-  'shopping',
-  'health',
-  'gifts',
-  'other',
-]
-
-export const splitMethods: readonly SplitMethod[] = ['equal', 'exact', 'percentage', 'weights', 'adjustment']
+import { splitMethods } from '../types'
 
 // What the form starts from when it is not blank: a RejectedRecord to fix or an
 // Expense to edit.

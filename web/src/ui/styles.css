@@ -2042,16 +2042,6 @@ select.input,
   font-weight: 600;
 }
 
-.demo-panel {
-  margin-top: 40px;
-  padding-top: 12px;
-  border-top: 2px solid var(--ink);
-}
-
-.demo-panel .button-row {
-  margin-top: 16px;
-}
-
 /* Sign in */
 
 .signin {

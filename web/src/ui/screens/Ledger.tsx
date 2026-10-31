@@ -203,6 +203,7 @@ function RecordRow({
   title,
   sub,
   end,
+  editHref,
 }: {
   kind: RecordKind
   id: string
@@ -213,6 +214,7 @@ function RecordRow({
   title: ReactNode
   sub: ReactNode
   end?: ReactNode
+  editHref?: string
 }) {
   const { t } = useTranslation()
   const online = useOnline()
@@ -293,6 +295,16 @@ function RecordRow({
       </button>
       {open && (
         <div className="row-panel">
+          {editHref &&
+            (online ? (
+              <a className="button button-small button-secondary" href={editHref}>
+                {t('ledger.editExpense')}
+              </a>
+            ) : (
+              <button type="button" className="button button-small button-secondary" disabled title={t('common.onlineOnly')}>
+                {t('ledger.editExpense')}
+              </button>
+            ))}
           <button
             type="button"
             className="button button-small button-secondary"
@@ -329,6 +341,7 @@ function ExpenseRow({ expense, me, name }: { expense: ExpenseView; me: string; n
       id={expense.id}
       sync={expense.sync}
       deleted={!!expense.deletedAt}
+      editHref={href({ name: 'editExpense', ledgerId: expense.ledgerId, expenseId: expense.id })}
       glyph={<CategoryGlyph category={expense.category} />}
       title={expense.description}
       sub={
