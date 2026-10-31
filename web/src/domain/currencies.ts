@@ -36,6 +36,34 @@ export function offeredCurrencies(): readonly CurrencyCode[] {
   return offered
 }
 
+// How many used currencies come up to the top of a selector, next to the Preferred
+// one. Any more and the short list stops being short.
+const mostUsedShown = 4
+
+export interface CurrencyChoices {
+  // The Preferred currency, then the most used ones, most used first.
+  first: readonly CurrencyCode[]
+  // Everything else on offer, in alphabetical order.
+  rest: readonly CurrencyCode[]
+}
+
+// The order of a currency selector (docs/reglas-de-negocio.md). `used` has one
+// entry per use, so a currency counts as many times as it appears. Funds stay out
+// even if the User has one, because the interface never offers them.
+export function currencyChoices(preferred: CurrencyCode, used: readonly CurrencyCode[] = []): CurrencyChoices {
+  const onOffer = new Set(offered)
+  const uses = new Map<CurrencyCode, number>()
+  for (const code of used) {
+    if (onOffer.has(code) && code !== preferred) uses.set(code, (uses.get(code) ?? 0) + 1)
+  }
+  const mostUsed = [...uses]
+    .sort(([a, usesOfA], [b, usesOfB]) => usesOfB - usesOfA || a.localeCompare(b))
+    .slice(0, mostUsedShown)
+    .map(([code]) => code)
+  const first = onOffer.has(preferred) ? [preferred, ...mostUsed] : mostUsed
+  return { first, rest: offered.filter((code) => !first.includes(code)) }
+}
+
 export function isCurrency(code: string): code is CurrencyCode {
   return minorUnits.has(code)
 }

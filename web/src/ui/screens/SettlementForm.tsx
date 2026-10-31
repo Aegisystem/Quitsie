@@ -1,62 +1,78 @@
 import { useId, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import type { Member, User } from '../../api/client'
+import { liveLedger, type LedgerSummary } from '../../local'
 import { Figure, Icon } from '../components/icons'
 import { Screen, toast, useOnline } from '../components/Shell'
-import { demo, ledgerById, ledgerMembers, ledgerName, memberById, myMemberId, useDemo } from '../demo/store'
+import { amountError } from '../forms/amountError'
+import { CurrencyOptions } from '../forms/CurrencyOptions'
+import { engine, liveUsedCurrencies, replica, useLive, useUser } from '../forms/data'
+import { activeMembers, figureState, ledgerName, myMember } from '../forms/people'
 import { todayISO } from '../dates'
-import { formatAmountInput, formatMoney, parseAmount } from '../money'
+import { amountPlaceholder, formatAmountInput, formatMoney, readAmount } from '../money'
 import { navigate } from '../router'
 
-export function SettlementForm({
-  ledgerId,
-  from,
-  to,
-  amount,
-  currency: currencyParam,
-}: {
-  ledgerId: string
+interface Suggestion {
   from?: string
   to?: string
   amount?: string
   currency?: string
-}) {
+}
+
+export function SettlementForm({ ledgerId, ...suggestion }: Suggestion & { ledgerId: string }) {
   const { t } = useTranslation()
-  const s = useDemo()
-  const online = useOnline()
-  const ids = useId()
-  const ledger = ledgerById(s, ledgerId)
-  const me = ledger ? (myMemberId(s, ledger.id) ?? '') : ''
-  const members = ledger ? ledgerMembers(s, ledger.id).filter((m) => m.status === 'active') : []
-  const currency = ledger?.kind === 'group' ? ledger.currency : (currencyParam ?? s.me.preferredCurrency)
-  const suggested = amount ? Number(amount) : undefined
-
-  const [fromId, setFromId] = useState(from ?? me)
-  const [toId, setToId] = useState(to ?? members.find((m) => m.id !== (from ?? me))?.id ?? '')
-  const [amountText, setAmountText] = useState(suggested ? formatAmountInput(suggested, currency) : '')
-  const [date, setDate] = useState(todayISO())
-  const [touched, setTouched] = useState(false)
-
-  if (!ledger) {
+  const user = useUser()
+  const [summary, loaded] = useLive(`ledger:${ledgerId}`, () => liveLedger(replica, ledgerId))
+  const back = { name: 'home' as const }
+  if (!loaded) return <Screen back={back} title={t('settlement.title')} children={null} />
+  const me = user && myMember(summary?.members ?? [], user.id)
+  if (!summary || !user || !me) {
     return (
-      <Screen back={{ name: 'home' }} title={t('settlement.title')}>
+      <Screen back={back} title={t('settlement.title')}>
         <p className="empty">{t('ledger.unknown')}</p>
       </Screen>
     )
   }
+  return <SettlementFields summary={summary} user={user} me={me} {...suggestion} />
+}
 
-  const nameOf = (id: string) => (id === me ? t('common.you') : (memberById(s, id)?.name ?? ''))
-  const value = parseAmount(amountText, currency) ?? 0
-  const sameSuggestedPair = from === fromId && to === toId && suggested !== undefined
+function SettlementFields({ summary, user, me, from, to, amount, currency: suggestedCurrency }: Suggestion & { summary: LedgerSummary; user: User; me: Member }) {
+  const { t } = useTranslation()
+  const { ledger, members } = summary
+  const online = useOnline()
+  const ids = useId()
+  const [used] = useLive(`usedCurrencies:${user.id}`, () => liveUsedCurrencies(replica, user.id))
+
+  // Only between active Members: a suggestion may be older than someone leaving.
+  const active = activeMembers(members, me)
+  const activeId = (id?: string) => active.find((m) => m.id === id)?.id
+  const groupCurrency = ledger.kind === 'group' ? ledger.currency : undefined
+  const [chosenCurrency, setCurrency] = useState(suggestedCurrency ?? user.preferredCurrency)
+  const currency = groupCurrency ?? chosenCurrency
+  const suggested = amount ? Number(amount) : undefined
+
+  const [fromId, setFromId] = useState(activeId(from) ?? me.id)
+  const [toId, setToId] = useState(activeId(to) ?? active.find((m) => m.id !== fromId)?.id ?? '')
+  const [amountText, setAmountText] = useState(suggested ? formatAmountInput(suggested, currency) : '')
+  const [date, setDate] = useState(todayISO())
+  const [touched, setTouched] = useState(false)
+  const [saving, setSaving] = useState(false)
+
+  const nameOf = (id: string) => (id === me.id ? t('common.you') : (members.find((m) => m.id === id)?.name ?? ''))
+  const read = readAmount(amountText, currency)
+  const value = read.ok ? read.value : 0
+  const sameSuggestedPair = from === fromId && to === toId && suggested !== undefined && (groupCurrency !== undefined || currency === suggestedCurrency)
   const errors = {
-    people: fromId === toId ? t('settlement.samePerson') : undefined,
-    amount: value <= 0 ? t('expenseForm.amountRequired') : undefined,
+    people: fromId === toId ? t('settlement.samePerson') : !activeId(fromId) || !activeId(toId) ? t('settlement.onlyActive') : undefined,
+    amount: amountError(read, currency, t),
   }
   const valid = !errors.people && !errors.amount
 
-  const save = () => {
+  const save = async () => {
     setTouched(true)
-    if (!valid) return
-    demo.addSettlement({ ledgerId: ledger.id, fromMemberId: fromId, toMemberId: toId, amount: value, currency, date, sync: online ? 'synced' : 'unsynced' })
+    if (!valid || saving) return
+    setSaving(true)
+    await engine.addSettlement({ ledgerId: ledger.id, fromMemberId: fromId, toMemberId: toId, amount: value, currency, date })
     toast(online ? t('settlement.saved') : t('settlement.savedOffline'))
     navigate({ name: 'ledger', ledgerId: ledger.id, tab: ledger.kind === 'group' ? 'debts' : undefined }, { replace: true })
   }
@@ -65,10 +81,10 @@ export function SettlementForm({
     <fieldset className="field">
       <legend>{label}</legend>
       <div className="people-pick" role="radiogroup" aria-label={label}>
-        {members.map((m) => (
+        {active.map((m) => (
           <label key={m.id} className="person-chip">
             <input type="radio" name={`${ids}-${field}`} checked={id === m.id} onChange={() => set(m.id)} />
-            <Figure state={m.userId ? 'linked' : 'pending'} size={28} />
+            <Figure state={figureState(m)} size={28} />
             <span>{nameOf(m.id)}</span>
           </label>
         ))}
@@ -91,8 +107,8 @@ export function SettlementForm({
           <button
             type="button"
             className="button button-primary button-block"
-            onClick={save}
-            aria-disabled={!valid}
+            onClick={() => void save()}
+            aria-disabled={!valid || saving}
             aria-describedby={!valid ? `${ids}-blocking` : undefined}
           >
             <Icon name="check" />
@@ -106,10 +122,10 @@ export function SettlementForm({
         noValidate
         onSubmit={(e) => {
           e.preventDefault()
-          save()
+          void save()
         }}
       >
-        <p className="form-context">{ledgerName(s, ledger)}</p>
+        <p className="form-context">{ledgerName(summary, user.id)}</p>
 
         <div className="settle-pair" aria-hidden="true">
           <span className="settle-person">
@@ -137,12 +153,18 @@ export function SettlementForm({
               id={`${ids}-amount`}
               inputMode="decimal"
               autoComplete="off"
-              placeholder="0"
+              placeholder={amountPlaceholder(currency)}
               value={amountText}
               onChange={(e) => setAmountText(e.target.value)}
               aria-invalid={touched && !!errors.amount}
             />
-            <span className="currency-code">{currency}</span>
+            {groupCurrency ? (
+              <span className="currency-code">{currency}</span>
+            ) : (
+              <select className="currency-select" aria-label={t('settlement.currency')} value={currency} onChange={(e) => setCurrency(e.target.value)}>
+                <CurrencyOptions value={currency} preferred={user.preferredCurrency} used={used} />
+              </select>
+            )}
           </div>
           {touched && errors.amount && <p className="field-error">{errors.amount}</p>}
           {sameSuggestedPair && suggested !== undefined && (
