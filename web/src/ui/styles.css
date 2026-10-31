@@ -172,6 +172,10 @@ h3 {
   display: block;
 }
 
+.figure-former {
+  color: var(--ink-3);
+}
+
 /* Shell */
 
 .screen {
@@ -2328,4 +2332,54 @@ select.input,
   .p-row {
     transition: none;
   }
+}
+
+/* A record of the list opens to show what can be done with it. */
+
+.row-button {
+  width: calc(100% + 16px);
+  margin-inline: -8px;
+  padding-inline: 8px;
+  border: 0;
+  background: none;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.row-button:hover {
+  background: var(--sunken);
+}
+
+.row-button[aria-expanded='true'] {
+  padding-bottom: 6px;
+}
+
+.row-panel {
+  margin-left: 44px;
+  padding-bottom: 12px;
+}
+
+/* A User with nothing yet: no Balance to show, only where to start. */
+
+.first-run {
+  max-width: 34em;
+  margin-top: 32px;
+}
+
+.first-run-figures {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 16px;
+  color: var(--ink-2);
+}
+
+.first-run .page-title {
+  margin-bottom: 8px;
+}
+
+.first-run-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }

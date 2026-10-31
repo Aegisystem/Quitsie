@@ -1,4 +1,4 @@
-import type { Category } from '../demo/types'
+import type { Category, Member } from '../types'
 
 // Two families, never mixed: stroke icons for controls (2px on a 24 grid) and
 // solid Isotype-style pictograms for content (people, Groups, Categories).
@@ -21,6 +21,7 @@ export type IconName =
   | 'chevron'
   | 'restore'
   | 'download'
+  | 'settings'
 
 const strokes: Record<IconName, string> = {
   back: 'M15 5l-7 7 7 7',
@@ -40,6 +41,7 @@ const strokes: Record<IconName, string> = {
   chevron: 'M9 5l7 7-7 7',
   restore: 'M4 12a8 8 0 1 0 2.4-5.7M4 4v5h5',
   download: 'M12 3v12M7.5 10.5L12 15l4.5-4.5M5 20h14',
+  settings: 'M4 7h9M18 7h2M4 17h2M11 17h9M15.5 4.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5zM8.5 14.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5z',
 }
 
 export function Icon({ name, size = 24, label }: { name: IconName; size?: number; label?: string }) {
@@ -66,6 +68,11 @@ export function Icon({ name, size = 24, label }: { name: IconName; size?: number
 // A person, drawn like an Isotype figure. Solid when linked to a User, hollow
 // when pending, faded when they left the Group.
 export type FigureState = 'linked' | 'pending' | 'former'
+
+export function figureState(member: Member | undefined): FigureState {
+  if (!member) return 'linked'
+  return member.status === 'former' ? 'former' : member.userId ? 'linked' : 'pending'
+}
 
 export function Figure({ state = 'linked', size = 28 }: { state?: FigureState; size?: number }) {
   const hollow = state === 'pending'

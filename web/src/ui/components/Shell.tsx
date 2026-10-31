@@ -1,10 +1,12 @@
 import { useEffect, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import { demo, unsyncedCount, useDemo } from '../demo/store'
+import { liveRecords } from '../../local'
+import { replica, useLive, useSyncStatus } from '../data'
 import { href, type Route } from '../router'
 import { Icon, Mark, type IconName } from './icons'
 
-// Online means the network is up and the demo is not simulating an outage.
+// The browser's own idea of the connection. Only it can tell what a screen may
+// offer: the engine only finds out when it next tries to sync.
 function subscribeNetwork(listener: () => void) {
   window.addEventListener('online', listener)
   window.addEventListener('offline', listener)
@@ -15,9 +17,7 @@ function subscribeNetwork(listener: () => void) {
 }
 
 export function useOnline(): boolean {
-  const { simulateOffline } = useDemo()
-  const network = useSyncExternalStore(subscribeNetwork, () => navigator.onLine)
-  return network && !simulateOffline
+  return useSyncExternalStore(subscribeNetwork, () => navigator.onLine)
 }
 
 // Toasts
@@ -75,18 +75,26 @@ function NavLinks({ current, className }: { current?: string; className: string 
   )
 }
 
-// Always visible: a cloud while online, the sync arrows while sending, the struck
-// cloud offline. Next to a screen title it shrinks to the icon alone. Icons, not
-// dots, so it never reads as a tally token.
+// Always visible: a cloud while online, the sync arrows while sending or waiting
+// to try again, the struck cloud offline. Next to a screen title it shrinks to the
+// icon alone. Icons, not dots, so it never reads as a tally token.
 function ConnectionStatus({ compact }: { compact: boolean }) {
   const { t } = useTranslation()
-  const s = useDemo()
   const online = useOnline()
-  const state = !online ? 'offline' : s.syncing ? 'syncing' : 'online'
-  const stateLabel = state === 'offline' ? t('connection.offline') : state === 'syncing' ? t('connection.syncing') : t('connection.online')
-  const unsynced = unsyncedCount(s)
-  const rejected = s.rejected.length
+  const status = useSyncStatus()
+  const [records] = useLive('records', () => liveRecords(replica))
+  const unsynced = records?.unsynced.length ?? 0
+  const rejected = records?.rejected.length ?? 0
   const count = unsynced + rejected
+  const sending = status === 'retrying' || (status === 'syncing' && unsynced > 0)
+  const state = !online ? 'offline' : sending ? 'syncing' : 'online'
+  const stateLabel = !online
+    ? t('connection.offline')
+    : status === 'retrying'
+      ? t('connection.retrying')
+      : sending
+        ? t('connection.syncing')
+        : t('connection.online')
   const label = [
     rejected ? t('connection.rejectedBadge', { count: rejected }) : '',
     unsynced ? t('connection.unsyncedBadge', { count: unsynced }) : '',
@@ -122,6 +130,14 @@ export function OfflineBanner() {
       </div>
     </div>
   )
+}
+
+// What an empty replica means before the first pull: not that there is nothing,
+// but that it has not arrived yet.
+export function FirstSync() {
+  const { t } = useTranslation()
+  const online = useOnline()
+  return <p className="empty">{online ? t('common.firstSync') : t('common.firstSyncOffline')}</p>
 }
 
 export function Screen({
@@ -207,7 +223,6 @@ function isIOS() {
 
 export function InstallPrompt() {
   const { t } = useTranslation()
-  const { forceInstallPrompt } = useDemo()
   const [, rerender] = useState(0)
   const [dismissed, setDismissed] = useState(() => {
     try {
@@ -227,7 +242,7 @@ export function InstallPrompt() {
 
   const ios = isIOS()
   const eligible = !isStandalone() && (deferredInstall !== null || ios)
-  if (!forceInstallPrompt && (dismissed || !eligible)) return null
+  if (dismissed || !eligible) return null
 
   const dismiss = () => {
     try {
@@ -236,7 +251,6 @@ export function InstallPrompt() {
       // Storage blocked: it just comes back next time.
     }
     setDismissed(true)
-    demo.setForceInstallPrompt(false)
   }
 
   const install = async () => {
