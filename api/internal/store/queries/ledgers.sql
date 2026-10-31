@@ -28,19 +28,19 @@ WHERE id = ? AND deleted_at IS NULL
 RETURNING *;
 
 -- name: ScaleLedgerExpenseTotals :exec
--- Use ScaleLedgerAmounts, which runs the four ScaleLedger* queries together.
+-- Use RelabelCurrency, which runs the four ScaleLedger* queries when the decimals change.
 UPDATE expenses
 SET total = total * sqlc.arg(multiplier) / sqlc.arg(divisor)
 WHERE ledger_id = sqlc.arg(ledger_id);
 
 -- name: ScaleLedgerPaidShares :exec
--- Use ScaleLedgerAmounts, which runs the four ScaleLedger* queries together.
+-- Use RelabelCurrency, which runs the four ScaleLedger* queries when the decimals change.
 UPDATE paid_shares
 SET amount = amount * sqlc.arg(multiplier) / sqlc.arg(divisor)
 WHERE expense_id IN (SELECT expenses.id FROM expenses WHERE expenses.ledger_id = sqlc.arg(ledger_id));
 
 -- name: ScaleLedgerOwedShares :exec
--- Use ScaleLedgerAmounts, which runs the four ScaleLedger* queries together.
+-- Use RelabelCurrency, which runs the four ScaleLedger* queries when the decimals change.
 -- An adjustment is an amount too; percentages and weights have no currency.
 UPDATE owed_shares
 SET amount = amount * sqlc.arg(multiplier) / sqlc.arg(divisor),
@@ -52,7 +52,7 @@ SET amount = amount * sqlc.arg(multiplier) / sqlc.arg(divisor),
 WHERE expense_id IN (SELECT expenses.id FROM expenses WHERE expenses.ledger_id = sqlc.arg(ledger_id));
 
 -- name: ScaleLedgerSettlements :exec
--- Use ScaleLedgerAmounts, which runs the four ScaleLedger* queries together.
+-- Use RelabelCurrency, which runs the four ScaleLedger* queries when the decimals change.
 UPDATE settlements
 SET amount = amount * sqlc.arg(multiplier) / sqlc.arg(divisor)
 WHERE ledger_id = sqlc.arg(ledger_id);

@@ -134,7 +134,7 @@ type ScaleLedgerExpenseTotalsParams struct {
 	LedgerID   string
 }
 
-// Use ScaleLedgerAmounts, which runs the four ScaleLedger* queries together.
+// Use RelabelCurrency, which runs the four ScaleLedger* queries when the decimals change.
 func (q *Queries) ScaleLedgerExpenseTotals(ctx context.Context, arg ScaleLedgerExpenseTotalsParams) error {
 	_, err := q.db.ExecContext(ctx, scaleLedgerExpenseTotals, arg.Multiplier, arg.Divisor, arg.LedgerID)
 	return err
@@ -157,7 +157,7 @@ type ScaleLedgerOwedSharesParams struct {
 	LedgerID   string
 }
 
-// Use ScaleLedgerAmounts, which runs the four ScaleLedger* queries together.
+// Use RelabelCurrency, which runs the four ScaleLedger* queries when the decimals change.
 // An adjustment is an amount too; percentages and weights have no currency.
 func (q *Queries) ScaleLedgerOwedShares(ctx context.Context, arg ScaleLedgerOwedSharesParams) error {
 	_, err := q.db.ExecContext(ctx, scaleLedgerOwedShares, arg.Multiplier, arg.Divisor, arg.LedgerID)
@@ -176,7 +176,7 @@ type ScaleLedgerPaidSharesParams struct {
 	LedgerID   string
 }
 
-// Use ScaleLedgerAmounts, which runs the four ScaleLedger* queries together.
+// Use RelabelCurrency, which runs the four ScaleLedger* queries when the decimals change.
 func (q *Queries) ScaleLedgerPaidShares(ctx context.Context, arg ScaleLedgerPaidSharesParams) error {
 	_, err := q.db.ExecContext(ctx, scaleLedgerPaidShares, arg.Multiplier, arg.Divisor, arg.LedgerID)
 	return err
@@ -194,7 +194,7 @@ type ScaleLedgerSettlementsParams struct {
 	LedgerID   string
 }
 
-// Use ScaleLedgerAmounts, which runs the four ScaleLedger* queries together.
+// Use RelabelCurrency, which runs the four ScaleLedger* queries when the decimals change.
 func (q *Queries) ScaleLedgerSettlements(ctx context.Context, arg ScaleLedgerSettlementsParams) error {
 	_, err := q.db.ExecContext(ctx, scaleLedgerSettlements, arg.Multiplier, arg.Divisor, arg.LedgerID)
 	return err

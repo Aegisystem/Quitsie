@@ -381,18 +381,7 @@ func relabel(ctx context.Context, q *store.Queries, snap ledgers.Snapshot, to do
 	if _, _, err := domain.Relabel(snap.Expenses(), snap.Settlements(), to); err != nil {
 		return err
 	}
-	from := domain.Currency(*snap.Ledger.Currency)
-	fromDecimals, ok := from.Decimals()
-	if !ok {
-		return fmt.Errorf("group %s has the unknown currency %q", snap.Ledger.ID, from)
-	}
-	toDecimals, _ := to.Decimals()
 	if err := q.RelabelCurrency(ctx, snap.Ledger.ID, string(to), version); err != nil {
-		return fmt.Errorf("relabel group: %w", err)
-	}
-	// RelabelCurrency only changes the labels; the minor units change with
-	// the decimals (10.00 USD is 1000 cents, 10 JPY is 10).
-	if err := q.ScaleLedgerAmounts(ctx, snap.Ledger.ID, fromDecimals, toDecimals); err != nil {
 		return fmt.Errorf("relabel group: %w", err)
 	}
 	return nil
