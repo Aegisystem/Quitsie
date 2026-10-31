@@ -117,7 +117,7 @@ export function SettlementForm({
             <span>{nameOf(fromId)}</span>
           </span>
           <span className="settle-flow">
-            <span className="settle-amount">{value > 0 ? formatMoney(value, currency) : '—'}</span>
+            <span className="settle-amount">{value > 0 ? formatMoney(value, currency, { trim: false }) : '—'}</span>
             <Icon name="arrow" size={28} />
           </span>
           <span className="settle-person">
@@ -147,8 +147,8 @@ export function SettlementForm({
           {touched && errors.amount && <p className="field-error">{errors.amount}</p>}
           {sameSuggestedPair && suggested !== undefined && (
             <p className="hint">
-              {t('settlement.suggested', { amount: formatMoney(suggested, currency) })}.{' '}
-              {value > 0 && value < suggested ? t('settlement.partial', { amount: formatMoney(suggested - value, currency) }) : value === suggested ? t('settlement.full') : ''}
+              {t('settlement.suggested', { amount: formatMoney(suggested, currency, { trim: false }) })}.{' '}
+              {value > 0 && value < suggested ? t('settlement.partial', { amount: formatMoney(suggested - value, currency, { trim: false }) }) : value === suggested ? t('settlement.full') : ''}
             </p>
           )}
         </div>

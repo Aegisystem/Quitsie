@@ -17,7 +17,7 @@ Reglas acordadas durante el diseño. El vocabulario sigue [CONTEXT.md](../CONTEX
 - Puede editar o borrar un Gasto de Grupo cualquier Miembro vinculado; uno sin grupo, cualquiera de sus dos Participantes.
 - Un Gasto borrado se puede restaurar sin límite de tiempo.
 - Si dos personas editan el mismo Gasto a la vez, la segunda en guardar recibe un aviso y ve la versión nueva; nunca se sobrescribe en silencio.
-- Un Gasto en el que participa un Antiguo Miembro se puede editar, pero sin cambiar los Aportes ni las Cuotas de ese Antiguo Miembro. Restaurar un Gasto borrado que lo incluye se rechaza, porque cambiaría su Saldo, que es cero.
+- Un Gasto en el que participa un Antiguo Miembro se puede editar, pero sin cambiar los Aportes ni las Cuotas de ese Antiguo Miembro. Borrarlo se rechaza, y también restaurarlo si ya estaba borrado, porque cambiaría su Saldo, que es cero.
 
 ## Deudas
 
@@ -65,7 +65,7 @@ Reglas acordadas durante el diseño. El vocabulario sigue [CONTEXT.md](../CONTEX
 - Solo se registran; la aplicación no mueve dinero real.
 - Se permiten Liquidaciones parciales.
 - Solo entre Miembros activos.
-- Se pueden borrar y restaurar, pero no editar: para corregir una, se borra y se crea otra.
+- Se pueden borrar y restaurar, pero no editar: para corregir una, se borra y se crea otra. Una Liquidación con un Antiguo Miembro no se puede borrar ni restaurar.
 
 ## Presentación
 

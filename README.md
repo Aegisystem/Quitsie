@@ -13,7 +13,7 @@ Requisitos: Go 1.26 y Node 22.
 
 ```bash
 cd web && npm install && npm run build   # compila la PWA en api/cmd/server/dist
-cd api && go run ./cmd/server            # http://127.0.0.1:8080
+cd api && QUITSIE_ENV=development QUITSIE_MAIL=log go run ./cmd/server   # http://127.0.0.1:8080; los códigos de acceso salen en el log
 ```
 
 Para trabajar en la interfaz con recarga en caliente, deja el servidor Go corriendo y en otra terminal ejecuta `cd web && npm run dev`. Vite reenvía `/api` al puerto 8080.

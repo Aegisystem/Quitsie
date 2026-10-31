@@ -460,7 +460,8 @@ func memberResponse(m store.Member) Member {
 		id := uuid.MustParse(*m.UserID)
 		r.UserId = &id
 	}
-	if m.Email != nil {
+	// Only a pending Member's email is shown: a linked one's belongs to the User.
+	if m.Email != nil && m.UserID == nil {
 		email := openapi_types.Email(*m.Email)
 		r.Email = &email
 	}

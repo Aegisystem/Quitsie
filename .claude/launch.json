@@ -4,7 +4,7 @@
     {
       "name": "quitsie",
       "runtimeExecutable": "sh",
-      "runtimeArgs": ["-c", "cd api && go build -o bin/quitsie ./cmd/server && exec ./bin/quitsie"],
+      "runtimeArgs": ["-c", "cd api && go build -o bin/quitsie ./cmd/server && QUITSIE_ENV=development QUITSIE_MAIL=log exec ./bin/quitsie"],
       "port": 8080
     }
   ]

@@ -38,6 +38,7 @@ import (
 	"github.com/Aegisystem/Quitsie/api/internal/auth"
 	"github.com/Aegisystem/Quitsie/api/internal/domain"
 	"github.com/Aegisystem/Quitsie/api/internal/httpapi"
+	"github.com/Aegisystem/Quitsie/api/internal/invites"
 	"github.com/Aegisystem/Quitsie/api/internal/mail"
 	"github.com/Aegisystem/Quitsie/api/internal/store"
 )
@@ -153,8 +154,6 @@ const (
 	googleCallbackPath = "/api/v1/auth/google/callback"
 	// viteOrigin is the PWA under `npm run dev`, which proxies /api here.
 	viteOrigin = "http://localhost:5173"
-	// minInviteSecretLength is what invites.Token asks of its secret.
-	minInviteSecretLength = 32
 	// runLocally is the hint of the errors a developer meets first.
 	runLocally = "to run locally, set QUITSIE_ENV=development and QUITSIE_MAIL=log"
 )
@@ -232,13 +231,13 @@ func loadConfig(getenv func(string) string) (config, error) {
 
 	cfg.inviteSecret = []byte(getenv("QUITSIE_INVITE_SECRET"))
 	switch {
-	case len(cfg.inviteSecret) >= minInviteSecretLength:
+	case len(cfg.inviteSecret) >= invites.MinSecretLength:
 	case len(cfg.inviteSecret) == 0 && development:
-		cfg.inviteSecret = make([]byte, minInviteSecretLength)
+		cfg.inviteSecret = make([]byte, invites.MinSecretLength)
 		rand.Read(cfg.inviteSecret)
 		cfg.inviteSecretGenerated = true
 	default:
-		return config{}, fmt.Errorf("QUITSIE_INVITE_SECRET must have at least %d bytes", minInviteSecretLength)
+		return config{}, fmt.Errorf("QUITSIE_INVITE_SECRET must have at least %d bytes", invites.MinSecretLength)
 	}
 	return cfg, nil
 }

@@ -2,14 +2,6 @@ import type { Changes } from '../api/client'
 import type { Replica } from '../local'
 import { type Api, SyncFailure } from './api'
 
-// TODO(contract): another session is adding `visibleLedgerIds` to Changes in
-// openapi.yaml. Until `npm run generate` brings it, it is declared here with the
-// same name, optional so a server without it still works; delete this then.
-export type PulledChanges = Changes & {
-  // Every ledger the User can see. The replica drops any other.
-  visibleLedgerIds?: string[]
-}
-
 // Brings everything that changed since the replica's cursor (GET /sync), page
 // by page while the server says it has more.
 export async function pull(replica: Replica, api: Api): Promise<void> {
@@ -50,7 +42,7 @@ async function clearReplica(replica: Replica): Promise<void> {
   })
 }
 
-async function applyChanges(replica: Replica, changes: PulledChanges): Promise<void> {
+async function applyChanges(replica: Replica, changes: Changes): Promise<void> {
   await replica.transaction('rw', [...pulledTables(replica), replica.queue], async () => {
     await replica.ledgers.bulkPut([
       ...changes.groups.map((group) => ({ ...group, kind: 'group' as const })),
@@ -62,11 +54,9 @@ async function applyChanges(replica: Replica, changes: PulledChanges): Promise<v
     await replica.activities.bulkPut(changes.activities)
     await replica.debts.bulkPut(changes.debts)
     for (const { ledgerId } of changes.droppedLedgers) await dropLedger(replica, ledgerId)
-    if (changes.visibleLedgerIds) {
-      const visible = new Set(changes.visibleLedgerIds)
-      for (const ledgerId of await replica.ledgers.toCollection().primaryKeys()) {
-        if (!visible.has(ledgerId)) await dropLedger(replica, ledgerId)
-      }
+    const visible = new Set(changes.visibleLedgerIds)
+    for (const ledgerId of await replica.ledgers.toCollection().primaryKeys()) {
+      if (!visible.has(ledgerId)) await dropLedger(replica, ledgerId)
     }
     await leaveQueueOnceInReplica(replica)
     await replica.meta.put({ key: 'cursor', value: changes.cursor })

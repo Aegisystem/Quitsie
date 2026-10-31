@@ -1,5 +1,4 @@
-import type { Activity, DroppedLedger, Expense, Friendship, Group, LedgerDebts, Member, Problem, RecordBatch, RecordResult, Settlement } from '../api/client'
-import type { PulledChanges } from './pull'
+import type { Activity, Changes, DroppedLedger, Expense, Friendship, Group, LedgerDebts, Member, Problem, RecordBatch, RecordResult, Settlement } from '../api/client'
 
 // Test double for the Go server behind `fetch`: it keeps a version counter and
 // answers GET /sync like docs/arquitectura.md describes. Only the tests import it.
@@ -50,7 +49,7 @@ export function fakeServer({ versionsPerPull = Infinity }: { versionsPerPull?: n
 
   const visible = (ledgerId: string) => (db.groups.has(ledgerId) || db.friendships.has(ledgerId)) && !db.dropped.has(ledgerId)
 
-  function pull(since: number): PulledChanges {
+  function pull(since: number): Changes {
     const cursor = Math.min(db.counter, since + versionsPerPull)
     const inPage = ({ version }: { version: number }) => version > since && version <= cursor
     const newer = <T extends { version: number; ledgerId?: string; id?: string }>(rows: Map<string, T>) =>
