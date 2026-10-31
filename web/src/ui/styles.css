@@ -172,6 +172,10 @@ h3 {
   display: block;
 }
 
+.figure-former {
+  color: var(--ink-3);
+}
+
 /* Shell */
 
 .screen {
