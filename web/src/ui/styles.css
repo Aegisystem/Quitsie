@@ -1697,6 +1697,12 @@ select.input,
   white-space: nowrap;
 }
 
+/* A person's field that cannot be read says why under its row, from the name on. */
+.p-error {
+  grid-column: 2 / -1;
+  margin: -6px 0 10px;
+}
+
 .p-remainder {
   position: absolute;
   right: 0;
@@ -1734,6 +1740,16 @@ select.input,
   gap: 2px 6px;
   margin: 8px 0 0;
   font-weight: 600;
+}
+
+/* A long text wraps beside its mark instead of leaving the mark alone on a line. */
+.closing-text {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.closing.tone-problem {
+  align-items: baseline;
 }
 
 .closing-sub {
