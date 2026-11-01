@@ -64,13 +64,14 @@ type DroppedLedger struct {
 }
 
 // ErrCursorAhead means the cursor is over the last version the server handed
-// out, for example after restoring a backup, so the device rebuilds its replica.
+// out, as after restoring a backup that the server did not record, so the
+// device rebuilds its replica.
 var ErrCursorAhead = errors.New("the cursor is ahead of the server")
 
 // ErrCursorLost means the cursor is among the versions a restore skipped (see
-// store.RecordRestore): the device may hold rows the server lost, so it
-// rebuilds its replica too. Without this, a device that synced after the
-// backup would be told nothing once new writes passed its cursor.
+// store.RecordRestore). The device may hold rows the server lost, so it
+// rebuilds its replica too: the jump left the cursor below the server's, where
+// ErrCursorAhead no longer catches it.
 var ErrCursorLost = errors.New("the cursor is from a copy of the database that a restore replaced")
 
 // Pull returns what changed after the cursor since for userID, all from one
