@@ -258,6 +258,7 @@ func (s *Server) PullChanges(ctx context.Context, req PullChangesRequestObject) 
 func pulledChanges(c sync.Changes) (Changes, error) {
 	out := Changes{
 		Cursor:           c.Cursor,
+		HasMore:          c.HasMore,
 		Groups:           []Group{},
 		Friendships:      []Friendship{},
 		Members:          make([]Member, len(c.Members)),
