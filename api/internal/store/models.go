@@ -84,6 +84,12 @@ type PaidShare struct {
 	Amount    int64
 }
 
+type RestoreGap struct {
+	RestoredVersion int64
+	JumpedVersion   int64
+	RestoredAt      time.Time
+}
+
 type Session struct {
 	ID         string
 	UserID     string

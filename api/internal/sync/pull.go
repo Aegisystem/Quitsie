@@ -67,11 +67,24 @@ type DroppedLedger struct {
 // out, for example after restoring a backup, so the device rebuilds its replica.
 var ErrCursorAhead = errors.New("the cursor is ahead of the server")
 
+// ErrCursorLost means the cursor is among the versions a restore skipped (see
+// store.RecordRestore): the device may hold rows the server lost, so it
+// rebuilds its replica too. Without this, a device that synced after the
+// backup would be told nothing once new writes passed its cursor.
+var ErrCursorLost = errors.New("the cursor is from a copy of the database that a restore replaced")
+
 // Pull returns what changed after the cursor since for userID, all from one
 // snapshot. With since 0 it returns everything the User can see.
 func Pull(ctx context.Context, db *sql.DB, userID string, since int64) (Changes, error) {
 	var out Changes
 	err := store.Read(ctx, db, func(q *store.Queries) error {
+		lost, err := q.InRestoreGap(ctx, since)
+		if err != nil {
+			return fmt.Errorf("restore gap: %w", err)
+		}
+		if lost {
+			return ErrCursorLost
+		}
 		c, err := q.ChangesSince(ctx, userID, since, maxRowsPerPull)
 		if err != nil {
 			return err

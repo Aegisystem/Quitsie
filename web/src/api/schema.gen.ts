@@ -2222,7 +2222,7 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
-            /** @description `since` is ahead of the server, for example after restoring a backup (`cursor_invalid`). The client discards its replica, keeps its Unsynced records, and pulls again from 0. */
+            /** @description `since` is ahead of the server, or among the versions that restoring a backup skipped (`cursor_invalid`). Either way the replica may hold rows the server lost: the client discards it, keeps its Unsynced records, and pulls again from 0. */
             410: {
                 headers: {
                     [name: string]: unknown;
