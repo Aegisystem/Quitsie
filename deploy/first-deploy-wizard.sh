@@ -12,6 +12,7 @@ set -euo pipefail
 # Wizard library: delightful, consistent UX, identical across every wizard.
 # ──────────────────────────────────────────────────────────────────────────
 
+# shellcheck disable=SC2034 # RED belongs to the shared palette even if this wizard does not use it.
 if [[ -t 1 ]] && command -v tput >/dev/null 2>&1 && [[ "$(tput colors 2>/dev/null || echo 0)" -ge 8 ]]; then
   BOLD=$(tput bold); DIM=$(tput dim); RESET=$(tput sgr0)
   BLUE=$(tput setaf 4); GREEN=$(tput setaf 2); YELLOW=$(tput setaf 3); RED=$(tput setaf 1)
@@ -385,6 +386,7 @@ for rule in default-allow-ssh default-allow-rdp default-allow-icmp; do
 done
 
 say "Compruebo el acceso por IAP (la primera vez gcloud crea tu clave SSH y puede pedirte una frase)."
+# shellcheck disable=SC2016 # $(hostname) must expand on the VM, not here.
 if ! run vm_ssh --command 'echo "VM lista: $(hostname)"' </dev/null; then
   warn "No entré. Si dice permission denied, dale a tu cuenta el rol «IAP-secured Tunnel User» en IAM; si dice timeout, espera un minuto a que arranque la VM."
   pause "Cuando lo hayas resuelto, pulsa Enter (el asistente lo reintentará en la etapa 9)"
