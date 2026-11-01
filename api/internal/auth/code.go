@@ -23,6 +23,12 @@ import (
 const (
 	codeTTL         = 10 * time.Minute
 	maxCodeAttempts = 5
+	// maxFailuresPerEmail is how many wrong guesses an email takes in
+	// failureWindow, across codes: asking for a new code buys no more. That
+	// keeps an account to 3,650 guesses out of a million in a year, at the
+	// price that anyone can lock an email out of codes for a day.
+	maxFailuresPerEmail = 10
+	failureWindow       = 24 * time.Hour
 )
 
 var (
@@ -59,6 +65,14 @@ func (s *Service) RequestCode(ctx context.Context, email, ip string) error {
 	if err != nil {
 		return err
 	}
+	// No point in sending a code that could not be used.
+	failures, err := s.failures(ctx, store.New(s.db), email)
+	if err != nil {
+		return err
+	}
+	if failures.spent() {
+		return &RateLimitError{RetryAfter: failures.ResetsAt.Sub(s.now())}
+	}
 	if ok, retryAfter := s.sends.allow(s.now(), quota{"email:" + email, maxSendsPerMail}, quota{"ip:" + ip, maxSendsPerIP}); !ok {
 		return &RateLimitError{RetryAfter: retryAfter}
 	}
@@ -80,6 +94,9 @@ func (s *Service) RequestCode(ctx context.Context, email, ip string) error {
 		if err := q.DeleteExpiredLoginCodes(ctx, now); err != nil {
 			return fmt.Errorf("auth: delete expired login codes: %w", err)
 		}
+		if err := q.DeleteEndedLoginFailures(ctx, now); err != nil {
+			return fmt.Errorf("auth: delete ended login failures: %w", err)
+		}
 		err := q.CreateLoginCode(ctx, store.CreateLoginCodeParams{
 			ID:        id.String(),
 			Email:     email,
@@ -97,17 +114,24 @@ func (s *Service) RequestCode(ctx context.Context, email, ip string) error {
 	}
 
 	if err := s.mail.Send(ctx, codeMessage(email, code)); err != nil {
-		return fmt.Errorf("auth: send login code: %w", err)
+		// Nobody got this code, so it could only ever be guessed, and its
+		// owner would never hear of it.
+		cleanup := store.New(s.db).DeleteLoginCodes(context.WithoutCancel(ctx), email)
+		return fmt.Errorf("auth: send login code: %w", errors.Join(err, cleanup))
 	}
 	return nil
 }
 
 // VerifyCode signs in the User with this email, creating it if needed, when
-// code is the last one sent to it.
-func (s *Service) VerifyCode(ctx context.Context, email, code, device string) (SignIn, error) {
+// code is the last one sent to it. ip is the client's address, used to limit
+// how many guesses one sender can spread over many emails.
+func (s *Service) VerifyCode(ctx context.Context, email, code, device, ip string) (SignIn, error) {
 	email, err := NormalizeEmail(email)
 	if err != nil {
 		return SignIn{}, err
+	}
+	if ok, retryAfter := s.verifications.allow(s.now(), quota{"ip:" + ip, maxVerificationsPerIP}); !ok {
+		return SignIn{}, &RateLimitError{RetryAfter: retryAfter}
 	}
 	var signIn SignIn
 	// A wrong code must still count the attempt, so it commits and reports
@@ -124,7 +148,11 @@ func (s *Service) VerifyCode(ctx context.Context, email, code, device string) (S
 		if !s.now().Before(lc.ExpiresAt) {
 			return ErrCodeExpired
 		}
-		if lc.Attempts >= maxCodeAttempts {
+		failures, err := s.failures(ctx, q, email)
+		if err != nil {
+			return err
+		}
+		if lc.Attempts >= maxCodeAttempts || failures.spent() {
 			return ErrTooManyAttempts
 		}
 		if subtle.ConstantTimeCompare([]byte(hashCode(lc.ID, code)), []byte(lc.CodeHash)) != 1 {
@@ -132,7 +160,7 @@ func (s *Service) VerifyCode(ctx context.Context, email, code, device string) (S
 			if err := q.CountLoginCodeAttempt(ctx, lc.ID); err != nil {
 				return fmt.Errorf("auth: count attempt: %w", err)
 			}
-			return nil
+			return q.SetLoginFailures(ctx, failures.plusOne(s.now()))
 		}
 		if err := q.DeleteLoginCodes(ctx, email); err != nil {
 			return fmt.Errorf("auth: delete login codes: %w", err)
@@ -156,6 +184,41 @@ func (s *Service) VerifyCode(ctx context.Context, email, code, device string) (S
 		return SignIn{}, wrong
 	}
 	return signIn, nil
+}
+
+// failures are the wrong guesses at the codes of one email in the current
+// window.
+type failures store.SetLoginFailuresParams
+
+func (f failures) spent() bool { return f.Failures >= maxFailuresPerEmail }
+
+func (f failures) plusOne(now time.Time) store.SetLoginFailuresParams {
+	if f.Failures == 0 {
+		f.ResetsAt = now.Add(failureWindow)
+	}
+	f.Failures++
+	return store.SetLoginFailuresParams(f)
+}
+
+// failures reads the failures of email, which are none once its window ended.
+func (s *Service) failures(ctx context.Context, q *store.Queries, email string) (failures, error) {
+	f := failures{EmailHash: hashEmail(email)}
+	row, err := q.GetLoginFailures(ctx, f.EmailHash)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		return f, nil
+	case err != nil:
+		return failures{}, fmt.Errorf("auth: find login failures: %w", err)
+	case !row.ResetsAt.After(s.now()):
+		return f, nil
+	}
+	f.Failures, f.ResetsAt = row.Failures, row.ResetsAt
+	return f, nil
+}
+
+func hashEmail(email string) string {
+	sum := sha256.Sum256([]byte(email))
+	return hex.EncodeToString(sum[:])
 }
 
 // NormalizeEmail lower-cases a bare address such as "Ana@Example.com" and

@@ -20,3 +20,17 @@ WHERE id = ?;
 -- name: DeleteExpiredLoginCodes :exec
 DELETE FROM login_codes
 WHERE expires_at <= ?;
+
+-- name: GetLoginFailures :one
+SELECT * FROM login_failures
+WHERE email_hash = ?;
+
+-- name: SetLoginFailures :exec
+INSERT INTO login_failures (email_hash, failures, resets_at)
+VALUES (?, ?, ?)
+ON CONFLICT (email_hash) DO UPDATE
+SET failures = excluded.failures, resets_at = excluded.resets_at;
+
+-- name: DeleteEndedLoginFailures :exec
+DELETE FROM login_failures
+WHERE resets_at <= ?;

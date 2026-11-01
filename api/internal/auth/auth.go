@@ -32,6 +32,7 @@ type Service struct {
 	defaultCurrency string
 	now             func() time.Time
 	sends           *limiter
+	verifications   *limiter
 	google          *google
 }
 
@@ -48,6 +49,7 @@ func New(cfg Config) (*Service, error) {
 		defaultCurrency: cfg.DefaultCurrency,
 		now:             func() time.Time { return cfg.Now().UTC() },
 		sends:           newLimiter(sendWindow),
+		verifications:   newLimiter(sendWindow),
 	}
 	if cfg.Google != nil {
 		g, err := newGoogle(*cfg.Google)

@@ -441,6 +441,8 @@ export const es = {
     rateLimited: 'Pediste demasiados códigos. Espera un poco y vuelve a intentarlo.',
     rateLimitedFor_one: 'Pediste demasiados códigos. Vuelve a intentarlo en {{count}} minuto.',
     rateLimitedFor_other: 'Pediste demasiados códigos. Vuelve a intentarlo en {{count}} minutos.',
+    rateLimitedForHours_one: 'Hubo demasiados intentos con este email. Vuelve a intentarlo en {{count}} hora.',
+    rateLimitedForHours_other: 'Hubo demasiados intentos con este email. Vuelve a intentarlo en {{count}} horas.',
     offline: 'Sin conexión. Para entrar necesitas señal.',
     failed: 'Algo falló de nuestro lado. Inténtalo de nuevo.',
     googleFailed: 'No pudimos entrar con Google. Inténtalo otra vez o entra con tu email.',

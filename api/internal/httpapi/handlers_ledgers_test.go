@@ -78,7 +78,7 @@ func (w *world) signIn(name string) *person {
 	if err := w.auth.RequestCode(ctx, email, email); err != nil {
 		w.t.Fatal(err)
 	}
-	signIn, err := w.auth.VerifyCode(ctx, email, w.mail.lastCode(w.t, email), "test")
+	signIn, err := w.auth.VerifyCode(ctx, email, w.mail.lastCode(w.t, email), "test", email)
 	if err != nil {
 		w.t.Fatal(err)
 	}

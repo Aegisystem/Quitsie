@@ -37,7 +37,9 @@ export function SignIn({ notice }: { notice?: SignedOutNotice }) {
   const callFailed = (error: CallError) => {
     if (error.kind === 'offline') return t('signIn.offline')
     if (error.code === 'rate_limited') {
-      return error.retryAfter ? t('signIn.rateLimitedFor', { count: Math.ceil(error.retryAfter / 60) }) : t('signIn.rateLimited')
+      if (!error.retryAfter) return t('signIn.rateLimited')
+      if (error.retryAfter > 3600) return t('signIn.rateLimitedForHours', { count: Math.ceil(error.retryAfter / 3600) })
+      return t('signIn.rateLimitedFor', { count: Math.ceil(error.retryAfter / 60) })
     }
     if (error.code === 'validation_failed') return t('signIn.invalidEmail')
     return t('signIn.failed')
