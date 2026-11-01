@@ -1043,7 +1043,9 @@ paths:
         where the User has an active Member, plus whole ledgers the User
         joined or claimed since then even if their changes are older. With
         `since=0` it returns everything, as on the first sign-in on a device.
-        Keep calling with the returned `cursor` while `hasMore` is true.
+        A response stops after about 20,000 rows: keep calling with the
+        returned `cursor` while `hasMore` is true. When too many pulls run at
+        once it answers 429 (`rate_limited`), and the client tries again.
       tags: [sync]
       parameters:
         - name: since
@@ -1233,6 +1235,7 @@ components:
         - already_member
         - friendship_exists
         - name_required
+        - limit_reached
         - body_too_large
         - cursor_invalid
         - internal_error
@@ -1535,7 +1538,6 @@ components:
           type: string
         email:
           type: string
-          format: email
           description: Only for pending Members, the email given when adding them.
         status:
           $ref: "#/components/schemas/MemberStatus"
@@ -1934,13 +1936,14 @@ components:
             the Group currency changed. `invalid_participants`: someone is
             not an active Member. `invalid_amounts`: an amount is out of range
             or the shares do not add up to the total. `id_conflict`: the id belongs to another record.
-            `invalid_record`: any other rule of the contract.
+            `limit_reached`: the ledger is full. `invalid_record`: any other rule of the contract.
           enum:
             - ledger_unavailable
             - currency_mismatch
             - invalid_participants
             - invalid_amounts
             - id_conflict
+            - limit_reached
             - invalid_record
         detail:
           type: string

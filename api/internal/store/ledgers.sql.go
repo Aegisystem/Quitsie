@@ -10,6 +10,24 @@ import (
 	"time"
 )
 
+const countLedgerRows = `-- name: CountLedgerRows :one
+SELECT CAST(
+    (SELECT count(*) FROM expenses WHERE expenses.ledger_id = ?1)
+    + (SELECT count(*) FROM settlements WHERE settlements.ledger_id = ?1)
+    + (SELECT count(*) FROM activities WHERE activities.ledger_id = ?1)
+    + (SELECT count(*) FROM paid_shares JOIN expenses ON expenses.id = paid_shares.expense_id WHERE expenses.ledger_id = ?1)
+    + (SELECT count(*) FROM owed_shares JOIN expenses ON expenses.id = owed_shares.expense_id WHERE expenses.ledger_id = ?1)
+AS BIGINT) AS row_count
+`
+
+// What a ledger weighs in a pull: its records, their shares and its Activities.
+func (q *Queries) CountLedgerRows(ctx context.Context, ledgerID string) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countLedgerRows, ledgerID)
+	var row_count int64
+	err := row.Scan(&row_count)
+	return row_count, err
+}
+
 const createLedger = `-- name: CreateLedger :exec
 INSERT INTO ledgers (id, kind, name, currency, simplify_debts, version, created_at)
 VALUES (?, ?, ?, ?, ?, ?, ?)

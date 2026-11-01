@@ -13,10 +13,17 @@ import (
 	"github.com/Aegisystem/Quitsie/api/internal/store"
 )
 
+// maxRowsPerPull is about how many rows one pull brings; HasMore says to come
+// back for the rest. Memory and CPU per request stay bounded however much a
+// User can see. A bit over 20,000 rows is a few MB of JSON.
+const maxRowsPerPull = 20_000
+
 // Changes is what a device applies to its replica to catch up from a cursor.
 type Changes struct {
 	// Cursor is the since of the next pull.
-	Cursor      int64
+	Cursor int64
+	// HasMore says to pull again right away, from Cursor.
+	HasMore     bool
 	Ledgers     []store.Ledger
 	Members     []store.Member
 	Expenses    []store.ExpenseWithShares
@@ -65,7 +72,7 @@ var ErrCursorAhead = errors.New("the cursor is ahead of the server")
 func Pull(ctx context.Context, db *sql.DB, userID string, since int64) (Changes, error) {
 	var out Changes
 	err := store.Read(ctx, db, func(q *store.Queries) error {
-		c, err := q.ChangesSince(ctx, userID, since)
+		c, err := q.ChangesSince(ctx, userID, since, maxRowsPerPull)
 		if err != nil {
 			return err
 		}
@@ -111,6 +118,7 @@ func withoutDropped(c store.Changes) Changes {
 
 	out := Changes{
 		Cursor:      c.Cursor,
+		HasMore:     c.HasMore,
 		Ledgers:     slices.DeleteFunc(c.Ledgers, func(l store.Ledger) bool { return gone(l.ID) }),
 		Members:     slices.DeleteFunc(c.Members, func(m store.Member) bool { return gone(m.LedgerID) }),
 		Expenses:    slices.DeleteFunc(c.Expenses, func(e store.ExpenseWithShares) bool { return gone(e.LedgerID) }),

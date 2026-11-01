@@ -12,6 +12,12 @@ const (
 	sendWindow      = time.Hour
 	maxSendsPerMail = 5
 	maxSendsPerIP   = 30
+	// maxVerificationsPerIP stops one sender from spreading guesses over many
+	// emails. It allows two tries per code of maxSendsPerIP.
+	maxVerificationsPerIP = 60
+	// maxLimiterKeys bounds the memory of a limiter to some 80 MB. Reaching it
+	// takes tens of thousands of addresses within an hour.
+	maxLimiterKeys = 100_000
 )
 
 // limiter counts events per key over a sliding window. It lives in memory,
@@ -19,12 +25,13 @@ const (
 type limiter struct {
 	mu        sync.Mutex
 	window    time.Duration
+	maxKeys   int
 	hits      map[string][]time.Time
 	lastSweep time.Time
 }
 
 func newLimiter(window time.Duration) *limiter {
-	return &limiter{window: window, hits: make(map[string][]time.Time)}
+	return &limiter{window: window, maxKeys: maxLimiterKeys, hits: make(map[string][]time.Time)}
 }
 
 type quota struct {
@@ -42,9 +49,7 @@ func (l *limiter) allow(now time.Time, quotas ...quota) (ok bool, retryAfter tim
 
 	since := now.Add(-l.window)
 	for _, q := range quotas {
-		hits := recent(l.hits[q.key], since)
-		l.hits[q.key] = hits
-		if len(hits) >= q.max {
+		if hits := recent(l.hits[q.key], since); len(hits) >= q.max {
 			// The key has room once the event that filled it leaves the window.
 			retryAfter = max(retryAfter, hits[len(hits)-q.max].Add(l.window).Sub(now))
 		}
@@ -53,9 +58,27 @@ func (l *limiter) allow(now time.Time, quotas ...quota) (ok bool, retryAfter tim
 		return false, retryAfter
 	}
 	for _, q := range quotas {
-		l.hits[q.key] = append(l.hits[q.key], now)
+		hits, known := l.hits[q.key]
+		if !known {
+			l.makeRoom()
+		}
+		l.hits[q.key] = append(recent(hits, since), now)
 	}
 	return true, 0
+}
+
+// makeRoom forgets one key if there are maxKeys already, which means an attack
+// from many places. Whichever key Go's map order picks starts over: the limit
+// gets looser for a few, the memory stays where it was, and nobody is refused
+// who did not earn it.
+func (l *limiter) makeRoom() {
+	if len(l.hits) < l.maxKeys {
+		return
+	}
+	for key := range l.hits {
+		delete(l.hits, key)
+		return
+	}
 }
 
 // sweep drops keys with no recent events, at most once per window, so the

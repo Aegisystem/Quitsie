@@ -24,6 +24,9 @@ UMask=0077
 # other local proxy could forward forged ones (api/internal/httpapi/limits.go).
 Environment=QUITSIE_ADDR=127.0.0.1:8080
 Environment=QUITSIE_DB_PATH=/var/lib/quitsie/quitsie.db
+# The VM has 1 GB. Past this the garbage collector works harder instead of
+# letting the kernel kill the process, which would forget the limits in memory.
+Environment=GOMEMLIMIT=700MiB
 # The app's configuration and secrets live only on the VM. The server does not
 # start until the required ones are filled in (quitsie.env.example lists them).
 EnvironmentFile=/etc/quitsie/quitsie.env

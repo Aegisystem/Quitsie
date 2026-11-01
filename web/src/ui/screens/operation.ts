@@ -13,6 +13,7 @@ export function problemText(t: TFunction, error: CallError, worded: Partial<Reco
   if (error.code === 'validation_failed') return t('problems.invalid')
   if (error.code === 'rate_limited') return t('problems.rateLimited')
   if (error.code === 'name_required') return t('problems.nameRequired')
+  if (error.code === 'limit_reached') return t('problems.limitReached')
   if (error.status === 404) return t('problems.gone')
   return t('problems.failed')
 }

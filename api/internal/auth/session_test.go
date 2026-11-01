@@ -155,7 +155,7 @@ func (f *fixture) signInOn(t *testing.T, email, device string) auth.SignIn {
 	if err := f.svc.RequestCode(ctx, email, anaIP); err != nil {
 		t.Fatal(err)
 	}
-	signIn, err := f.svc.VerifyCode(ctx, email, f.mail.lastCode(t, email), device)
+	signIn, err := f.svc.VerifyCode(ctx, email, f.mail.lastCode(t, email), device, anaIP)
 	if err != nil {
 		t.Fatal(err)
 	}

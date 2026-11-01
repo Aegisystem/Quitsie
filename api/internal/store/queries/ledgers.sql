@@ -6,6 +6,16 @@ VALUES (?, ?, ?, ?, ?, ?, ?);
 SELECT * FROM ledgers
 WHERE id = ?;
 
+-- name: CountLedgerRows :one
+-- What a ledger weighs in a pull: its records, their shares and its Activities.
+SELECT CAST(
+    (SELECT count(*) FROM expenses WHERE expenses.ledger_id = sqlc.arg(ledger_id))
+    + (SELECT count(*) FROM settlements WHERE settlements.ledger_id = sqlc.arg(ledger_id))
+    + (SELECT count(*) FROM activities WHERE activities.ledger_id = sqlc.arg(ledger_id))
+    + (SELECT count(*) FROM paid_shares JOIN expenses ON expenses.id = paid_shares.expense_id WHERE expenses.ledger_id = sqlc.arg(ledger_id))
+    + (SELECT count(*) FROM owed_shares JOIN expenses ON expenses.id = owed_shares.expense_id WHERE expenses.ledger_id = sqlc.arg(ledger_id))
+AS BIGINT) AS row_count;
+
 -- name: UpdateLedger :one
 UPDATE ledgers
 SET name = ?, simplify_debts = ?, version = ?

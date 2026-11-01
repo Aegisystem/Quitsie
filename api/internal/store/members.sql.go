@@ -336,7 +336,7 @@ func (q *Queries) UnclaimMember(ctx context.Context, arg UnclaimMemberParams) (M
 
 const unlinkMembersOfUser = `-- name: UnlinkMembersOfUser :exec
 UPDATE members
-SET user_id = NULL, version = ?1
+SET user_id = NULL, email = NULL, version = ?1
 WHERE user_id = CAST(?2 AS TEXT)
 `
 
@@ -346,7 +346,8 @@ type UnlinkMembersOfUserParams struct {
 }
 
 // When a User deletes their account, their Members and Friends are pending
-// again, so nobody else's Balance changes.
+// again, so nobody else's Balance changes. Only the name stays: as pending, the
+// Member would show again the email it was added with.
 func (q *Queries) UnlinkMembersOfUser(ctx context.Context, arg UnlinkMembersOfUserParams) error {
 	_, err := q.db.ExecContext(ctx, unlinkMembersOfUser, arg.Version, arg.UserID)
 	return err

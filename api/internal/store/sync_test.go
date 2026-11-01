@@ -145,6 +145,92 @@ func TestChangesBringTheWholeLedgerTheUserJustJoined(t *testing.T) {
 	assertIDs(t, "Activities", activityIDs(c), "activity-1")
 }
 
+// page reads one pull of at most about maxRows rows.
+func page(t *testing.T, db *sql.DB, userID string, since, maxRows int64) store.Changes {
+	t.Helper()
+	var c store.Changes
+	err := store.Read(context.Background(), db, func(q *store.Queries) (err error) {
+		c, err = q.ChangesSince(context.Background(), userID, since, maxRows)
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return c
+}
+
+func TestAPullInPagesBringsTheSameAsOneInOneGo(t *testing.T) {
+	db := openMigrated(t)
+	seedBusyGroup(t, db)
+	createDinner(t, db, "expense-2")
+	createDinner(t, db, "expense-3")
+	whole := changesSince(t, db, "ana", 0)
+
+	var all store.Changes
+	since, pages := int64(0), 0
+	for {
+		c := page(t, db, "ana", since, 1)
+		pages++
+		if c.Cursor <= since && c.HasMore {
+			t.Fatalf("page %d: cursor %d does not move on from %d", pages, c.Cursor, since)
+		}
+		all.Ledgers = append(all.Ledgers, c.Ledgers...)
+		all.Members = append(all.Members, c.Members...)
+		all.Expenses = append(all.Expenses, c.Expenses...)
+		all.Settlements = append(all.Settlements, c.Settlements...)
+		all.Activities = append(all.Activities, c.Activities...)
+		since = c.Cursor
+		if !c.HasMore {
+			break
+		}
+	}
+
+	if pages < 2 {
+		t.Errorf("%d pages, want the pull to be cut", pages)
+	}
+	if since != whole.Cursor {
+		t.Errorf("last cursor = %d, want %d", since, whole.Cursor)
+	}
+	assertIDs(t, "Ledgers", ledgerIDs(all), ledgerIDs(whole)...)
+	assertIDs(t, "Members", memberIDs(all), memberIDs(whole)...)
+	assertIDs(t, "Expenses", expenseIDs(all), expenseIDs(whole)...)
+	assertIDs(t, "Settlements", settlementIDs(all), settlementIDs(whole)...)
+	assertIDs(t, "Activities", activityIDs(all), activityIDs(whole)...)
+}
+
+func TestAPullThatFitsDoesNotAskForMore(t *testing.T) {
+	db := openMigrated(t)
+	seedBusyGroup(t, db)
+
+	c := page(t, db, "ana", 0, 1000)
+
+	if c.HasMore {
+		t.Errorf("HasMore = true, want false")
+	}
+}
+
+// The rows of a ledger the User just joined are older than the cursor, so they
+// have to come with the page of the joining, or no later page would bring them.
+func TestAJoinedLedgerArrivesWholeWhateverThePageSize(t *testing.T) {
+	ctx := context.Background()
+	db := openMigrated(t)
+	seedBusyGroup(t, db)
+	cursor := write(t, db, func(q *store.Queries, version int64) error {
+		return q.CreateMember(ctx, newMember("member-pending", "ledger-1", nil, version))
+	})
+	write(t, db, func(q *store.Queries, version int64) error {
+		_, err := q.ClaimMember(ctx, store.ClaimMemberParams{ID: "member-pending", UserID: "carla", Version: version})
+		return err
+	})
+
+	c := page(t, db, "carla", cursor, 1)
+
+	assertIDs(t, "Expenses", expenseIDs(c), "expense-1")
+	assertIDs(t, "Settlements", settlementIDs(c), "settlement-1")
+	assertIDs(t, "Activities", activityIDs(c), "activity-1")
+	assertIDs(t, "Members", memberIDs(c), "member-ana", "member-beto", "member-pending")
+}
+
 func TestChangesTellTheUserToDropALedgerTheyLeft(t *testing.T) {
 	ctx := context.Background()
 	db := openMigrated(t)

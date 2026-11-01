@@ -14,17 +14,19 @@ SELECT activities.id, activities.ledger_id, activities.user_id, activities.kind,
 JOIN members me ON me.ledger_id = activities.ledger_id
 WHERE me.user_id = CAST(?1 AS TEXT) AND me.status = 'active'
   AND (activities.version > ?2 OR me.version > ?2)
+  AND activities.version <= ?3 AND me.version <= ?3
 ORDER BY activities.version, activities.id
 `
 
 type ChangedActivitiesParams struct {
 	UserID string
 	Since  int64
+	Upto   int64
 }
 
 // See ChangedLedgers.
 func (q *Queries) ChangedActivities(ctx context.Context, arg ChangedActivitiesParams) ([]Activity, error) {
-	rows, err := q.db.QueryContext(ctx, changedActivities, arg.UserID, arg.Since)
+	rows, err := q.db.QueryContext(ctx, changedActivities, arg.UserID, arg.Since, arg.Upto)
 	if err != nil {
 		return nil, err
 	}
@@ -59,17 +61,19 @@ SELECT expenses.id, expenses.ledger_id, expenses.description, expenses.date, exp
 JOIN members me ON me.ledger_id = expenses.ledger_id
 WHERE me.user_id = CAST(?1 AS TEXT) AND me.status = 'active'
   AND (expenses.version > ?2 OR me.version > ?2)
+  AND expenses.version <= ?3 AND me.version <= ?3
 ORDER BY expenses.version, expenses.id
 `
 
 type ChangedExpensesParams struct {
 	UserID string
 	Since  int64
+	Upto   int64
 }
 
 // See ChangedLedgers.
 func (q *Queries) ChangedExpenses(ctx context.Context, arg ChangedExpensesParams) ([]Expense, error) {
-	rows, err := q.db.QueryContext(ctx, changedExpenses, arg.UserID, arg.Since)
+	rows, err := q.db.QueryContext(ctx, changedExpenses, arg.UserID, arg.Since, arg.Upto)
 	if err != nil {
 		return nil, err
 	}
@@ -109,20 +113,23 @@ SELECT ledgers.id, ledgers.kind, ledgers.name, ledgers.currency, ledgers.simplif
 JOIN members me ON me.ledger_id = ledgers.id
 WHERE me.user_id = CAST(?1 AS TEXT) AND me.status = 'active'
   AND (ledgers.version > ?2 OR me.version > ?2)
+  AND ledgers.version <= ?3 AND me.version <= ?3
 ORDER BY ledgers.version, ledgers.id
 `
 
 type ChangedLedgersParams struct {
 	UserID string
 	Since  int64
+	Upto   int64
 }
 
 // Use ChangesSince. Like every Changed* query, it returns, from the ledgers
 // where the User has an active Member, the rows with a version above the
 // cursor, and every row of a ledger where that Member itself changed above
 // the cursor: that is how the User gets the whole ledger right after joining.
+// It stops at upto, which PullPageEnd gives.
 func (q *Queries) ChangedLedgers(ctx context.Context, arg ChangedLedgersParams) ([]Ledger, error) {
-	rows, err := q.db.QueryContext(ctx, changedLedgers, arg.UserID, arg.Since)
+	rows, err := q.db.QueryContext(ctx, changedLedgers, arg.UserID, arg.Since, arg.Upto)
 	if err != nil {
 		return nil, err
 	}
@@ -159,17 +166,19 @@ SELECT members.id, members.ledger_id, members.user_id, members.name, members.ema
 JOIN members me ON me.ledger_id = members.ledger_id
 WHERE me.user_id = CAST(?1 AS TEXT) AND me.status = 'active'
   AND (members.version > ?2 OR me.version > ?2)
+  AND members.version <= ?3 AND me.version <= ?3
 ORDER BY members.version, members.id
 `
 
 type ChangedMembersParams struct {
 	UserID string
 	Since  int64
+	Upto   int64
 }
 
 // See ChangedLedgers.
 func (q *Queries) ChangedMembers(ctx context.Context, arg ChangedMembersParams) ([]Member, error) {
-	rows, err := q.db.QueryContext(ctx, changedMembers, arg.UserID, arg.Since)
+	rows, err := q.db.QueryContext(ctx, changedMembers, arg.UserID, arg.Since, arg.Upto)
 	if err != nil {
 		return nil, err
 	}
@@ -206,17 +215,19 @@ JOIN expenses ON expenses.id = owed_shares.expense_id
 JOIN members me ON me.ledger_id = expenses.ledger_id
 WHERE me.user_id = CAST(?1 AS TEXT) AND me.status = 'active'
   AND (expenses.version > ?2 OR me.version > ?2)
+  AND expenses.version <= ?3 AND me.version <= ?3
 ORDER BY owed_shares.expense_id, owed_shares.member_id
 `
 
 type ChangedOwedSharesParams struct {
 	UserID string
 	Since  int64
+	Upto   int64
 }
 
 // The shares of the Expenses in ChangedExpenses; see ChangedLedgers.
 func (q *Queries) ChangedOwedShares(ctx context.Context, arg ChangedOwedSharesParams) ([]OwedShare, error) {
-	rows, err := q.db.QueryContext(ctx, changedOwedShares, arg.UserID, arg.Since)
+	rows, err := q.db.QueryContext(ctx, changedOwedShares, arg.UserID, arg.Since, arg.Upto)
 	if err != nil {
 		return nil, err
 	}
@@ -249,17 +260,19 @@ JOIN expenses ON expenses.id = paid_shares.expense_id
 JOIN members me ON me.ledger_id = expenses.ledger_id
 WHERE me.user_id = CAST(?1 AS TEXT) AND me.status = 'active'
   AND (expenses.version > ?2 OR me.version > ?2)
+  AND expenses.version <= ?3 AND me.version <= ?3
 ORDER BY paid_shares.expense_id, paid_shares.member_id
 `
 
 type ChangedPaidSharesParams struct {
 	UserID string
 	Since  int64
+	Upto   int64
 }
 
 // The shares of the Expenses in ChangedExpenses; see ChangedLedgers.
 func (q *Queries) ChangedPaidShares(ctx context.Context, arg ChangedPaidSharesParams) ([]PaidShare, error) {
-	rows, err := q.db.QueryContext(ctx, changedPaidShares, arg.UserID, arg.Since)
+	rows, err := q.db.QueryContext(ctx, changedPaidShares, arg.UserID, arg.Since, arg.Upto)
 	if err != nil {
 		return nil, err
 	}
@@ -286,17 +299,19 @@ SELECT settlements.id, settlements.ledger_id, settlements.from_member_id, settle
 JOIN members me ON me.ledger_id = settlements.ledger_id
 WHERE me.user_id = CAST(?1 AS TEXT) AND me.status = 'active'
   AND (settlements.version > ?2 OR me.version > ?2)
+  AND settlements.version <= ?3 AND me.version <= ?3
 ORDER BY settlements.version, settlements.id
 `
 
 type ChangedSettlementsParams struct {
 	UserID string
 	Since  int64
+	Upto   int64
 }
 
 // See ChangedLedgers.
 func (q *Queries) ChangedSettlements(ctx context.Context, arg ChangedSettlementsParams) ([]Settlement, error) {
-	rows, err := q.db.QueryContext(ctx, changedSettlements, arg.UserID, arg.Since)
+	rows, err := q.db.QueryContext(ctx, changedSettlements, arg.UserID, arg.Since, arg.Upto)
 	if err != nil {
 		return nil, err
 	}
@@ -365,6 +380,74 @@ func (q *Queries) DroppedLedgers(ctx context.Context, arg DroppedLedgersParams) 
 		return nil, err
 	}
 	return items, nil
+}
+
+const pullPageEnd = `-- name: PullPageEnd :one
+SELECT CAST(pending.version AS BIGINT) FROM (
+    SELECT CASE WHEN ledgers.version > me.version THEN ledgers.version ELSE me.version END AS version
+    FROM ledgers
+    JOIN members me ON me.ledger_id = ledgers.id
+    WHERE me.user_id = CAST(?1 AS TEXT) AND me.status = 'active'
+      AND (ledgers.version > ?2 OR me.version > ?2)
+    UNION ALL
+    SELECT CASE WHEN members.version > me.version THEN members.version ELSE me.version END
+    FROM members
+    JOIN members me ON me.ledger_id = members.ledger_id
+    WHERE me.user_id = CAST(?1 AS TEXT) AND me.status = 'active'
+      AND (members.version > ?2 OR me.version > ?2)
+    UNION ALL
+    SELECT CASE WHEN expenses.version > me.version THEN expenses.version ELSE me.version END
+    FROM expenses
+    JOIN members me ON me.ledger_id = expenses.ledger_id
+    WHERE me.user_id = CAST(?1 AS TEXT) AND me.status = 'active'
+      AND (expenses.version > ?2 OR me.version > ?2)
+    UNION ALL
+    SELECT CASE WHEN expenses.version > me.version THEN expenses.version ELSE me.version END
+    FROM paid_shares
+    JOIN expenses ON expenses.id = paid_shares.expense_id
+    JOIN members me ON me.ledger_id = expenses.ledger_id
+    WHERE me.user_id = CAST(?1 AS TEXT) AND me.status = 'active'
+      AND (expenses.version > ?2 OR me.version > ?2)
+    UNION ALL
+    SELECT CASE WHEN expenses.version > me.version THEN expenses.version ELSE me.version END
+    FROM owed_shares
+    JOIN expenses ON expenses.id = owed_shares.expense_id
+    JOIN members me ON me.ledger_id = expenses.ledger_id
+    WHERE me.user_id = CAST(?1 AS TEXT) AND me.status = 'active'
+      AND (expenses.version > ?2 OR me.version > ?2)
+    UNION ALL
+    SELECT CASE WHEN settlements.version > me.version THEN settlements.version ELSE me.version END
+    FROM settlements
+    JOIN members me ON me.ledger_id = settlements.ledger_id
+    WHERE me.user_id = CAST(?1 AS TEXT) AND me.status = 'active'
+      AND (settlements.version > ?2 OR me.version > ?2)
+    UNION ALL
+    SELECT CASE WHEN activities.version > me.version THEN activities.version ELSE me.version END
+    FROM activities
+    JOIN members me ON me.ledger_id = activities.ledger_id
+    WHERE me.user_id = CAST(?1 AS TEXT) AND me.status = 'active'
+      AND (activities.version > ?2 OR me.version > ?2)
+) AS pending
+ORDER BY pending.version
+LIMIT 1 OFFSET ?3
+`
+
+type PullPageEndParams struct {
+	UserID  string
+	Since   int64
+	MaxRows int64
+}
+
+// The version where a pull of about max_rows rows stops, if it has to. A row
+// counts at its own version or at the one of the User's Member, whichever is
+// later: that is when the User got to see it. So the Changed* queries take every
+// row up to the version this returns, a page never splits a write, and the older
+// rows of a ledger come along with the page where the User joined it.
+func (q *Queries) PullPageEnd(ctx context.Context, arg PullPageEndParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, pullPageEnd, arg.UserID, arg.Since, arg.MaxRows)
+	var pending_version int64
+	err := row.Scan(&pending_version)
+	return pending_version, err
 }
 
 const removedFromLedgers = `-- name: RemovedFromLedgers :many

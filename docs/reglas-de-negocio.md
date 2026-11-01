@@ -34,6 +34,7 @@ Reglas acordadas durante el diseño. El vocabulario sigue [CONTEXT.md](../CONTEX
 - El nombre y el email de un Miembro pendiente se pueden editar.
 - Un Usuario ocupa como máximo un Miembro por Grupo.
 - Un Grupo solo se puede borrar cuando todos los Saldos están en cero.
+- Un Grupo admite 200 Miembros, contando a los Antiguos Miembros. Quien vuelve a un Grupo lleno recupera su Antiguo Miembro igualmente.
 - El último Miembro vinculado puede salir aunque queden Miembros pendientes: el Grupo sigue existiendo y su Enlace de invitación sigue sirviendo para Reclamarlos.
 
 ## Moneda del grupo
@@ -53,6 +54,9 @@ Reglas acordadas durante el diseño. El vocabulario sigue [CONTEXT.md](../CONTEX
 - Al borrar su cuenta, los Miembros y Amigos de un Usuario vuelven a quedar pendientes con su nombre, así que los Saldos de los demás no cambian. De la cuenta se borran el email y el nombre; solo queda el nombre guardado en cada Miembro.
 - Quien entra por primera vez con un código llega sin nombre; la aplicación le pide su nombre y su Moneda preferida, proponiendo la del idioma del navegador. Con Google, el nombre viene de la cuenta. Sin nombre no se pueden crear Grupos ni Amistades.
 - Pedir un código nuevo invalida el anterior.
+- Un email admite 10 códigos equivocados en 24 horas, sumando todos sus códigos. Al llegar a 10 no se aceptan ni se envían códigos a ese email hasta que pasen 24 horas desde el primer fallo. Google y las sesiones abiertas siguen funcionando.
+- El email de un Miembro pendiente o de un Amigo pendiente cumple la misma regla que el del inicio de sesión: una dirección simple de 254 caracteres como máximo.
+- Un Usuario puede estar en 200 Grupos y Amistades. Otra persona puede crear una Amistad con ese Usuario por encima de ese número.
 
 ## Gastos sin grupo y Amistades
 
@@ -68,6 +72,12 @@ Reglas acordadas durante el diseño. El vocabulario sigue [CONTEXT.md](../CONTEX
 - Se permiten Liquidaciones parciales.
 - Solo entre Miembros activos.
 - Se pueden borrar y restaurar, pero no editar: para corregir una, se borra y se crea otra. Una Liquidación con un Antiguo Miembro no se puede borrar ni restaurar.
+
+## Límites
+
+- Un libro guarda 200.000 filas como máximo, contando Gastos, Aportes, Cuotas, Liquidaciones y Actividades.
+- Un libro lleno solo admite borrar Gastos y Liquidaciones, salir, sacar a un Miembro, deshacer una Reclamación y borrar el Grupo. Un Registro sin sincronizar que no cabe queda como Registro rechazado.
+- Un Usuario puede enviar 5 MiB de cambios por hora. Leer, cerrar sesión y cerrar otras sesiones no cuentan.
 
 ## Presentación
 

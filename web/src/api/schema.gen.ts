@@ -560,7 +560,7 @@ export interface paths {
         };
         /**
          * Returns everything that changed since a cursor in the User's Groups and Friendships.
-         * @description Returns every row with a version greater than `since` in the ledgers where the User has an active Member, plus whole ledgers the User joined or claimed since then even if their changes are older. With `since=0` it returns everything, as on the first sign-in on a device. Keep calling with the returned `cursor` while `hasMore` is true.
+         * @description Returns every row with a version greater than `since` in the ledgers where the User has an active Member, plus whole ledgers the User joined or claimed since then even if their changes are older. With `since=0` it returns everything, as on the first sign-in on a device. A response stops after about 20,000 rows: keep calling with the returned `cursor` while `hasMore` is true. When too many pulls run at once it answers 429 (`rate_limited`), and the client tries again.
          */
         get: operations["pullChanges"];
         put?: never;
@@ -608,7 +608,7 @@ export interface components {
          * @description Stable machine-readable error code. New codes may be added; clients treat an unknown code as a generic error for its status.
          * @enum {string}
          */
-        ProblemCode: "validation_failed" | "unauthenticated" | "origin_mismatch" | "not_found" | "rate_limited" | "login_code_invalid" | "login_code_expired" | "too_many_attempts" | "invite_link_invalid" | "version_conflict" | "nonzero_balance" | "currency_mismatch" | "currency_precision_loss" | "invalid_amounts" | "invalid_participants" | "member_not_pending" | "member_not_claimed" | "already_member" | "friendship_exists" | "name_required" | "body_too_large" | "cursor_invalid" | "internal_error" | "not_implemented";
+        ProblemCode: "validation_failed" | "unauthenticated" | "origin_mismatch" | "not_found" | "rate_limited" | "login_code_invalid" | "login_code_expired" | "too_many_attempts" | "invite_link_invalid" | "version_conflict" | "nonzero_balance" | "currency_mismatch" | "currency_precision_loss" | "invalid_amounts" | "invalid_participants" | "member_not_pending" | "member_not_claimed" | "already_member" | "friendship_exists" | "name_required" | "limit_reached" | "body_too_large" | "cursor_invalid" | "internal_error" | "not_implemented";
         /** @description The `currency_precision_loss` problem, with the records the User must fix first. */
         CurrencyPrecisionProblem: components["schemas"]["Problem"] & {
             expenseIds: string[];
@@ -772,10 +772,7 @@ export interface components {
              */
             userId?: string;
             name: string;
-            /**
-             * Format: email
-             * @description Only for pending Members, the email given when adding them.
-             */
+            /** @description Only for pending Members, the email given when adding them. */
             email?: string;
             status: components["schemas"]["MemberStatus"];
             version: components["schemas"]["Version"];
@@ -986,10 +983,10 @@ export interface components {
             /** @enum {string} */
             status: "accepted" | "rejected";
             /**
-             * @description Only when rejected. `ledger_unavailable`: the ledger was deleted or the User is no longer an active Member. `currency_mismatch`: the Group currency changed. `invalid_participants`: someone is not an active Member. `invalid_amounts`: an amount is out of range or the shares do not add up to the total. `id_conflict`: the id belongs to another record. `invalid_record`: any other rule of the contract.
+             * @description Only when rejected. `ledger_unavailable`: the ledger was deleted or the User is no longer an active Member. `currency_mismatch`: the Group currency changed. `invalid_participants`: someone is not an active Member. `invalid_amounts`: an amount is out of range or the shares do not add up to the total. `id_conflict`: the id belongs to another record. `limit_reached`: the ledger is full. `invalid_record`: any other rule of the contract.
              * @enum {string}
              */
-            reason?: "ledger_unavailable" | "currency_mismatch" | "invalid_participants" | "invalid_amounts" | "id_conflict" | "invalid_record";
+            reason?: "ledger_unavailable" | "currency_mismatch" | "invalid_participants" | "invalid_amounts" | "id_conflict" | "limit_reached" | "invalid_record";
             /** @description Explanation of the rejection, for logs and debugging. */
             detail?: string;
             version?: components["schemas"]["Version"];

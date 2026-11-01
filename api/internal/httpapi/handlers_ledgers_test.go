@@ -19,6 +19,7 @@ import (
 
 	"github.com/Aegisystem/Quitsie/api/internal/auth"
 	"github.com/Aegisystem/Quitsie/api/internal/httpapi"
+	"github.com/Aegisystem/Quitsie/api/internal/invites"
 	"github.com/Aegisystem/Quitsie/api/internal/mail"
 	"github.com/Aegisystem/Quitsie/api/internal/store"
 )
@@ -78,7 +79,7 @@ func (w *world) signIn(name string) *person {
 	if err := w.auth.RequestCode(ctx, email, email); err != nil {
 		w.t.Fatal(err)
 	}
-	signIn, err := w.auth.VerifyCode(ctx, email, w.mail.lastCode(w.t, email), "test")
+	signIn, err := w.auth.VerifyCode(ctx, email, w.mail.lastCode(w.t, email), "test", email)
 	if err != nil {
 		w.t.Fatal(err)
 	}
@@ -148,6 +149,97 @@ func membersOf(c store.Changes, ledgerID string) []store.Member {
 		}
 	}
 	return members
+}
+
+// The decoder drops the quotes of an address such as "a b"@example.com, and
+// what is left cannot be written back in a response, so one such email would
+// break the pull of everyone in the Group.
+func TestAPendingEmailMustBeAPlainAddress(t *testing.T) {
+	w := newWorld(t)
+	ana := w.signIn("Ana")
+	groupID := ana.createGroup(`{"name":"Casa","currency":"COP","pendingMembers":[{"name":"Beto"}]}`)
+	const quoted = `"\"a b\"@example.com"`
+	tests := []struct{ name, method, target, body string }{
+		{"new pending Member", http.MethodPost, "/api/v1/groups/" + groupID + "/members", `{"name":"Carla","email":` + quoted + `}`},
+		{"edited pending Member", http.MethodPut, "/api/v1/groups/" + groupID + "/members/" + ana.memberID(groupID, "Beto"), `{"name":"Beto","email":` + quoted + `}`},
+		{"new Group", http.MethodPost, "/api/v1/groups", `{"name":"Otro","currency":"COP","pendingMembers":[{"name":"Carla","email":` + quoted + `}]}`},
+		{"pending Friend", http.MethodPost, "/api/v1/friendships", `{"name":"Carla","email":` + quoted + `}`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rec := ana.send(tt.method, tt.target, tt.body)
+
+			decodeProblem(t, rec, http.StatusBadRequest, httpapi.ProblemCodeValidationFailed)
+			if rec := ana.send(http.MethodGet, "/api/v1/sync?since=0", ""); rec.Code != http.StatusOK {
+				t.Errorf("pull: code = %d, want 200", rec.Code)
+			}
+		})
+	}
+}
+
+// Whatever got stored, one row must not take down everyone's pull.
+func TestAStoredEmailThatDoesNotParseStillReachesThePull(t *testing.T) {
+	w := newWorld(t)
+	ana := w.signIn("Ana")
+	ana.createGroup(`{"name":"Casa","currency":"COP","pendingMembers":[{"name":"Beto"}]}`)
+	if _, err := w.db.Exec(`UPDATE members SET email = 'a b@example.com' WHERE name = 'Beto'`); err != nil {
+		t.Fatal(err)
+	}
+
+	rec := ana.send(http.MethodGet, "/api/v1/sync?since=0", "")
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("pull: code = %d, want 200 (body %s)", rec.Code, rec.Body)
+	}
+	var changes httpapi.Changes
+	if err := json.Unmarshal(rec.Body.Bytes(), &changes); err != nil {
+		t.Fatal(err)
+	}
+	if len(changes.Members) != 2 {
+		t.Errorf("members = %+v, want Ana and Beto", changes.Members)
+	}
+}
+
+// Only the name stays. The email someone typed for this Member would otherwise
+// come back to the whole Group, now that the Member is pending again.
+func TestADeletedAccountLeavesNoEmailOnItsMembers(t *testing.T) {
+	w := newWorld(t)
+	ana, pepa := w.signIn("Ana"), w.signIn("Pepa")
+	groupID := ana.createGroup(`{"name":"Casa","currency":"COP","pendingMembers":[{"name":"Pepa","email":"` + pepa.email + `"}]}`)
+	memberID := ana.memberID(groupID, "Pepa")
+	if rec := pepa.claim(ana.groupLink(groupID), memberID); rec.Code != http.StatusOK {
+		t.Fatalf("claim: code = %d (body %s)", rec.Code, rec.Body)
+	}
+
+	if rec := pepa.send(http.MethodDelete, "/api/v1/me", ""); rec.Code != http.StatusNoContent {
+		t.Fatalf("delete account: code = %d", rec.Code)
+	}
+
+	m := ana.member(groupID, memberID)
+	if m.UserID != nil || m.Email != nil || m.Name != "Pepa" {
+		t.Errorf("member = %+v, want pending, named Pepa and with no email", m)
+	}
+}
+
+// A forged link is refused by what it costs to check it, whatever the ledger
+// holds: this ledger cannot even be loaded.
+func TestAForgedLinkDoesNotLoadTheLedger(t *testing.T) {
+	w := newWorld(t)
+	ana := w.signIn("Ana")
+	groupID := ana.createGroup(`{"name":"Casa","currency":"COP"}`)
+	me := ana.memberID(groupID, "Ana")
+	ana.expense(groupID, "COP", me, map[string]int64{me: 1000})
+	if _, err := w.db.Exec(`UPDATE expenses SET total = 'not a number'`); err != nil {
+		t.Fatal(err)
+	}
+	forged, err := invites.Token([]byte(strings.Repeat("f", invites.MinSecretLength)), groupID, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rec := w.anonymous().send(http.MethodGet, "/api/v1/invites/"+forged, "")
+
+	decodeProblem(t, rec, http.StatusNotFound, httpapi.ProblemCodeInviteLinkInvalid)
 }
 
 // outbox is a mail.Sender that keeps the emails instead of sending them.

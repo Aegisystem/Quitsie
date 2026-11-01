@@ -223,6 +223,8 @@ func recordFailure(err error) (p Problem, ok bool) {
 			return recordProblem(http.StatusConflict, ProblemCodeInvalidParticipants, "Someone cannot take part in this record.", detail), true
 		case sync.ReasonInvalidAmounts:
 			return recordProblem(http.StatusBadRequest, ProblemCodeInvalidAmounts, "The amounts are not valid.", detail), true
+		case sync.ReasonLimitReached:
+			return recordProblem(http.StatusConflict, ProblemCodeLimitReached, "The ledger is full.", detail), true
 		default:
 			return recordProblem(http.StatusBadRequest, ProblemCodeValidationFailed, "The request does not match the API contract.", detail), true
 		}
@@ -256,6 +258,7 @@ func (s *Server) PullChanges(ctx context.Context, req PullChangesRequestObject) 
 func pulledChanges(c sync.Changes) (Changes, error) {
 	out := Changes{
 		Cursor:           c.Cursor,
+		HasMore:          c.HasMore,
 		Groups:           []Group{},
 		Friendships:      []Friendship{},
 		Members:          make([]Member, len(c.Members)),
@@ -320,7 +323,7 @@ func pulledMember(m store.Member) Member {
 	}
 	// Only a pending Member shows the email given when adding them; a linked
 	// User's is private.
-	out.Email = (*openapi_types.Email)(m.Email)
+	out.Email = m.Email
 	return out
 }
 
