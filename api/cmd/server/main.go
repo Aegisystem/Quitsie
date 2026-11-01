@@ -149,11 +149,11 @@ type config struct {
 	// come from one of them.
 	origins []string
 	// logMail writes emails to the log instead of sending them with resend.
-	logMail         bool
-	resend          mail.ResendConfig
+	logMail bool
+	resend  mail.ResendConfig
 	// mailPerHour and mailPerDay are the budget of login-code emails.
-	mailPerHour int
-	mailPerDay  int
+	mailPerHour     int
+	mailPerDay      int
 	google          *auth.GoogleConfig
 	defaultCurrency string
 	inviteSecret    []byte
