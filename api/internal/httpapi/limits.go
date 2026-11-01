@@ -5,8 +5,10 @@ import (
 	"net/http"
 	"net/netip"
 	"strconv"
+	"strings"
 	"time"
 
+	"github.com/Aegisystem/Quitsie/api/internal/auth"
 	"github.com/Aegisystem/Quitsie/api/internal/ratelimit"
 )
 
@@ -28,6 +30,11 @@ const (
 	// maxTrackedClients bounds the memory of that limit to some 15 MB. Reaching
 	// it takes that many addresses within one minute.
 	maxTrackedClients = 100_000
+
+	// writeKiBPerHour is how much a User can send in changes. It lets through
+	// five of the largest batches at once and a steady trickle after that, and
+	// it is what keeps one account from filling the disk.
+	writeKiBPerHour = 5 << 10
 )
 
 // limitBody stops reading a request at limit bytes. Decoding the body then
@@ -43,22 +50,59 @@ func limitBody(limit int64, next http.Handler) http.Handler {
 // requestsPerMinute, before the request costs anything else. Everything it
 // wraps counts against the same limit.
 func (s *Server) requestLimit() func(http.Handler) http.Handler {
-	now := s.deps.Now
-	if now == nil {
-		now = time.Now
-	}
-	limiter := ratelimit.New(requestsPerMinute, maxTrackedClients, now)
+	limiter := ratelimit.New(requestsPerMinute, time.Minute, maxTrackedClients, s.clock())
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			ok, retryAfter := limiter.Allow(clientIP(r))
-			if !ok {
-				w.Header().Set("Retry-After", strconv.Itoa(int(math.Ceil(retryAfter.Seconds()))))
-				writeProblem(w, http.StatusTooManyRequests, ProblemCodeRateLimited, "Too many requests.", "")
+			if ok, retryAfter := limiter.Allow(clientIP(r)); !ok {
+				tooMany(w, retryAfter, "Too many requests.")
 				return
 			}
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+// writeBudget answers 429 to a User who sent writeKiBPerHour in changes. It only
+// charges what gets stored: not reads, not whoever has no session, and not
+// /auth/, so that signing out or closing a stolen session always works. It needs
+// Authenticate to have run.
+func (s *Server) writeBudget(next http.Handler) http.Handler {
+	limiter := ratelimit.New(writeKiBPerHour, time.Hour, maxTrackedClients, s.clock())
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		user, signedIn := auth.CurrentUser(r.Context())
+		if !signedIn || r.Method == http.MethodGet || r.Method == http.MethodHead || strings.HasPrefix(r.URL.Path, "/api/v1/auth/") {
+			next.ServeHTTP(w, r)
+			return
+		}
+		if ok, retryAfter := limiter.AllowN(user.ID, costInKiB(r)); !ok {
+			tooMany(w, retryAfter, "Too many changes.")
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// costInKiB is what a request spends of writeKiBPerHour. Even an empty one
+// leaves a row behind, and a body of unknown length may be the largest there is.
+func costInKiB(r *http.Request) int {
+	size := r.ContentLength
+	if size < 0 {
+		size = maxBodyBytes
+	}
+	return 1 + int(size>>10)
+}
+
+func tooMany(w http.ResponseWriter, retryAfter time.Duration, title string) {
+	w.Header().Set("Retry-After", strconv.Itoa(int(math.Ceil(retryAfter.Seconds()))))
+	writeProblem(w, http.StatusTooManyRequests, ProblemCodeRateLimited, title, "")
+}
+
+// clock is the time source of the limits.
+func (s *Server) clock() func() time.Time {
+	if s.deps.Now != nil {
+		return s.deps.Now
+	}
+	return time.Now
 }
 
 // clientIP is who a request counts as for the limits per IP.

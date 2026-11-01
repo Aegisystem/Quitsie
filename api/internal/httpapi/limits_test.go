@@ -115,6 +115,36 @@ func TestSigningInOnlyTakesASmallBody(t *testing.T) {
 	wantStatus(t, c.do(http.MethodPost, "/api/v1/auth/login-code", `{"email":"`+longest+`"}`), http.StatusNoContent)
 }
 
+// The limit per IP counts requests, and each can weigh 2 MiB.
+func TestAUserCanOnlySendSoMuchPerHour(t *testing.T) {
+	w := newWorld(t)
+	ana, beto := w.signIn("Ana"), w.signIn("Beto")
+	// Its name is too long, so each one costs its size and stores nothing.
+	mebibyte := `{"name":"` + strings.Repeat("x", 1<<20-100) + `","currency":"COP"}`
+	for i := range 5 {
+		if rec := ana.send(http.MethodPost, "/api/v1/groups", mebibyte); rec.Code != http.StatusBadRequest {
+			t.Fatalf("request %d: code = %d, want 400", i+1, rec.Code)
+		}
+	}
+
+	rec := ana.send(http.MethodPost, "/api/v1/groups", mebibyte)
+
+	if got := rec.Header().Get("Retry-After"); got == "" {
+		t.Error("Retry-After is missing")
+	}
+	decodeProblem(t, rec, http.StatusTooManyRequests, httpapi.ProblemCodeRateLimited)
+	if rec := ana.send(http.MethodGet, "/api/v1/me", ""); rec.Code != http.StatusOK {
+		t.Errorf("reading: code = %d, want 200", rec.Code)
+	}
+	if rec := beto.send(http.MethodPost, "/api/v1/groups", `{"name":"Casa","currency":"COP"}`); rec.Code != http.StatusCreated {
+		t.Errorf("another User: code = %d, want 201", rec.Code)
+	}
+	// Whatever else happens, nobody is kept from signing out.
+	if rec := ana.send(http.MethodPost, "/api/v1/auth/logout", ""); rec.Code != http.StatusNoContent {
+		t.Errorf("signing out: code = %d, want 204", rec.Code)
+	}
+}
+
 // limited is a server with a clock the test moves.
 func limited(t *testing.T) (http.Handler, *clock) {
 	t.Helper()

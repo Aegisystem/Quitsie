@@ -29,7 +29,7 @@ func spend(t *testing.T, l *ratelimit.Limiter, key string, n int) {
 
 func TestAKeyGetsAMinuteOfEventsAtOnceAndThenOneAtATime(t *testing.T) {
 	c := newClock()
-	l := ratelimit.New(60, 100, c.Now)
+	l := ratelimit.New(60, time.Minute, 100, c.Now)
 	spend(t, l, "a", 60)
 
 	ok, retryAfter := l.Allow("a")
@@ -46,9 +46,29 @@ func TestAKeyGetsAMinuteOfEventsAtOnceAndThenOneAtATime(t *testing.T) {
 	}
 }
 
+func TestAnEventCanCostSeveral(t *testing.T) {
+	c := newClock()
+	l := ratelimit.New(60, time.Hour, 100, c.Now)
+	if ok, _ := l.AllowN("a", 59); !ok {
+		t.Fatal("59 of 60 were refused")
+	}
+
+	ok, retryAfter := l.AllowN("a", 2)
+
+	if ok || retryAfter != time.Minute {
+		t.Errorf("2 more: ok = %v, retryAfter = %v, want refused for a minute, the time one takes to come back", ok, retryAfter)
+	}
+
+	c.Advance(time.Minute)
+
+	if ok, _ := l.AllowN("a", 2); !ok {
+		t.Error("2 more after a minute were refused")
+	}
+}
+
 func TestARefusedEventCostsNothing(t *testing.T) {
 	c := newClock()
-	l := ratelimit.New(60, 100, c.Now)
+	l := ratelimit.New(60, time.Minute, 100, c.Now)
 	spend(t, l, "a", 60)
 	for range 1000 {
 		l.Allow("a")
@@ -61,7 +81,7 @@ func TestARefusedEventCostsNothing(t *testing.T) {
 
 func TestKeysCountApart(t *testing.T) {
 	c := newClock()
-	l := ratelimit.New(60, 100, c.Now)
+	l := ratelimit.New(60, time.Minute, 100, c.Now)
 	spend(t, l, "a", 60)
 
 	spend(t, l, "b", 60)
@@ -69,7 +89,7 @@ func TestKeysCountApart(t *testing.T) {
 
 func TestAKeyThatStoppedIsForgotten(t *testing.T) {
 	c := newClock()
-	l := ratelimit.New(60, 100, c.Now)
+	l := ratelimit.New(60, time.Minute, 100, c.Now)
 	for i := range 50 {
 		spend(t, l, fmt.Sprintf("key-%d", i), 60)
 	}
@@ -84,7 +104,7 @@ func TestAKeyThatStoppedIsForgotten(t *testing.T) {
 
 func TestAKeyThatStillWaitsIsNotForgotten(t *testing.T) {
 	c := newClock()
-	l := ratelimit.New(60, 100, c.Now)
+	l := ratelimit.New(60, time.Minute, 100, c.Now)
 	spend(t, l, "a", 1)
 	c.Advance(59 * time.Second)
 	spend(t, l, "a", 60)
@@ -100,7 +120,7 @@ func TestAKeyThatStillWaitsIsNotForgotten(t *testing.T) {
 
 func TestItNeverRemembersMoreKeysThanItsMaximum(t *testing.T) {
 	c := newClock()
-	l := ratelimit.New(60, 100, c.Now)
+	l := ratelimit.New(60, time.Minute, 100, c.Now)
 
 	for i := range 10_000 {
 		spend(t, l, fmt.Sprintf("key-%d", i), 1)
@@ -111,7 +131,7 @@ func TestItNeverRemembersMoreKeysThanItsMaximum(t *testing.T) {
 }
 
 func TestItCanBeUsedFromManyRequestsAtOnce(t *testing.T) {
-	l := ratelimit.New(60, 10, time.Now)
+	l := ratelimit.New(60, time.Minute, 10, time.Now)
 	var wg sync.WaitGroup
 	for g := range 8 {
 		wg.Go(func() {
