@@ -267,6 +267,7 @@ const (
 	ProblemCodeLimitReached          ProblemCode = "limit_reached"
 	ProblemCodeLoginCodeExpired      ProblemCode = "login_code_expired"
 	ProblemCodeLoginCodeInvalid      ProblemCode = "login_code_invalid"
+	ProblemCodeMailBudgetSpent       ProblemCode = "mail_budget_spent"
 	ProblemCodeMemberNotClaimed      ProblemCode = "member_not_claimed"
 	ProblemCodeMemberNotPending      ProblemCode = "member_not_pending"
 	ProblemCodeNameRequired          ProblemCode = "name_required"
@@ -309,6 +310,8 @@ func (e ProblemCode) Valid() bool {
 	case ProblemCodeLoginCodeExpired:
 		return true
 	case ProblemCodeLoginCodeInvalid:
+		return true
+	case ProblemCodeMailBudgetSpent:
 		return true
 	case ProblemCodeMemberNotClaimed:
 		return true
@@ -2338,10 +2341,18 @@ type RequestLoginCodeResponseObject interface {
 	VisitRequestLoginCodeResponse(w http.ResponseWriter) error
 }
 
+type RequestLoginCode204ResponseHeaders struct {
+	SetCookie *string
+}
+
 type RequestLoginCode204Response struct {
+	Headers RequestLoginCode204ResponseHeaders
 }
 
 func (response RequestLoginCode204Response) VisitRequestLoginCodeResponse(w http.ResponseWriter) error {
+	if response.Headers.SetCookie != nil {
+		w.Header().Set("Set-Cookie", fmt.Sprint(*response.Headers.SetCookie))
+	}
 	w.WriteHeader(204)
 	return nil
 }
@@ -2382,6 +2393,30 @@ func (response RequestLoginCode429ApplicationProblemPlusJSONResponse) VisitReque
 		w.Header().Set("Retry-After", fmt.Sprint(*response.Headers.RetryAfter))
 	}
 	w.WriteHeader(429)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RequestLoginCode503ResponseHeaders struct {
+	RetryAfter *int
+}
+
+type RequestLoginCode503ApplicationProblemPlusJSONResponse struct {
+	Body    Problem
+	Headers RequestLoginCode503ResponseHeaders
+}
+
+func (response RequestLoginCode503ApplicationProblemPlusJSONResponse) VisitRequestLoginCodeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	if response.Headers.RetryAfter != nil {
+		w.Header().Set("Retry-After", fmt.Sprint(*response.Headers.RetryAfter))
+	}
+	w.WriteHeader(503)
 	_, err := buf.WriteTo(w)
 	return err
 }

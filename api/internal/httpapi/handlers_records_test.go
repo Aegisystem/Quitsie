@@ -70,10 +70,11 @@ type signedIn struct {
 func (a *recordsAPI) signIn(email string) signedIn {
 	a.t.Helper()
 	ctx := context.Background()
-	if err := a.auth.RequestCode(ctx, email, "203.0.113.7"); err != nil {
+	flow, err := a.auth.RequestCode(ctx, email, auth.Browser{IP: email})
+	if err != nil {
 		a.t.Fatal(err)
 	}
-	in, err := a.auth.VerifyCode(ctx, email, a.codeBox.lastCode(a.t, email), "test", email)
+	in, err := a.auth.VerifyCode(ctx, email, a.codeBox.lastCode(a.t, email), "test", auth.Browser{IP: email, Flow: flow.Value})
 	if err != nil {
 		a.t.Fatal(err)
 	}

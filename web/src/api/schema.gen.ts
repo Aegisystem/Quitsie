@@ -32,7 +32,7 @@ export interface paths {
         put?: never;
         /**
          * Emails a 6-digit sign-in code.
-         * @description Answers 204 whether or not an account exists for the email, so the endpoint does not reveal who has one. The code expires after 10 minutes. Sending is limited per email and per IP.
+         * @description Answers 204 whether or not an account exists for the email, so the endpoint does not reveal who has one. The code expires after 10 minutes, and only this browser can check it: the answer sets a flow cookie, and a new request from the same browser replaces its earlier code (ADR 0011). Sending is limited per IP (per /56 in IPv6), and per email unless the browser signed in to that email's User before, which has a limit of its own. The server also sends a limited number of emails per hour and per day to everyone together.
          */
         post: operations["requestLoginCode"];
         delete?: never;
@@ -52,7 +52,7 @@ export interface paths {
         put?: never;
         /**
          * Exchanges a sign-in code for a session.
-         * @description Creates the User the first time an email signs in (`newUser` is then true and the client asks for a name and a Preferred currency). A code admits 5 attempts at most.
+         * @description Creates the User the first time an email signs in (`newUser` is then true and the client asks for a name and a Preferred currency). Only the browser that requested the code can check it, with its flow cookie. A code admits 5 attempts at most, and an email 10 wrong ones a day from browsers it never signed in from; each browser it signed in from has 10 of its own.
          */
         post: operations["verifyLoginCode"];
         delete?: never;
@@ -90,7 +90,7 @@ export interface paths {
         };
         /**
          * Google redirects back here; signs in and returns to the app.
-         * @description Always answers with a redirect to the app: to `returnTo` on success, creating the User if needed; to `/login` if the person declined; or to `/login?error=google` on any other failure.
+         * @description Always answers with a redirect to the app: to `returnTo` on success, creating the User if needed and setting the session and known-device cookies; to `/login` if the person declined; or to `/login?error=google` on any other failure.
          */
         get: operations["finishGoogleLogin"];
         put?: never;
@@ -608,7 +608,7 @@ export interface components {
          * @description Stable machine-readable error code. New codes may be added; clients treat an unknown code as a generic error for its status.
          * @enum {string}
          */
-        ProblemCode: "validation_failed" | "unauthenticated" | "origin_mismatch" | "not_found" | "rate_limited" | "login_code_invalid" | "login_code_expired" | "too_many_attempts" | "invite_link_invalid" | "version_conflict" | "nonzero_balance" | "currency_mismatch" | "currency_precision_loss" | "invalid_amounts" | "invalid_participants" | "member_not_pending" | "member_not_claimed" | "already_member" | "friendship_exists" | "name_required" | "limit_reached" | "body_too_large" | "cursor_invalid" | "internal_error" | "not_implemented";
+        ProblemCode: "validation_failed" | "unauthenticated" | "origin_mismatch" | "not_found" | "rate_limited" | "mail_budget_spent" | "login_code_invalid" | "login_code_expired" | "too_many_attempts" | "invite_link_invalid" | "version_conflict" | "nonzero_balance" | "currency_mismatch" | "currency_precision_loss" | "invalid_amounts" | "invalid_participants" | "member_not_pending" | "member_not_claimed" | "already_member" | "friendship_exists" | "name_required" | "limit_reached" | "body_too_large" | "cursor_invalid" | "internal_error" | "not_implemented";
         /** @description The `currency_precision_loss` problem, with the records the User must fix first. */
         CurrencyPrecisionProblem: components["schemas"]["Problem"] & {
             expenseIds: string[];
@@ -1176,6 +1176,8 @@ export interface operations {
             /** @description The code was sent, if the email can receive one. */
             204: {
                 headers: {
+                    /** @description The flow cookie that ties the code to this browser. HttpOnly, Secure and SameSite=Lax, for the 10 minutes of the code. */
+                    "Set-Cookie"?: string;
                     [name: string]: unknown;
                 };
                 content?: never;
@@ -1185,6 +1187,17 @@ export interface operations {
             429: {
                 headers: {
                     /** @description Seconds to wait before asking again. */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The server sent every email it allows itself for now (`mail_budget_spent`), so it sends no code to anyone. */
+            503: {
+                headers: {
+                    /** @description Seconds until the server sends emails again. */
                     "Retry-After"?: number;
                     [name: string]: unknown;
                 };
@@ -1211,7 +1224,7 @@ export interface operations {
             /** @description Signed in. */
             200: {
                 headers: {
-                    /** @description The session cookie. */
+                    /** @description The session cookie, and the known-device cookie that tells later sign-ins this browser signed in to the User before (HttpOnly, Secure, for a year; signing out keeps it). It also deletes the flow cookie. */
                     "Set-Cookie"?: string;
                     [name: string]: unknown;
                 };
@@ -1219,7 +1232,7 @@ export interface operations {
                     "application/json": components["schemas"]["LoginResult"];
                 };
             };
-            /** @description The code is wrong (`login_code_invalid`) or expired (`login_code_expired`), or the body is invalid. */
+            /** @description The code is wrong (`login_code_invalid`), or this browser has no live code for the email (`login_code_expired`): it expired, was used, or was requested from another browser. Or the body is invalid. */
             400: {
                 headers: {
                     [name: string]: unknown;

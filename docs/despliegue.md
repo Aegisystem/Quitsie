@@ -53,7 +53,7 @@ Al terminar, `https://<dominio>/` muestra la página de estado de la PWA y `http
 | `QUITSIE_MAIL_FROM` | Remitente de un dominio verificado en Resend: `"Quitsie <codigos@<dominio>>"`. |
 | `QUITSIE_INVITE_SECRET` | 32 bytes o más que firman los Enlaces de invitación; genéralos con `openssl rand -base64 32`. Cambiarlo revoca todos los enlaces, así que guárdalo también en tu gestor de contraseñas: este archivo no está en el respaldo. |
 
-Son opcionales `QUITSIE_GOOGLE_CLIENT_ID` y `QUITSIE_GOOGLE_CLIENT_SECRET` (sin los dos no hay inicio de sesión con Google) y `QUITSIE_DEFAULT_CURRENCY`. Después de cambiar el archivo, reinicia con `sudo systemctl restart quitsie`.
+Son opcionales `QUITSIE_GOOGLE_CLIENT_ID` y `QUITSIE_GOOGLE_CLIENT_SECRET` (sin los dos no hay inicio de sesión con Google), `QUITSIE_DEFAULT_CURRENCY`, y `QUITSIE_MAIL_MAX_PER_HOUR` y `QUITSIE_MAIL_MAX_PER_DAY`, el tope de correos con códigos por hora y por 24 horas (40 y 90 por defecto, por debajo de los 100 diarios gratuitos de Resend). Las cifras son provisionales: súbelas si el tráfico normal las alcanza o si pasas a un plan de pago. Después de cambiar el archivo, reinicia con `sudo systemctl restart quitsie`.
 
 ### Dónde vive cada secreto
 

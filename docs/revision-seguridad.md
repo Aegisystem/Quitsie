@@ -164,7 +164,7 @@ Con este tope, una cuenta concreta acumula 3.650 intentos sobre un millón en un
 
 ### 5. Cualquiera impide entrar a otra persona durante un día
 
-**Media. Abierto.** Cualquiera, sin cuenta. El arreglo del hallazgo 4 lo empeoró: el bloqueo pasó de una hora a 24 horas. Antes de ese arreglo el atacante podía repetirlo cada hora, así que el bloqueo ya podía ser permanente; ahora le cuesta menos peticiones.
+**Media. Arreglado en `f21c01c`.** Cualquiera, sin cuenta. El arreglo del hallazgo 4 lo empeoró: el bloqueo pasó de una hora a 24 horas. Antes de ese arreglo el atacante podía repetirlo cada hora, así que el bloqueo ya podía ser permanente; ahora le cuesta menos peticiones.
 
 **Archivos:** `api/internal/auth/code.go:62` y `:127`, `api/internal/auth/ratelimit.go:13`.
 
@@ -178,11 +178,25 @@ Con este tope, una cuenta concreta acumula 3.650 intentos sobre un millón en un
 
 Las sesiones abiertas y Google no se ven afectados: el daño recae en quien estrena dispositivo o quedó sin sesión y entra con código.
 
-**Arreglo.** Ata cada código al navegador que lo pidió con una cookie de flujo `HttpOnly`, y cuenta los intentos por flujo y el cupo de envíos por pareja de email e IP. El tope por email de 10 fallos se mantiene como techo más alto, para que un atacante con muchas IP no recupere los intentos que quitó el hallazgo 4.
+**Arreglo** ([ADR 0011](adr/0011-codigos-atados-al-navegador.md)). La propuesta original, atar el código al navegador y mantener el tope por email, no cerraba la tercera forma: los diez fallos del atacante en sus propios flujos seguían bloqueando el email. Por eso se añadieron los dispositivos conocidos.
+
+1. Pedir un código deja una cookie de flujo `HttpOnly` con 128 bits aleatorios, y `login_codes` guarda su hash. Solo ese navegador puede comprobar el código, los 5 intentos son de ese código, y pedir otro desde el mismo navegador reemplaza solo el suyo.
+2. Cada inicio de sesión, con código o con Google, deja una cookie de dispositivo conocido que dura un año y que cerrar sesión no borra. La tabla `known_devices` guarda el hash de su token, 20 por Usuario como máximo, y borrar la cuenta los olvida. Un dispositivo conocido no gasta los límites por email y tiene los suyos: 5 códigos por hora y 10 equivocados al día, contados en la base.
+3. Los navegadores desconocidos conservan los límites del email: 5 códigos por hora y 10 fallos al día. Una IP pide 3 de esos 5, así que un atacante en otra dirección no se los lleva todos, y un email tiene 5 códigos vivos de navegadores desconocidos como máximo, también tras un reinicio. El tope del hallazgo 4 no cambia.
+
+**Medido después, contra el binario real**, con `curl` y `CF-Connecting-IP` rotado por loopback. Ana entró una vez desde su teléfono y cerró sesión.
+
+- Primera forma: el atacante pidió 4 códigos desde cuatro IP y el quinto recibió `429`; con el de Ana suman los 5 del email. El teléfono de Ana recibió 204, y un navegador nuevo de Ana, `429`.
+- Tercera forma: tras diez intentos fallidos del atacante con dos códigos suyos, un navegador nuevo de Ana recibe `429` con `Retry-After: 86400`, y el teléfono comprueba su código y entra. Tras reiniciar el binario pasa lo mismo.
+- Segunda forma: Beto pidió un código desde un navegador que nunca había usado. El atacante gastó los 5 intentos de su propio código, y el código real de Beto no le sirvió ni desde su navegador ni desde uno sin flujo (`429 too_many_attempts` y `400 login_code_expired`). Beto entró al primer intento.
+- Hallazgo 4: 30 IP, cada una con un flujo nuevo, consiguieron 10 intentos equivocados sobre un email. Las demás recibieron `429` con `Retry-After: 86400`.
+- En Chromium, la PWA entra con código sin cambios en el cliente. Tras cerrar sesión conserva la cookie de dispositivo, con `document.cookie` vacío, y vuelve a entrar después del mismo ataque, mientras otro navegador ve «Hubo demasiados intentos con este email».
+
+**Riesgo que queda.** Quien estrena dispositivo, o borró las cookies, depende de los límites del email, y cualquiera puede bloquearle los códigos un día. Google y las sesiones abiertas no se ven afectados. Quien comparta la IP de la víctima, o su /56, puede gastar el cupo de esa IP durante una hora. Quien robe la cookie de dispositivo de alguien gana 10 intentos al día sobre esa cuenta.
 
 ### 6. El envío de correos no tiene tope global
 
-**Media.** Cualquiera, sin cuenta.
+**Media. Arreglado en `76bb9be`.** Cualquiera, sin cuenta.
 
 **Archivos:** `api/internal/auth/ratelimit.go:14`, `api/internal/auth/code.go:62`.
 
@@ -190,7 +204,23 @@ Las sesiones abiertas y Google no se ven afectados: el daño recae en quien estr
 
 **Verificado.** Treinta envíos aceptados desde una IP a direcciones distintas y `429` en el siguiente. El plus-addressing (`ana+1@…`) cuenta como direcciones distintas. El agotamiento de la cuota real no se probó.
 
-**Arreglo.** Añade un tope global por hora y por día que deje de enviar y avise. Baja `maxSendsPerIP` a 10 y agrupa las IPv6 por /56 para este límite. Si llega el abuso, añade Cloudflare Turnstile, gratuito, delante de pedir código.
+**Arreglo.**
+
+1. El servidor envía como máximo 40 correos con códigos por hora de reloj y 90 en 24 horas, entre todos, por debajo de los 100 diarios gratuitos de Resend. Las cifras son provisionales y se cambian con `QUITSIE_MAIL_MAX_PER_HOUR` y `QUITSIE_MAIL_MAX_PER_DAY`. La cuenta vive en la tabla `mail_sends`, por horas, así que un reinicio no la borra. Un correo que no se pudo enviar no cuenta.
+2. Con el tope alcanzado, pedir un código responde `503 mail_budget_spent` con `Retry-After`, sin gastar los cupos de quien lo pide, y la pantalla de entrada dice que por ahora no se pueden enviar códigos. El correo que agota la hora o el día deja una línea `ERROR` en el log: una por cada hora o día agotado, no una por petición.
+3. Una IP pide 10 códigos por hora en vez de 30, y los límites de envío cuentan las IPv6 por /56. El límite general de peticiones y el de verificaciones siguen contando por /64.
+4. Turnstile queda para cuando llegue el abuso.
+
+**Medido después, contra el binario real.**
+
+- Una IPv4 recibe 204 en 10 pedidos y `429` con `Retry-After: 3600` en el 11.º.
+- Diez /64 de un mismo /56 reciben 204, el siguiente /64 recibe `429` y otro /56 recibe 204.
+- Con un tope de 3 por hora, el cuarto pedido responde `503 mail_budget_spent` con `Retry-After` hasta la hora siguiente, y lo mismo tras reiniciar el binario. El log tiene una sola línea `ERROR`.
+- En Chromium, la PWA muestra «No podemos enviar más códigos por ahora. Vuelve a intentarlo en 5 minutos.»
+
+La cuota real de Resend no se probó.
+
+**Riesgo que queda.** El tope protege la cuenta de Resend, no el servicio: cuatro IP agotan una hora y nueve agotan el día, y entonces nadie entra con código hasta que se libere. Google y las sesiones abiertas siguen funcionando. La línea `ERROR` avisa, y Turnstile es el siguiente paso.
 
 ### 7. El limitador de códigos crece sin tope en memoria
 
@@ -290,7 +320,7 @@ La regla actual dice que quien vuelve recupera su Antiguo Miembro, lo cual tiene
 
 ### 14. Pedir un código recorre toda la tabla con el bloqueo de escritura
 
-**Baja. Abierto.** Cualquiera con más de mil direcciones, sin cuenta. Apareció al volver a medir el hallazgo 7.
+**Baja. Arreglado en `bf6c2c1`.** Cualquiera con más de mil direcciones, sin cuenta. Apareció al volver a medir el hallazgo 7.
 
 **Archivos:** `api/internal/auth/code.go:94`, `api/internal/store/queries/login_codes.sql` y `api/migrations/00001_initial_schema.sql`.
 
@@ -298,7 +328,14 @@ La regla actual dice que quien vuelve recupera su Antiguo Miembro, lo cual tiene
 
 **Verificado.** Con 36.000 códigos vivos, cada tanda de 90.000 peticiones pasó de 11 a 75 s, y 21 peticiones aceptadas respondieron 500 con `database is locked`. `EXPLAIN QUERY PLAN` muestra `SCAN login_codes`. El efecto sobre otros Usuarios no se midió. Por lectura, `DeleteExpiredSessions` repite el patrón en cada inicio de sesión.
 
-**Arreglo.** Añade una migración con índices sobre `login_codes (expires_at)` y `sessions (last_used_at)`.
+**Arreglo.** La migración 00003 añade índices sobre `login_codes (expires_at)`, `sessions (last_used_at)` y `login_failures (resets_at)`, que `DeleteEndedLoginFailures` también recorría en cada pedido de código. Una prueba comprueba con `EXPLAIN QUERY PLAN` que los tres borrados buscan por su índice.
+
+**Medido después, contra el binario real**, en Linux con 4 vCPU y 36.000 códigos vivos sembrados en la base. «Sin índices» es la misma base con los tres índices quitados. El plan pasa a `SEARCH login_codes USING INDEX login_codes_expires_at`.
+
+| Medida | Sin índices | Con índices |
+| --- | --- | --- |
+| Pedir un código, mediana de 300 seguidos | 16 ms | 1 ms |
+| 3.000 pedidos, 30 a la vez | 54 s, 47 respondieron 500 con `database is locked` | 4 s, ningún 500 |
 
 ## A comprobar al desplegar
 

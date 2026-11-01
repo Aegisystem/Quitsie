@@ -115,8 +115,10 @@ Un **libro** (`Ledger`) es el contenedor de Gastos y Liquidaciones. Cada Grupo t
 | --- | --- |
 | `users` | email, nombre, Moneda preferida, identificador de Google, fecha de borrado |
 | `sessions` | hash del token, dispositivo, último uso |
-| `login_codes` | hash del código, caducidad, intentos |
-| `login_failures` | hash del email, códigos equivocados y fin de la ventana de 24 horas |
+| `login_codes` | hash del código, hash del flujo del navegador que lo pidió, caducidad, intentos |
+| `login_failures` | hash del email o del dispositivo conocido, códigos equivocados y fin de la ventana de 24 horas |
+| `known_devices` | hash del token de un navegador en el que el Usuario ya entró, Usuario, último uso |
+| `mail_sends` | correos con códigos enviados en cada hora del último día |
 | `ledgers` | tipo (`group` o `friendship`), nombre, Moneda del grupo (vacía en Amistades), Simplificación de deudas, contador de generación del Enlace de invitación, versión, fecha de borrado |
 | `members` | libro, Usuario vinculado (vacío si está pendiente), nombre, email, estado (`active` o `former`), versión |
 | `expenses` | identificador del cliente, libro, descripción, fecha, moneda, total, Categoría, Método de reparto (para reeditar), autor, versión, fecha de borrado |
@@ -134,8 +136,11 @@ Los Saldos no se guardan: se calculan sumando, lo cual es rápido a esta escala.
 - Cookie `HttpOnly`, `Secure` y `SameSite=Lax`. Además, las peticiones que modifican datos deben traer un encabezado `Origin` del propio dominio (protección CSRF).
 - Toda respuesta lleva una `Content-Security-Policy` que solo admite los archivos de la propia app, sin scripts ni estilos en línea y sin dejarse enmarcar, además de `X-Content-Type-Options`, `Referrer-Policy: same-origin`, `Cross-Origin-Opener-Policy` y una `Permissions-Policy` que apaga cámara, micrófono, ubicación y pagos. Las de `/api/` llevan también `Cache-Control: no-store`.
 - En producción el servidor exige HTTPS por su cuenta: envía HSTS de un año y redirige a `QUITSIE_PUBLIC_ORIGIN` lo que Cloudflare vio llegar por HTTP. Lo sabe por `CF-Visitor` y `X-Forwarded-Proto`, que solo cree por loopback, como `CF-Connecting-IP`.
-- Los códigos de acceso caducan a los 10 minutos y admiten 5 intentos como máximo. También se limitan los envíos por email y por IP.
-- Un email admite 10 códigos equivocados al día, sumando todos sus códigos. Esa cuenta vive en la base, así que un código nuevo o un reinicio no dan más intentos. Una IP admite 60 verificaciones por hora.
+- Los códigos de acceso caducan a los 10 minutos y admiten 5 intentos como máximo. Cada código queda atado al navegador que lo pidió con una cookie de flujo, así que nadie más puede comprobarlo ni gastar sus intentos ([ADR 0011](adr/0011-codigos-atados-al-navegador.md)).
+- Cada inicio de sesión deja una cookie de dispositivo conocido, que cerrar sesión no borra. Un dispositivo conocido no gasta los límites por email, que cualquiera puede agotar, y tiene los suyos: 5 códigos por hora y 10 equivocados al día. Así nadie puede impedir entrar a quien ya entró en ese navegador.
+- Una IP pide 10 códigos por hora; en IPv6 cuenta la red /56, porque un cliente suele tener 256 redes /64. Los navegadores desconocidos comparten 5 códigos por hora por email, y una IP pide 3 de ellos como máximo.
+- El servidor envía como máximo 40 correos por hora y 90 en 24 horas, entre todos, por debajo de los 100 diarios gratuitos de Resend. Las cifras son provisionales y se cambian con `QUITSIE_MAIL_MAX_PER_HOUR` y `QUITSIE_MAIL_MAX_PER_DAY`. La cuenta vive en la base, así que un reinicio no la borra. Al agotarse, pedir un código responde `503 mail_budget_spent` y el log tiene una línea `ERROR` por cada hora o día agotado.
+- Un email admite 10 códigos equivocados al día desde navegadores desconocidos, sumando todos sus códigos. Esa cuenta y la de cada dispositivo conocido viven en la base, así que un código nuevo o un reinicio no dan más intentos. Una IP admite 60 verificaciones por hora.
 - Los tokens de sesión son aleatorios y en la base solo se guarda su hash. Los Enlaces de invitación se derivan con un HMAC de una clave del servidor, así que no se guardan ([ADR 0010](adr/0010-enlaces-de-invitacion-derivados.md)).
 - Hay un límite de 300 peticiones por minuto por IP en Go, además del de Cloudflare. Detrás del túnel la IP real sale de `CF-Connecting-IP`, y ese encabezado solo se cree si la conexión llega por loopback, porque `cloudflared` corre en la misma VM. Por eso debe ser el único proceso que reenvía tráfico al puerto del servidor.
 - El cuerpo de las peticiones a la API tiene un tope de 2 MiB, suficiente para el lote más grande de `POST /records`. En `POST /auth/*` el tope es de 4 KiB.

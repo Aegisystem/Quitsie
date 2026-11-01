@@ -148,14 +148,15 @@ func failTest(t *testing.T) auth.ErrorHandler {
 	}
 }
 
-// signInOn signs email in from device and returns the session token.
+// signInOn signs email in from a new browser on device and returns the
+// session token.
 func (f *fixture) signInOn(t *testing.T, email, device string) auth.SignIn {
 	t.Helper()
-	ctx := context.Background()
-	if err := f.svc.RequestCode(ctx, email, anaIP); err != nil {
+	b := f.newBrowser(anaIP)
+	if err := b.requestCode(email); err != nil {
 		t.Fatal(err)
 	}
-	signIn, err := f.svc.VerifyCode(ctx, email, f.mail.lastCode(t, email), device, anaIP)
+	signIn, err := b.verifyOn(email, f.mail.lastCode(t, email), device)
 	if err != nil {
 		t.Fatal(err)
 	}

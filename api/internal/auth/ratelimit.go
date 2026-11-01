@@ -7,13 +7,21 @@ import (
 
 // Limits on sending login codes, so nobody can flood an inbox or use
 // Quitsie to send spam. The IP limit is looser because many people can
-// share one address behind a carrier's NAT.
+// share one address behind a carrier's NAT, but each code is an email out of
+// the server's budget, so one address gets a few people's worth.
+//
+// Anybody can spend the limit per email, so a known device has its own
+// quota instead (ADR 0011). Other browsers also have a smaller one per pair
+// of IP and email, so that one sender cannot take all of an email's codes
+// from someone at another address.
 const (
-	sendWindow      = time.Hour
-	maxSendsPerMail = 5
-	maxSendsPerIP   = 30
+	sendWindow             = time.Hour
+	maxSendsPerMail        = 5
+	maxSendsPerPair        = 3
+	maxSendsPerIP          = 10
+	maxSendsPerKnownDevice = 5
 	// maxVerificationsPerIP stops one sender from spreading guesses over many
-	// emails. It allows two tries per code of maxSendsPerIP.
+	// emails, whose codes it may have asked for from other addresses.
 	maxVerificationsPerIP = 60
 	// maxLimiterKeys bounds the memory of a limiter to some 80 MB. Reaching it
 	// takes tens of thousands of addresses within an hour.

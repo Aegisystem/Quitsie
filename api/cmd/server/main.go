@@ -15,6 +15,8 @@
 //	QUITSIE_GOOGLE_CLIENT_ID      OAuth client in Google Cloud; without it and its secret, Google sign-in is off
 //	QUITSIE_GOOGLE_CLIENT_SECRET  secret of that client
 //	QUITSIE_DEFAULT_CURRENCY      PreferredCurrency of new Users (default USD)
+//	QUITSIE_MAIL_MAX_PER_HOUR     most login-code emails sent in a clock hour (default 40)
+//	QUITSIE_MAIL_MAX_PER_DAY      most login-code emails sent in 24 hours (default 90, under Resend's free 100)
 //	QUITSIE_INVITE_SECRET         required: at least 32 bytes that sign the Invite links; changing it revokes them all
 //	                              (development generates one on each start if it is missing)
 //
@@ -33,6 +35,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -94,6 +97,8 @@ func run(logger *slog.Logger) error {
 		Mail:            sender,
 		DefaultCurrency: cfg.defaultCurrency,
 		Google:          cfg.google,
+		MailPerHour:     cfg.mailPerHour,
+		MailPerDay:      cfg.mailPerDay,
 	})
 	if err != nil {
 		return err
@@ -149,8 +154,11 @@ type config struct {
 	// enforces HTTPS; empty in development.
 	httpsOrigin string
 	// logMail writes emails to the log instead of sending them with resend.
-	logMail         bool
-	resend          mail.ResendConfig
+	logMail bool
+	resend  mail.ResendConfig
+	// mailPerHour and mailPerDay are the budget of login-code emails.
+	mailPerHour     int
+	mailPerDay      int
 	google          *auth.GoogleConfig
 	defaultCurrency string
 	inviteSecret    []byte
@@ -230,6 +238,17 @@ func loadConfig(getenv func(string) string) (config, error) {
 		return config{}, fmt.Errorf("QUITSIE_MAIL must be resend or log, not %q", sender)
 	}
 
+	var err error
+	if cfg.mailPerHour, err = positive(getenv, "QUITSIE_MAIL_MAX_PER_HOUR", auth.DefaultMailPerHour); err != nil {
+		return config{}, err
+	}
+	if cfg.mailPerDay, err = positive(getenv, "QUITSIE_MAIL_MAX_PER_DAY", auth.DefaultMailPerDay); err != nil {
+		return config{}, err
+	}
+	if cfg.mailPerHour > cfg.mailPerDay {
+		return config{}, fmt.Errorf("QUITSIE_MAIL_MAX_PER_HOUR (%d) cannot exceed QUITSIE_MAIL_MAX_PER_DAY (%d)", cfg.mailPerHour, cfg.mailPerDay)
+	}
+
 	id, secret := getenv("QUITSIE_GOOGLE_CLIENT_ID"), getenv("QUITSIE_GOOGLE_CLIENT_SECRET")
 	switch {
 	case id != "" && secret != "":
@@ -251,6 +270,20 @@ func loadConfig(getenv func(string) string) (config, error) {
 		return config{}, fmt.Errorf("QUITSIE_INVITE_SECRET must have at least %d bytes", invites.MinSecretLength)
 	}
 	return cfg, nil
+}
+
+// positive reads the variable key as a whole number of at least 1, or
+// fallback if it is not set.
+func positive(getenv func(string) string, key string, fallback int) (int, error) {
+	v := getenv(key)
+	if v == "" {
+		return fallback, nil
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n < 1 {
+		return 0, fmt.Errorf("%s must be a whole number of at least 1, not %q", key, v)
+	}
+	return n, nil
 }
 
 // checkOrigin requires a bare origin, because browsers compare it character

@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"net/http"
 	netmail "net/mail"
 	"strings"
 	"time"
@@ -23,21 +24,34 @@ import (
 const (
 	codeTTL         = 10 * time.Minute
 	maxCodeAttempts = 5
-	// maxFailuresPerEmail is how many wrong guesses an email takes in
-	// failureWindow, across codes: asking for a new code buys no more. That
-	// keeps an account to 3,650 guesses out of a million in a year, at the
-	// price that anyone can lock an email out of codes for a day.
-	maxFailuresPerEmail = 10
-	failureWindow       = 24 * time.Hour
+	// maxFailures is how many wrong guesses an email takes in failureWindow,
+	// across codes: asking for a new code buys no more. That keeps an account
+	// to 3,650 guesses out of a million in a year. Anyone can spend them, so a
+	// known device does not count against them and has as many of its own.
+	maxFailures   = 10
+	failureWindow = 24 * time.Hour
+	// maxLiveCodesPerEmail bounds the codes of one email that browsers it does
+	// not know can hold at once. It is maxSendsPerMail kept in the database,
+	// where a restart does not forget it.
+	maxLiveCodesPerEmail = maxSendsPerMail
 )
+
+// CodeFlowCookieName is the cookie that ties a login code to the browser
+// that asked for it, so that only that browser can check it.
+const CodeFlowCookieName = "quitsie_code_flow"
+
+// authPath is where the sign-in operations live, the only ones that read the
+// cookies of the code flow and of known devices.
+const authPath = "/api/v1/auth/"
 
 var (
 	// ErrInvalidEmail means the text is not a bare email address.
 	ErrInvalidEmail = errors.New("auth: invalid email")
 	// ErrWrongCode means the code is not the one sent to that email.
 	ErrWrongCode = errors.New("auth: wrong login code")
-	// ErrCodeExpired means there is no live code for that email: it expired,
-	// was already used, or was never requested. The User must ask for another.
+	// ErrCodeExpired means this browser has no live code for that email: it
+	// expired, was already used, or was asked for elsewhere or never. The User
+	// must ask for another.
 	ErrCodeExpired = errors.New("auth: login code expired")
 	// ErrTooManyAttempts means the code was guessed wrong too many times and
 	// no longer works. The User must ask for another.
@@ -57,38 +71,110 @@ type RateLimitError struct {
 func (e *RateLimitError) Error() string        { return ErrRateLimited.Error() }
 func (e *RateLimitError) Is(target error) bool { return target == ErrRateLimited }
 
-// RequestCode emails a new 6-digit login code to email. The code replaces
-// any earlier one for the same email. ip is the client's address, used to
-// limit how many codes one sender can request.
-func (s *Service) RequestCode(ctx context.Context, email, ip string) error {
+// Browser is who asks for a login code or checks one.
+type Browser struct {
+	// IP is the address the limits per IP count the browser under.
+	IP string
+	// Flow and KnownDevices are the values of the cookies named
+	// CodeFlowCookieName and KnownDeviceCookieName, empty without them.
+	Flow         string
+	KnownDevices string
+}
+
+// BrowserOf reads the cookies of sign-in that r carries. ip is the address
+// the limits count it under.
+func BrowserOf(r *http.Request, ip string) Browser {
+	b := Browser{IP: ip}
+	if c, err := r.Cookie(CodeFlowCookieName); err == nil {
+		b.Flow = c.Value
+	}
+	if c, err := r.Cookie(KnownDeviceCookieName); err == nil {
+		b.KnownDevices = c.Value
+	}
+	return b
+}
+
+// codeFlowCookie returns the cookie that carries flow. It lasts as long as
+// the code, and it must outlive the page: an installed PWA can be closed
+// while its User reads the email.
+func codeFlowCookie(flow string) *http.Cookie {
+	return &http.Cookie{
+		Name:     CodeFlowCookieName,
+		Value:    flow,
+		Path:     authPath,
+		MaxAge:   int(codeTTL / time.Second),
+		HttpOnly: true,
+		Secure:   true,
+		SameSite: http.SameSiteLaxMode,
+	}
+}
+
+// ClearCodeFlowCookie returns a cookie that makes the browser delete the flow
+// cookie, once its code signed it in.
+func ClearCodeFlowCookie() *http.Cookie {
+	c := codeFlowCookie("")
+	c.MaxAge = -1
+	return c
+}
+
+// RequestCode emails a new 6-digit login code to email and returns the flow
+// cookie to set: only this browser can check the code (ADR 0011). The code
+// replaces any earlier one of the same browser, and leaves alone the codes
+// other browsers asked for.
+//
+// The limits count the browser by its IP, and by its pair of email and IP. A
+// browser that email's User signed in from before has a quota of its own;
+// any other one shares the limits per email, which anybody can spend. Every
+// email also counts against the server's budget (see DefaultMailPerHour);
+// when it is spent, RequestCode returns a *MailBudgetError.
+func (s *Service) RequestCode(ctx context.Context, email string, from Browser) (*http.Cookie, error) {
 	email, err := NormalizeEmail(email)
 	if err != nil {
-		return err
+		return nil, err
+	}
+	known, err := s.knownDevice(ctx, store.New(s.db), email, from.KnownDevices)
+	if err != nil {
+		return nil, err
 	}
 	// No point in sending a code that could not be used.
-	failures, err := s.failures(ctx, store.New(s.db), email)
+	failures, err := s.failures(ctx, store.New(s.db), known.failuresKey(email))
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if failures.spent() {
-		return &RateLimitError{RetryAfter: failures.ResetsAt.Sub(s.now())}
+		return nil, &RateLimitError{RetryAfter: failures.ResetsAt.Sub(s.now())}
 	}
-	if ok, retryAfter := s.sends.allow(s.now(), quota{"email:" + email, maxSendsPerMail}, quota{"ip:" + ip, maxSendsPerIP}); !ok {
-		return &RateLimitError{RetryAfter: retryAfter}
+	if err := s.checkMailBudget(ctx); err != nil {
+		return nil, err
+	}
+	quotas := []quota{{"ip:" + from.IP, maxSendsPerIP}}
+	if known.ok() {
+		quotas = append(quotas, quota{"known-device:" + known.tokenHash, maxSendsPerKnownDevice})
+	} else {
+		quotas = append(quotas, quota{"email:" + email, maxSendsPerMail}, quota{"pair:" + from.IP + " " + email, maxSendsPerPair})
+	}
+	if ok, retryAfter := s.sends.allow(s.now(), quotas...); !ok {
+		return nil, &RateLimitError{RetryAfter: retryAfter}
 	}
 	code, err := newCode()
 	if err != nil {
-		return err
+		return nil, err
 	}
 	id, err := uuid.NewV7()
 	if err != nil {
-		return fmt.Errorf("auth: %w", err)
+		return nil, fmt.Errorf("auth: %w", err)
 	}
+	// A new flow each time: a browser never gets to choose its own.
+	flow := rand.Text()
 
 	now := s.now()
+	var budgetHour time.Time
+	var lastOfBudget bool
 	err = s.inTx(ctx, func(q *store.Queries) error {
-		if err := q.DeleteLoginCodes(ctx, email); err != nil {
-			return fmt.Errorf("auth: delete login codes: %w", err)
+		if from.Flow != "" {
+			if err := q.DeleteLoginCodeOfFlow(ctx, ptr(hashToken(from.Flow))); err != nil {
+				return fmt.Errorf("auth: delete the earlier login code: %w", err)
+			}
 		}
 		// Also forget other people's expired codes, and with them their emails.
 		if err := q.DeleteExpiredLoginCodes(ctx, now); err != nil {
@@ -97,10 +183,24 @@ func (s *Service) RequestCode(ctx context.Context, email, ip string) error {
 		if err := q.DeleteEndedLoginFailures(ctx, now); err != nil {
 			return fmt.Errorf("auth: delete ended login failures: %w", err)
 		}
-		err := q.CreateLoginCode(ctx, store.CreateLoginCodeParams{
+		if !known.ok() {
+			live, err := q.CountLiveLoginCodes(ctx, store.CountLiveLoginCodesParams{Email: email, ExpiresAt: now})
+			if err != nil {
+				return fmt.Errorf("auth: count live login codes: %w", err)
+			}
+			if live >= maxLiveCodesPerEmail {
+				return &RateLimitError{RetryAfter: codeTTL}
+			}
+		}
+		var err error
+		if budgetHour, lastOfBudget, err = s.spendMail(ctx, q); err != nil {
+			return err
+		}
+		err = q.CreateLoginCode(ctx, store.CreateLoginCodeParams{
 			ID:        id.String(),
 			Email:     email,
 			CodeHash:  hashCode(id.String(), code),
+			FlowHash:  ptr(hashToken(flow)),
 			ExpiresAt: now.Add(codeTTL),
 			CreatedAt: now,
 		})
@@ -110,45 +210,58 @@ func (s *Service) RequestCode(ctx context.Context, email, ip string) error {
 		return nil
 	})
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	if err := s.mail.Send(ctx, codeMessage(email, code)); err != nil {
 		// Nobody got this code, so it could only ever be guessed, and its
-		// owner would never hear of it.
-		cleanup := store.New(s.db).DeleteLoginCodes(context.WithoutCancel(ctx), email)
-		return fmt.Errorf("auth: send login code: %w", errors.Join(err, cleanup))
+		// owner would never hear of it. Nor did it cost an email.
+		q, ctx := store.New(s.db), context.WithoutCancel(ctx)
+		cleanup := errors.Join(q.DeleteLoginCodeOfFlow(ctx, ptr(hashToken(flow))), q.UncountMailSend(ctx, budgetHour))
+		return nil, fmt.Errorf("auth: send login code: %w", errors.Join(err, cleanup))
 	}
-	return nil
+	if lastOfBudget {
+		s.reportMailBudgetSpent(ctx)
+	}
+	return codeFlowCookie(flow), nil
 }
 
 // VerifyCode signs in the User with this email, creating it if needed, when
-// code is the last one sent to it. ip is the client's address, used to limit
-// how many guesses one sender can spread over many emails.
-func (s *Service) VerifyCode(ctx context.Context, email, code, device, ip string) (SignIn, error) {
+// code is the last one sent to it at the request of this same browser. The
+// limit per IP stops one sender from spreading guesses over many emails. A
+// wrong guess counts against the code, and against the browser's known device
+// or else against the email.
+func (s *Service) VerifyCode(ctx context.Context, email, code, device string, from Browser) (SignIn, error) {
 	email, err := NormalizeEmail(email)
 	if err != nil {
 		return SignIn{}, err
 	}
-	if ok, retryAfter := s.verifications.allow(s.now(), quota{"ip:" + ip, maxVerificationsPerIP}); !ok {
+	if ok, retryAfter := s.verifications.allow(s.now(), quota{"ip:" + from.IP, maxVerificationsPerIP}); !ok {
 		return SignIn{}, &RateLimitError{RetryAfter: retryAfter}
+	}
+	if from.Flow == "" {
+		return SignIn{}, ErrCodeExpired
 	}
 	var signIn SignIn
 	// A wrong code must still count the attempt, so it commits and reports
 	// the failure in wrong instead of rolling back.
 	var wrong error
 	err = s.inTx(ctx, func(q *store.Queries) error {
-		lc, err := q.GetLatestLoginCode(ctx, email)
+		lc, err := q.GetLoginCodeOfFlow(ctx, ptr(hashToken(from.Flow)))
 		if errors.Is(err, sql.ErrNoRows) {
 			return ErrCodeExpired
 		}
 		if err != nil {
 			return fmt.Errorf("auth: find login code: %w", err)
 		}
-		if !s.now().Before(lc.ExpiresAt) {
+		if lc.Email != email || !s.now().Before(lc.ExpiresAt) {
 			return ErrCodeExpired
 		}
-		failures, err := s.failures(ctx, q, email)
+		known, err := s.knownDevice(ctx, q, email, from.KnownDevices)
+		if err != nil {
+			return err
+		}
+		failures, err := s.failures(ctx, q, known.failuresKey(email))
 		if err != nil {
 			return err
 		}
@@ -162,6 +275,7 @@ func (s *Service) VerifyCode(ctx context.Context, email, code, device, ip string
 			}
 			return q.SetLoginFailures(ctx, failures.plusOne(s.now()))
 		}
+		// Signed in: the codes other browsers asked for have no use left.
 		if err := q.DeleteLoginCodes(ctx, email); err != nil {
 			return fmt.Errorf("auth: delete login codes: %w", err)
 		}
@@ -174,7 +288,11 @@ func (s *Service) VerifyCode(ctx context.Context, email, code, device, ip string
 		if err != nil {
 			return err
 		}
-		signIn = SignIn{User: user, Token: token, NewUser: created}
+		knownDevices, err := s.rememberDevice(ctx, q, user.ID, from.KnownDevices)
+		if err != nil {
+			return err
+		}
+		signIn = SignIn{User: user, Token: token, KnownDevices: knownDevices, NewUser: created}
 		return nil
 	})
 	if err != nil {
@@ -186,11 +304,11 @@ func (s *Service) VerifyCode(ctx context.Context, email, code, device, ip string
 	return signIn, nil
 }
 
-// failures are the wrong guesses at the codes of one email in the current
-// window.
+// failures are the wrong guesses at the codes of one email, or of one known
+// device, in the current window.
 type failures store.SetLoginFailuresParams
 
-func (f failures) spent() bool { return f.Failures >= maxFailuresPerEmail }
+func (f failures) spent() bool { return f.Failures >= maxFailures }
 
 func (f failures) plusOne(now time.Time) store.SetLoginFailuresParams {
 	if f.Failures == 0 {
@@ -200,9 +318,10 @@ func (f failures) plusOne(now time.Time) store.SetLoginFailuresParams {
 	return store.SetLoginFailuresParams(f)
 }
 
-// failures reads the failures of email, which are none once its window ended.
-func (s *Service) failures(ctx context.Context, q *store.Queries, email string) (failures, error) {
-	f := failures{EmailHash: hashEmail(email)}
+// failures reads the failures counted under key, a hash from failuresKey,
+// which are none once its window ended.
+func (s *Service) failures(ctx context.Context, q *store.Queries, key string) (failures, error) {
+	f := failures{EmailHash: key}
 	row, err := q.GetLoginFailures(ctx, f.EmailHash)
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
@@ -247,6 +366,8 @@ func hashCode(id, code string) string {
 	sum := sha256.Sum256([]byte(id + ":" + code))
 	return hex.EncodeToString(sum[:])
 }
+
+func ptr[T any](v T) *T { return &v }
 
 func codeMessage(to, code string) mail.Message {
 	return mail.Message{
