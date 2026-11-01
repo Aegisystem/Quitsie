@@ -898,6 +898,27 @@ describe('rejected records', () => {
     expect(expense).toMatchObject({ id: fixed, currency: 'USD', sync: 'synced' })
     expect(await firstValue(liveRecords(replica))).toEqual({ rejected: [], unsynced: [] })
   })
+
+  test('a rejected Settlement is fixed the same way', async () => {
+    const server = fakeServer()
+    const trip = server.addGroup({ name: 'Viaje a Cusco', currency: 'PEN', members: ['Ana'] })
+    const { replica, engine, device } = setup(server)
+    await engine.sync()
+    const cash = { ledgerId: trip.id, fromMemberId: trip.member.Yo!, toMemberId: trip.member.Ana!, amount: 3000, currency: 'PEN', date: '2026-10-27' }
+    device.goOffline()
+    const id = await engine.addSettlement(cash)
+    server.setCurrency(trip, 'USD')
+    device.goOnline()
+    await engine.sync()
+    expect((await firstValue(liveRecords(replica))).rejected).toEqual([expect.objectContaining({ id, kind: 'settlement', reason: 'currency_mismatch' })])
+
+    const fixed = await engine.addSettlement({ ...cash, amount: 2500, currency: 'USD' }, { replacing: id })
+
+    const [settlement] = await until(liveSettlements(replica, trip.id), ([first]) => first?.version !== undefined)
+    expect(fixed).not.toBe(id)
+    expect(settlement).toMatchObject({ id: fixed, amount: 2500, currency: 'USD', sync: 'synced' })
+    expect(await firstValue(liveRecords(replica))).toEqual({ rejected: [], unsynced: [] })
+  })
 })
 
 describe('browserEnvironment', () => {

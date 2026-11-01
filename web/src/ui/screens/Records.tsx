@@ -6,7 +6,7 @@ import { CategoryGlyph, Icon, SettlementGlyph } from '../components/icons'
 import { Screen, toast, useOnline } from '../components/Shell'
 import { engine, ledgerName, relabelAmount, replica, useLive, useSyncStatus } from '../data'
 import { formatRelative } from '../dates'
-import { href } from '../router'
+import { href, type Route } from '../router'
 import type { LedgerSummary, QueuedRecord, RejectedRecord, User } from '../types'
 
 // The tray of UnsyncedRecords and RejectedRecords. A rejected one never
@@ -122,9 +122,14 @@ function RejectedRow({ rejected, summary, user }: { rejected: RejectedRecord; su
         ? t('records.reasons.currencyChanged', { from: currency, to: group.currency })
         : t('records.reasons.currencyChangedTo')
 
-  // The form corrects an Expense. A Settlement only has its currency to confirm,
-  // when the Group's changed: the same number, relabeled like every other record.
-  const canFixExpense = rejected.kind === 'expense' && summary && rejected.reason !== 'ledger_unavailable'
+  // Each form corrects its kind of record. A Settlement whose Group changed
+  // currency can also take the new one at once: the same number, relabeled like
+  // every other record.
+  const canFix = summary && rejected.reason !== 'ledger_unavailable'
+  const fixRoute: Route =
+    rejected.kind === 'expense'
+      ? { name: 'newExpense', ledgerId: rejected.ledgerId, fromRejected: rejected.id }
+      : { name: 'settle', ledgerId: rejected.ledgerId, fromRejected: rejected.id }
   const relabeled =
     rejected.kind === 'settlement' && rejected.reason === 'currency_mismatch' && group ? relabelAmount(rejected.settlement.amount, currency, group.currency) : undefined
 
@@ -157,10 +162,10 @@ function RejectedRow({ rejected, summary, user }: { rejected: RejectedRecord; su
         </div>
       ) : (
         <div className="button-row">
-          {canFixExpense && (
+          {canFix && (
             <a
               className="button button-secondary button-small"
-              href={online ? href({ name: 'newExpense', ledgerId: rejected.ledgerId, fromRejected: rejected.id }) : undefined}
+              href={online ? href(fixRoute) : undefined}
               aria-disabled={!online}
               title={online ? undefined : t('common.onlineOnly')}
             >

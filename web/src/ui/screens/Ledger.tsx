@@ -435,9 +435,14 @@ function BalancesTab({ group, members, me }: { group: Group; members: readonly M
                 </span>
               </div>
               <div className={`diverge tone-${tone}`} aria-hidden="true">
-                <span className="diverge-side diverge-left">{amount < 0 && <Tally amount={amount} unit={unit} align="end" />}</span>
+                {/* Both rows stay, empty or not, so that one can be seen emptying. */}
+                <span className="diverge-side diverge-left">
+                  <Tally amount={Math.min(amount, 0)} unit={unit} align="end" />
+                </span>
                 <span className="diverge-axis">{amount === 0 && <i className="even-dot" />}</span>
-                <span className="diverge-side diverge-right">{amount > 0 && <Tally amount={amount} unit={unit} />}</span>
+                <span className="diverge-side diverge-right">
+                  <Tally amount={Math.max(amount, 0)} unit={unit} />
+                </span>
               </div>
               {proof.length > 0 && (
                 <details className="proof">

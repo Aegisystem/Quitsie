@@ -10,6 +10,13 @@ export type ExpenseUpdate = components['schemas']['ExpenseUpdate']
 // `offline`: no answer came back.
 export type UpdateOutcome = 'saved' | 'conflict' | 'currency' | 'participants' | 'gone' | 'offline' | 'failed'
 
+// What is left of a failed save once the User edits the form again: what they
+// change may be the fix, and the next save says so if it is not. A conflict
+// stays, because only loading the new version solves it.
+export function afterEdit(outcome: UpdateOutcome | undefined): UpdateOutcome | undefined {
+  return outcome === 'conflict' ? outcome : undefined
+}
+
 // Editing is online only (ADR 0001): PATCH with the version the User was editing.
 export async function updateExpense(client: Client<paths>, expenseId: string, update: ExpenseUpdate): Promise<UpdateOutcome> {
   try {

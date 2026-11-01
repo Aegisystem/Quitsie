@@ -58,6 +58,7 @@
     "motion": [
       { "name": "ease-out", "value": "cubic-bezier(0.16, 1, 0.3, 1)", "purpose": "Única curva del sistema." },
       { "name": "token-in", "value": "scale(0.3)→1, opacity 0→1, 0.5s ease-out, 40ms de escalonado por ficha", "purpose": "La fila de fichas se llena." },
+      { "name": "token-out", "value": "scale(1)→0.3, opacity 1→0 y el hueco cerrándose, 0.5s ease-out, 40ms de escalonado desde la última ficha", "purpose": "La fila de fichas se vacía cuando baja un Saldo; una banda que llega a cero espera a que se vacíe." },
       { "name": "toast-rise", "value": "translateY(12px)→0, opacity 0→1, 0.45s ease-out", "purpose": "Entrada del toast." },
       { "name": "switch", "value": "transform 0.3s ease-out; background-color 0.2s", "purpose": "Interruptor." },
       { "name": "button", "value": "background-color 0.15s; transform 0.1s (active: translateY(1px))", "purpose": "Respuesta de botones." },
