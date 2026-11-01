@@ -164,7 +164,7 @@ Con este tope, una cuenta concreta acumula 3.650 intentos sobre un millón en un
 
 ### 5. Cualquiera impide entrar a otra persona durante un día
 
-**Media. Abierto.** Cualquiera, sin cuenta. El arreglo del hallazgo 4 lo empeoró: el bloqueo pasó de una hora a 24 horas. Antes de ese arreglo el atacante podía repetirlo cada hora, así que el bloqueo ya podía ser permanente; ahora le cuesta menos peticiones.
+**Media. Arreglado en `f21c01c`.** Cualquiera, sin cuenta. El arreglo del hallazgo 4 lo empeoró: el bloqueo pasó de una hora a 24 horas. Antes de ese arreglo el atacante podía repetirlo cada hora, así que el bloqueo ya podía ser permanente; ahora le cuesta menos peticiones.
 
 **Archivos:** `api/internal/auth/code.go:62` y `:127`, `api/internal/auth/ratelimit.go:13`.
 
@@ -178,7 +178,21 @@ Con este tope, una cuenta concreta acumula 3.650 intentos sobre un millón en un
 
 Las sesiones abiertas y Google no se ven afectados: el daño recae en quien estrena dispositivo o quedó sin sesión y entra con código.
 
-**Arreglo.** Ata cada código al navegador que lo pidió con una cookie de flujo `HttpOnly`, y cuenta los intentos por flujo y el cupo de envíos por pareja de email e IP. El tope por email de 10 fallos se mantiene como techo más alto, para que un atacante con muchas IP no recupere los intentos que quitó el hallazgo 4.
+**Arreglo** ([ADR 0011](adr/0011-codigos-atados-al-navegador.md)). La propuesta original, atar el código al navegador y mantener el tope por email, no cerraba la tercera forma: los diez fallos del atacante en sus propios flujos seguían bloqueando el email. Por eso se añadieron los dispositivos conocidos.
+
+1. Pedir un código deja una cookie de flujo `HttpOnly` con 128 bits aleatorios, y `login_codes` guarda su hash. Solo ese navegador puede comprobar el código, los 5 intentos son de ese código, y pedir otro desde el mismo navegador reemplaza solo el suyo.
+2. Cada inicio de sesión, con código o con Google, deja una cookie de dispositivo conocido que dura un año y que cerrar sesión no borra. La tabla `known_devices` guarda el hash de su token, 20 por Usuario como máximo, y borrar la cuenta los olvida. Un dispositivo conocido no gasta los límites por email y tiene los suyos: 5 códigos por hora y 10 equivocados al día, contados en la base.
+3. Los navegadores desconocidos conservan los límites del email: 5 códigos por hora y 10 fallos al día. Una IP pide 3 de esos 5, así que un atacante en otra dirección no se los lleva todos, y un email tiene 5 códigos vivos de navegadores desconocidos como máximo, también tras un reinicio. El tope del hallazgo 4 no cambia.
+
+**Medido después, contra el binario real**, con `curl` y `CF-Connecting-IP` rotado por loopback. Ana entró una vez desde su teléfono y cerró sesión.
+
+- Primera forma: el atacante pidió 4 códigos desde cuatro IP y el quinto recibió `429`; con el de Ana suman los 5 del email. El teléfono de Ana recibió 204, y un navegador nuevo de Ana, `429`.
+- Tercera forma: tras diez intentos fallidos del atacante con dos códigos suyos, un navegador nuevo de Ana recibe `429` con `Retry-After: 86400`, y el teléfono comprueba su código y entra. Tras reiniciar el binario pasa lo mismo.
+- Segunda forma: Beto pidió un código desde un navegador que nunca había usado. El atacante gastó los 5 intentos de su propio código, y el código real de Beto no le sirvió ni desde su navegador ni desde uno sin flujo (`429 too_many_attempts` y `400 login_code_expired`). Beto entró al primer intento.
+- Hallazgo 4: 30 IP, cada una con un flujo nuevo, consiguieron 10 intentos equivocados sobre un email. Las demás recibieron `429` con `Retry-After: 86400`.
+- En Chromium, la PWA entra con código sin cambios en el cliente. Tras cerrar sesión conserva la cookie de dispositivo, con `document.cookie` vacío, y vuelve a entrar después del mismo ataque, mientras otro navegador ve «Hubo demasiados intentos con este email».
+
+**Riesgo que queda.** Quien estrena dispositivo, o borró las cookies, depende de los límites del email, y cualquiera puede bloquearle los códigos un día. Google y las sesiones abiertas no se ven afectados. Quien comparta la IP de la víctima, o su /56, puede gastar el cupo de esa IP durante una hora. Quien robe la cookie de dispositivo de alguien gana 10 intentos al día sobre esa cuenta.
 
 ### 6. El envío de correos no tiene tope global
 
