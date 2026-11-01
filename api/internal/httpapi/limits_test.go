@@ -100,6 +100,21 @@ func TestABodyJustUnderTheLimitIsRead(t *testing.T) {
 	decodeProblem(t, rec, http.StatusBadRequest, httpapi.ProblemCodeValidationFailed)
 }
 
+// Whoever signs in has not shown who they are yet, and all they send is an
+// email and a code. A long crafted address once cost a minute of CPU.
+func TestSigningInOnlyTakesASmallBody(t *testing.T) {
+	a := newTestAPI(t)
+	c := a.newClient(t)
+	tooLarge := `{"email":"` + strings.Repeat("(a", 4<<10) + `@example.com","code":"123456"}`
+
+	for _, path := range []string{"/api/v1/auth/login-code", "/api/v1/auth/login-code/verify"} {
+		wantProblem(t, c.do(http.MethodPost, path, tooLarge), http.StatusRequestEntityTooLarge, httpapi.ProblemCodeBodyTooLarge)
+	}
+
+	longest := strings.Repeat("a", 240) + "@example.com"
+	wantStatus(t, c.do(http.MethodPost, "/api/v1/auth/login-code", `{"email":"`+longest+`"}`), http.StatusNoContent)
+}
+
 // limited is a server with a clock the test moves.
 func limited(t *testing.T) (http.Handler, *clock) {
 	t.Helper()

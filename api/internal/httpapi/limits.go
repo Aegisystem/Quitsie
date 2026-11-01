@@ -16,6 +16,10 @@ const (
 	// of them paying and owing, take about 1 MiB.
 	maxBodyBytes = 2 << 20
 
+	// maxAuthBodyBytes is the largest body of POST /auth/*. Those requests carry
+	// an email and a code from someone unknown, so a parser never gets more.
+	maxAuthBodyBytes = 4 << 10
+
 	// requestsPerMinute is what one IP gets, on top of Cloudflare's own limit.
 	// It is generous because a whole carrier's NAT can share one address, and
 	// the PWA makes a few requests per minute at most.
@@ -26,11 +30,11 @@ const (
 	maxTrackedClients = 100_000
 )
 
-// limitBody stops reading a request at maxBodyBytes. Decoding the body then
+// limitBody stops reading a request at limit bytes. Decoding the body then
 // fails with an *http.MaxBytesError, which badRequest answers.
-func limitBody(next http.Handler) http.Handler {
+func limitBody(limit int64, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
+		r.Body = http.MaxBytesReader(w, r.Body, limit)
 		next.ServeHTTP(w, r)
 	})
 }

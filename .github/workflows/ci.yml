@@ -52,6 +52,10 @@ jobs:
         working-directory: api
         run: go test ./...
 
+      - name: Scan Go for known vulnerabilities
+        working-directory: api
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
+
       - name: Build server binary with the PWA embedded
         working-directory: api
         env:

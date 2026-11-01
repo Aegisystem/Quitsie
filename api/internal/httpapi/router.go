@@ -30,7 +30,8 @@ func NewHandler(s *Server, pwa fs.FS) http.Handler {
 
 	limit := s.requestLimit()
 	mux := http.NewServeMux()
-	mux.Handle("/api/", limit(limitBody(s.guard(api))))
+	mux.Handle("/api/", limit(limitBody(maxBodyBytes, s.guard(api))))
+	mux.Handle("POST /api/v1/auth/", limit(limitBody(maxAuthBodyBytes, s.guard(api))))
 	// Health needs no User, it must keep working when the session lookup
 	// cannot, and whatever watches it must never be limited.
 	mux.Handle("GET /api/v1/health", api)
