@@ -8,7 +8,8 @@
 #
 # It restores into a temporary directory and checks the result; the live
 # database and the replica are never written. It exits non-zero if anything
-# fails, so it can also run from a timer.
+# fails: quitsie-restore-test.timer runs it every week, and a failure emails
+# the owner (deploy/alert-check.sh).
 set -euo pipefail
 
 CONFIG=/etc/litestream.yml
@@ -42,6 +43,8 @@ query() { sqlite3 -readonly "$1" "$2" 2>/dev/null || echo "n/a"; }
 echo "restored database: $(stat -c %s "$restored") bytes, $(query "$restored" "SELECT count(*) FROM sqlite_master WHERE type = 'table';") tables"
 echo "  schema version (goose): $(query "$restored" 'SELECT max(version_id) FROM goose_db_version;')"
 echo "  sync version in the backup: $(query "$restored" 'SELECT value FROM version_counter;')"
+# Each restore the app recorded on starting; after one, the backup should count it.
+echo "  restores recorded in the backup: $(query "$restored" 'SELECT count(*) FROM restore_gaps;')"
 if [[ -f $LIVE_DB ]]; then
   # A few versions of lag are normal: the backup trails the live database by about a second.
   echo "  sync version in the live database: $(query "$LIVE_DB" 'SELECT value FROM version_counter;')"

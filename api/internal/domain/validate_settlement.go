@@ -2,7 +2,9 @@ package domain
 
 import "fmt"
 
-// ValidateSettlement checks a Settlement before it is stored in ledger.
+// ValidateSettlement checks a Settlement before it is stored in ledger, or a
+// deleted one before it is restored. Counting s must keep both Balances within
+// MaxBalance.
 func ValidateSettlement(ledger Ledger, s Settlement) error {
 	if err := ledger.checkRecord(s.Currency); err != nil {
 		return err
@@ -23,5 +25,7 @@ func ValidateSettlement(ledger Ledger, s Settlement) error {
 			return fmt.Errorf("member %q: %w", id, ErrNotActiveMember)
 		}
 	}
-	return nil
+	moves := make(balanceSums)
+	moves.settlement(s, false)
+	return ledger.checkBalances(moves)
 }

@@ -31,7 +31,9 @@ func (e *RelabelError) Error() string {
 // currency changes. It keeps the same numbers and never applies an exchange
 // rate: 10.50 USD becomes 10.50 EUR, and 10.00 USD becomes 10 JPY. When some
 // amount would lose decimals or go over MaxAmount it changes nothing and
-// returns a *RelabelError.
+// returns a *RelabelError. Going to a currency with more decimals multiplies
+// every Balance too: when one would go beyond MaxBalance, it changes nothing
+// and returns ErrBalanceTooLarge.
 // The inputs are never modified.
 func Relabel(expenses []Expense, settlements []Settlement, to Currency) ([]Expense, []Settlement, error) {
 	toDecimals, ok := to.Decimals()
@@ -92,6 +94,12 @@ func Relabel(expenses []Expense, settlements []Settlement, to Currency) ([]Expen
 
 	if len(relabelErr.ExpenseIDs) > 0 || len(relabelErr.SettlementIDs) > 0 {
 		return nil, nil, relabelErr
+	}
+	var relabeled Ledger
+	relabeled.AddUp(relabeledExpenses, relabeledSettlements)
+	// Moving every Balance from zero to its new value checks them all.
+	if err := (Ledger{}).checkBalances(relabeled.balances); err != nil {
+		return nil, nil, err
 	}
 	return relabeledExpenses, relabeledSettlements, nil
 }

@@ -7,7 +7,24 @@ package store
 
 import (
 	"context"
+	"time"
 )
+
+const createRestoreGap = `-- name: CreateRestoreGap :exec
+INSERT INTO restore_gaps (restored_version, jumped_version, restored_at)
+VALUES (?, ?, ?)
+`
+
+type CreateRestoreGapParams struct {
+	RestoredVersion int64
+	JumpedVersion   int64
+	RestoredAt      time.Time
+}
+
+func (q *Queries) CreateRestoreGap(ctx context.Context, arg CreateRestoreGapParams) error {
+	_, err := q.db.ExecContext(ctx, createRestoreGap, arg.RestoredVersion, arg.JumpedVersion, arg.RestoredAt)
+	return err
+}
 
 const currentVersion = `-- name: CurrentVersion :one
 SELECT value FROM version_counter
@@ -20,6 +37,33 @@ func (q *Queries) CurrentVersion(ctx context.Context) (int64, error) {
 	var value int64
 	err := row.Scan(&value)
 	return value, err
+}
+
+const inRestoreGap = `-- name: InRestoreGap :one
+SELECT CAST(EXISTS (
+    SELECT 1 FROM restore_gaps
+    WHERE restored_version < ?1 AND ?1 < jumped_version
+) AS BOOLEAN) AS in_gap
+`
+
+// Whether a cursor lies strictly between the two ends of a restore's gap.
+func (q *Queries) InRestoreGap(ctx context.Context, cursor int64) (bool, error) {
+	row := q.db.QueryRowContext(ctx, inRestoreGap, cursor)
+	var in_gap bool
+	err := row.Scan(&in_gap)
+	return in_gap, err
+}
+
+const jumpVersion = `-- name: JumpVersion :exec
+UPDATE version_counter
+SET value = ?1
+WHERE id = 1
+`
+
+// Only RecordRestore moves the counter other than one by one.
+func (q *Queries) JumpVersion(ctx context.Context, value int64) error {
+	_, err := q.db.ExecContext(ctx, jumpVersion, value)
+	return err
 }
 
 const nextVersion = `-- name: NextVersion :one

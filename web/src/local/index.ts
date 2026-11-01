@@ -25,4 +25,5 @@ export {
   type SettlementView,
   type SyncState,
 } from './queries'
+export { expenseRecord, settlementRecord } from './records'
 export { uuidv7 } from './uuidv7'

@@ -267,6 +267,7 @@ const (
 	ProblemCodeLimitReached          ProblemCode = "limit_reached"
 	ProblemCodeLoginCodeExpired      ProblemCode = "login_code_expired"
 	ProblemCodeLoginCodeInvalid      ProblemCode = "login_code_invalid"
+	ProblemCodeMailBudgetSpent       ProblemCode = "mail_budget_spent"
 	ProblemCodeMemberNotClaimed      ProblemCode = "member_not_claimed"
 	ProblemCodeMemberNotPending      ProblemCode = "member_not_pending"
 	ProblemCodeNameRequired          ProblemCode = "name_required"
@@ -309,6 +310,8 @@ func (e ProblemCode) Valid() bool {
 	case ProblemCodeLoginCodeExpired:
 		return true
 	case ProblemCodeLoginCodeInvalid:
+		return true
+	case ProblemCodeMailBudgetSpent:
 		return true
 	case ProblemCodeMemberNotClaimed:
 		return true
@@ -459,7 +462,7 @@ type Activity struct {
 // ActivityKind What changed. New kinds may be added; clients skip the ones they do not know.
 type ActivityKind string
 
-// Amount Positive amount of a record in the minor unit of its currency (ISO 4217), for example 1050 = 10.50 USD. At most 10^15, so adding up Balances never overflows.
+// Amount Positive amount of a record in the minor unit of its currency (ISO 4217), for example 1050 = 10.50 USD. At most 10^15. That bounds one record, not a Balance, which adds up many: a record that would take a Balance beyond 2^53 - 1 is rejected with `invalid_amounts`.
 //
 // Example: 1050
 type Amount = int64
@@ -533,7 +536,7 @@ type CurrencyPrecisionProblem struct {
 
 // Debt How much one person owes another specific person.
 type Debt struct {
-	// Amount Positive amount in the minor unit of its currency. It adds up many records, so unlike an Amount it may be over 10^15.
+	// Amount Positive amount in the minor unit of its currency. It adds up many records, so unlike an Amount it may be over 10^15, but never over 2^53 - 1, up to which a JavaScript number holds every integer exactly. The Balances stay within that, and so do the simplified Debts; when a Debt between two people would not, the ledger gets its simplified Debts even without Debt simplification.
 	//
 	//
 	// Example: 1050
@@ -588,7 +591,7 @@ type Expense struct {
 	// SplitMethod How the client computed the OwedShares (ADR 0003). The server stores it only to re-edit the Expense and never recomputes the shares.
 	SplitMethod SplitMethod `json:"splitMethod"`
 
-	// Total Positive amount of a record in the minor unit of its currency (ISO 4217), for example 1050 = 10.50 USD. At most 10^15, so adding up Balances never overflows.
+	// Total Positive amount of a record in the minor unit of its currency (ISO 4217), for example 1050 = 10.50 USD. At most 10^15. That bounds one record, not a Balance, which adds up many: a record that would take a Balance beyond 2^53 - 1 is rejected with `invalid_amounts`.
 	//
 	//
 	// Example: 1050
@@ -622,7 +625,7 @@ type ExpenseUpdate struct {
 	// SplitMethod How the client computed the OwedShares (ADR 0003). The server stores it only to re-edit the Expense and never recomputes the shares.
 	SplitMethod SplitMethod `json:"splitMethod"`
 
-	// Total Positive amount of a record in the minor unit of its currency (ISO 4217), for example 1050 = 10.50 USD. At most 10^15, so adding up Balances never overflows.
+	// Total Positive amount of a record in the minor unit of its currency (ISO 4217), for example 1050 = 10.50 USD. At most 10^15. That bounds one record, not a Balance, which adds up many: a record that would take a Balance beyond 2^53 - 1 is rejected with `invalid_amounts`.
 	//
 	//
 	// Example: 1050
@@ -759,6 +762,12 @@ type LoginCodeVerification struct {
 	Email openapi_types.Email `json:"email"`
 }
 
+// LoginMethods The ways of signing in besides the emailed code, which is always there.
+type LoginMethods struct {
+	// Google True when the server has an OAuth client of Google, so `startGoogleLogin` can sign in.
+	Google bool `json:"google"`
+}
+
 // LoginResult defines model for LoginResult.
 type LoginResult struct {
 	// NewUser True when this sign-in created the account.
@@ -816,7 +825,7 @@ type NewExpense struct {
 	// SplitMethod How the client computed the OwedShares (ADR 0003). The server stores it only to re-edit the Expense and never recomputes the shares.
 	SplitMethod SplitMethod `json:"splitMethod"`
 
-	// Total Positive amount of a record in the minor unit of its currency (ISO 4217), for example 1050 = 10.50 USD. At most 10^15, so adding up Balances never overflows.
+	// Total Positive amount of a record in the minor unit of its currency (ISO 4217), for example 1050 = 10.50 USD. At most 10^15. That bounds one record, not a Balance, which adds up many: a record that would take a Balance beyond 2^53 - 1 is rejected with `invalid_amounts`.
 	//
 	//
 	// Example: 1050
@@ -857,7 +866,7 @@ type NewPendingMember struct {
 
 // NewSettlement A Settlement created on the device. `currency` follows the same rule as in NewExpense.
 type NewSettlement struct {
-	// Amount Positive amount of a record in the minor unit of its currency (ISO 4217), for example 1050 = 10.50 USD. At most 10^15, so adding up Balances never overflows.
+	// Amount Positive amount of a record in the minor unit of its currency (ISO 4217), for example 1050 = 10.50 USD. At most 10^15. That bounds one record, not a Balance, which adds up many: a record that would take a Balance beyond 2^53 - 1 is rejected with `invalid_amounts`.
 	//
 	//
 	// Example: 1050
@@ -891,7 +900,7 @@ type OwedShare struct {
 
 // PaidShare What a Participant paid of an Expense.
 type PaidShare struct {
-	// Amount Positive amount of a record in the minor unit of its currency (ISO 4217), for example 1050 = 10.50 USD. At most 10^15, so adding up Balances never overflows.
+	// Amount Positive amount of a record in the minor unit of its currency (ISO 4217), for example 1050 = 10.50 USD. At most 10^15. That bounds one record, not a Balance, which adds up many: a record that would take a Balance beyond 2^53 - 1 is rejected with `invalid_amounts`.
 	//
 	//
 	// Example: 1050
@@ -944,7 +953,7 @@ type RecordResult struct {
 	Id     openapi_types.UUID `json:"id"`
 	Kind   RecordResultKind   `json:"kind"`
 
-	// Reason Only when rejected. `ledger_unavailable`: the ledger was deleted or the User is no longer an active Member. `currency_mismatch`: the Group currency changed. `invalid_participants`: someone is not an active Member. `invalid_amounts`: an amount is out of range or the shares do not add up to the total. `id_conflict`: the id belongs to another record. `limit_reached`: the ledger is full. `invalid_record`: any other rule of the contract.
+	// Reason Only when rejected. `ledger_unavailable`: the ledger was deleted or the User is no longer an active Member. `currency_mismatch`: the Group currency changed. `invalid_participants`: someone is not an active Member. `invalid_amounts`: an amount is out of range, the shares do not add up to the total, or the record would take a Balance beyond 2^53 - 1 minor units, counting the records of the batch accepted before it. `id_conflict`: the id belongs to another record. `limit_reached`: the ledger is full. `invalid_record`: any other rule of the contract.
 	Reason *RecordResultReason `json:"reason,omitempty"`
 	Status RecordResultStatus  `json:"status"`
 
@@ -957,7 +966,7 @@ type RecordResult struct {
 // RecordResultKind defines model for RecordResult.Kind.
 type RecordResultKind string
 
-// RecordResultReason Only when rejected. `ledger_unavailable`: the ledger was deleted or the User is no longer an active Member. `currency_mismatch`: the Group currency changed. `invalid_participants`: someone is not an active Member. `invalid_amounts`: an amount is out of range or the shares do not add up to the total. `id_conflict`: the id belongs to another record. `limit_reached`: the ledger is full. `invalid_record`: any other rule of the contract.
+// RecordResultReason Only when rejected. `ledger_unavailable`: the ledger was deleted or the User is no longer an active Member. `currency_mismatch`: the Group currency changed. `invalid_participants`: someone is not an active Member. `invalid_amounts`: an amount is out of range, the shares do not add up to the total, or the record would take a Balance beyond 2^53 - 1 minor units, counting the records of the batch accepted before it. `id_conflict`: the id belongs to another record. `limit_reached`: the ledger is full. `invalid_record`: any other rule of the contract.
 type RecordResultReason string
 
 // RecordResultStatus defines model for RecordResult.Status.
@@ -986,7 +995,7 @@ type Session struct {
 
 // Settlement A record that one person paid another back. No real money moves.
 type Settlement struct {
-	// Amount Positive amount of a record in the minor unit of its currency (ISO 4217), for example 1050 = 10.50 USD. At most 10^15, so adding up Balances never overflows.
+	// Amount Positive amount of a record in the minor unit of its currency (ISO 4217), for example 1050 = 10.50 USD. At most 10^15. That bounds one record, not a Balance, which adds up many: a record that would take a Balance beyond 2^53 - 1 is rejected with `invalid_amounts`.
 	//
 	//
 	// Example: 1050
@@ -1073,6 +1082,9 @@ type SettlementId = openapi_types.UUID
 // BadRequest Error body (RFC 9457, `application/problem+json`).
 type BadRequest = Problem
 
+// BalanceLimit Error body (RFC 9457, `application/problem+json`).
+type BalanceLimit = Problem
+
 // NotFound Error body (RFC 9457, `application/problem+json`).
 type NotFound = Problem
 
@@ -1150,6 +1162,9 @@ type ServerInterface interface {
 	// Logout Closes the current session.
 	// (POST /auth/logout)
 	Logout(w http.ResponseWriter, r *http.Request)
+	// GetLoginMethods Says which ways of signing in this server offers.
+	// (GET /auth/methods)
+	GetLoginMethods(w http.ResponseWriter, r *http.Request)
 	// ListSessions Lists the User's open sessions, one per device.
 	// (GET /auth/sessions)
 	ListSessions(w http.ResponseWriter, r *http.Request)
@@ -1373,6 +1388,20 @@ func (siw *ServerInterfaceWrapper) Logout(w http.ResponseWriter, r *http.Request
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.Logout(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetLoginMethods operation middleware
+func (siw *ServerInterfaceWrapper) GetLoginMethods(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetLoginMethods(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -2195,6 +2224,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	}
 
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/health", wrapper.GetHealth)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/auth/methods", wrapper.GetLoginMethods)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/auth/login-code", wrapper.RequestLoginCode)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/auth/login-code/verify", wrapper.VerifyLoginCode)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/auth/google", wrapper.StartGoogleLogin)
@@ -2233,6 +2263,8 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 }
 
 type BadRequestApplicationProblemPlusJSONResponse Problem
+
+type BalanceLimitApplicationProblemPlusJSONResponse Problem
 
 type NotFoundApplicationProblemPlusJSONResponse Problem
 
@@ -2338,10 +2370,18 @@ type RequestLoginCodeResponseObject interface {
 	VisitRequestLoginCodeResponse(w http.ResponseWriter) error
 }
 
+type RequestLoginCode204ResponseHeaders struct {
+	SetCookie *string
+}
+
 type RequestLoginCode204Response struct {
+	Headers RequestLoginCode204ResponseHeaders
 }
 
 func (response RequestLoginCode204Response) VisitRequestLoginCodeResponse(w http.ResponseWriter) error {
+	if response.Headers.SetCookie != nil {
+		w.Header().Set("Set-Cookie", fmt.Sprint(*response.Headers.SetCookie))
+	}
 	w.WriteHeader(204)
 	return nil
 }
@@ -2382,6 +2422,30 @@ func (response RequestLoginCode429ApplicationProblemPlusJSONResponse) VisitReque
 		w.Header().Set("Retry-After", fmt.Sprint(*response.Headers.RetryAfter))
 	}
 	w.WriteHeader(429)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RequestLoginCode503ResponseHeaders struct {
+	RetryAfter *int
+}
+
+type RequestLoginCode503ApplicationProblemPlusJSONResponse struct {
+	Body    Problem
+	Headers RequestLoginCode503ResponseHeaders
+}
+
+func (response RequestLoginCode503ApplicationProblemPlusJSONResponse) VisitRequestLoginCodeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	if response.Headers.RetryAfter != nil {
+		w.Header().Set("Retry-After", fmt.Sprint(*response.Headers.RetryAfter))
+	}
+	w.WriteHeader(503)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -2536,6 +2600,44 @@ func (response LogoutdefaultApplicationProblemPlusJSONResponse) VisitLogoutRespo
 	return err
 }
 
+type GetLoginMethodsRequestObject struct {
+}
+
+type GetLoginMethodsResponseObject interface {
+	VisitGetLoginMethodsResponse(w http.ResponseWriter) error
+}
+
+type GetLoginMethods200JSONResponse LoginMethods
+
+func (response GetLoginMethods200JSONResponse) VisitGetLoginMethodsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetLoginMethodsdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response GetLoginMethodsdefaultApplicationProblemPlusJSONResponse) VisitGetLoginMethodsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type ListSessionsRequestObject struct {
 }
 
@@ -2669,6 +2771,22 @@ type DeleteExpense204Response struct {
 func (response DeleteExpense204Response) VisitDeleteExpenseResponse(w http.ResponseWriter) error {
 	w.WriteHeader(204)
 	return nil
+}
+
+type DeleteExpense400ApplicationProblemPlusJSONResponse struct {
+	BalanceLimitApplicationProblemPlusJSONResponse
+}
+
+func (response DeleteExpense400ApplicationProblemPlusJSONResponse) VisitDeleteExpenseResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
 }
 
 type DeleteExpense401ApplicationProblemPlusJSONResponse struct {
@@ -2852,6 +2970,22 @@ func (response RestoreExpense200JSONResponse) VisitRestoreExpenseResponse(w http
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RestoreExpense400ApplicationProblemPlusJSONResponse struct {
+	BalanceLimitApplicationProblemPlusJSONResponse
+}
+
+func (response RestoreExpense400ApplicationProblemPlusJSONResponse) VisitRestoreExpenseResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -3375,9 +3509,7 @@ func (response UpdateGroup200JSONResponse) VisitUpdateGroupResponse(w http.Respo
 	return err
 }
 
-type UpdateGroup400ApplicationProblemPlusJSONResponse struct {
-	BadRequestApplicationProblemPlusJSONResponse
-}
+type UpdateGroup400ApplicationProblemPlusJSONResponse Problem
 
 func (response UpdateGroup400ApplicationProblemPlusJSONResponse) VisitUpdateGroupResponse(w http.ResponseWriter) error {
 
@@ -4581,6 +4713,22 @@ func (response DeleteSettlement204Response) VisitDeleteSettlementResponse(w http
 	return nil
 }
 
+type DeleteSettlement400ApplicationProblemPlusJSONResponse struct {
+	BalanceLimitApplicationProblemPlusJSONResponse
+}
+
+func (response DeleteSettlement400ApplicationProblemPlusJSONResponse) VisitDeleteSettlementResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type DeleteSettlement401ApplicationProblemPlusJSONResponse struct {
 	UnauthorizedApplicationProblemPlusJSONResponse
 }
@@ -4662,6 +4810,22 @@ func (response RestoreSettlement200JSONResponse) VisitRestoreSettlementResponse(
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RestoreSettlement400ApplicationProblemPlusJSONResponse struct {
+	BalanceLimitApplicationProblemPlusJSONResponse
+}
+
+func (response RestoreSettlement400ApplicationProblemPlusJSONResponse) VisitRestoreSettlementResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -4831,6 +4995,9 @@ type StrictServerInterface interface {
 	// Logout Closes the current session.
 	// (POST /auth/logout)
 	Logout(ctx context.Context, request LogoutRequestObject) (LogoutResponseObject, error)
+	// GetLoginMethods Says which ways of signing in this server offers.
+	// (GET /auth/methods)
+	GetLoginMethods(ctx context.Context, request GetLoginMethodsRequestObject) (GetLoginMethodsResponseObject, error)
 	// ListSessions Lists the User's open sessions, one per device.
 	// (GET /auth/sessions)
 	ListSessions(ctx context.Context, request ListSessionsRequestObject) (ListSessionsResponseObject, error)
@@ -5090,6 +5257,30 @@ func (sh *strictHandler) Logout(w http.ResponseWriter, r *http.Request) {
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(LogoutResponseObject); ok {
 		if err := validResponse.VisitLogoutResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetLoginMethods operation middleware
+func (sh *strictHandler) GetLoginMethods(w http.ResponseWriter, r *http.Request) {
+	var request GetLoginMethodsRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetLoginMethods(ctx, request.(GetLoginMethodsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetLoginMethods")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetLoginMethodsResponseObject); ok {
+		if err := validResponse.VisitGetLoginMethodsResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

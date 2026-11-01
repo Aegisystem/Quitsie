@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
+	"time"
 	"unicode"
 	"unicode/utf8"
 
@@ -21,21 +22,34 @@ import (
 
 // Sign-in, sessions and the profile, on top of package auth.
 
+// GetLoginMethods lets the PWA show the Google button only when it can work:
+// the owner may run the server without an OAuth client of Google.
+func (s *Server) GetLoginMethods(context.Context, GetLoginMethodsRequestObject) (GetLoginMethodsResponseObject, error) {
+	return GetLoginMethods200JSONResponse{Google: s.deps.Auth.GoogleEnabled()}, nil
+}
+
 func (s *Server) RequestLoginCode(ctx context.Context, req RequestLoginCodeRequestObject) (RequestLoginCodeResponseObject, error) {
 	r := requestFrom(ctx)
-	err := s.deps.Auth.RequestCode(ctx, string(req.Body.Email), clientIP(r))
+	flow, err := s.deps.Auth.RequestCode(ctx, string(req.Body.Email), auth.BrowserOf(r, senderIP(r)))
 	var limited *auth.RateLimitError
+	var spent *auth.MailBudgetError
 	switch {
 	case err == nil:
-		return RequestLoginCode204Response{}, nil
+		return codeSent{flow: flow}, nil
 	case errors.Is(err, auth.ErrInvalidEmail):
 		return RequestLoginCode400ApplicationProblemPlusJSONResponse{BadRequestApplicationProblemPlusJSONResponse(
 			authProblem(http.StatusBadRequest, ProblemCodeValidationFailed, "The email address is not valid."))}, nil
 	case errors.As(err, &limited):
-		seconds := int(math.Ceil(limited.RetryAfter.Seconds()))
+		seconds := retryAfterSeconds(limited.RetryAfter)
 		return RequestLoginCode429ApplicationProblemPlusJSONResponse{
 			Body:    authProblem(http.StatusTooManyRequests, ProblemCodeRateLimited, "Too many login codes requested."),
 			Headers: RequestLoginCode429ResponseHeaders{RetryAfter: &seconds},
+		}, nil
+	case errors.As(err, &spent):
+		seconds := retryAfterSeconds(spent.RetryAfter)
+		return RequestLoginCode503ApplicationProblemPlusJSONResponse{
+			Body:    authProblem(http.StatusServiceUnavailable, ProblemCodeMailBudgetSpent, "The server sent all the emails it can for now."),
+			Headers: RequestLoginCode503ResponseHeaders{RetryAfter: &seconds},
 		}, nil
 	default:
 		return nil, err
@@ -48,7 +62,7 @@ func (s *Server) VerifyLoginCode(ctx context.Context, req VerifyLoginCodeRequest
 			authProblem(http.StatusBadRequest, ProblemCodeValidationFailed, "A login code is 6 digits.")), nil
 	}
 	r := requestFrom(ctx)
-	signIn, err := s.deps.Auth.VerifyCode(ctx, string(req.Body.Email), req.Body.Code, device(r), clientIP(r))
+	signIn, err := s.deps.Auth.VerifyCode(ctx, string(req.Body.Email), req.Body.Code, device(r), auth.BrowserOf(r, clientIP(r)))
 	switch {
 	case err == nil:
 	case errors.Is(err, auth.ErrInvalidEmail):
@@ -69,14 +83,43 @@ func (s *Server) VerifyLoginCode(ctx context.Context, req VerifyLoginCodeRequest
 	default:
 		return nil, err
 	}
-	cookie := auth.SessionCookie(signIn.Token).String()
-	return VerifyLoginCode200JSONResponse{
-		Body:    LoginResult{User: userFrom(signIn.User), NewUser: signIn.NewUser},
-		Headers: VerifyLoginCode200ResponseHeaders{SetCookie: &cookie},
+	return codeChecked{
+		body:    LoginResult{User: userFrom(signIn.User), NewUser: signIn.NewUser},
+		cookies: []*http.Cookie{auth.SessionCookie(signIn.Token), auth.KnownDeviceCookie(signIn.KnownDevices), auth.ClearCodeFlowCookie()},
 	}, nil
 }
 
+// codeSent and codeChecked answer with cookies. The generated responses have
+// room for one Set-Cookie at most, and they would overwrite the one
+// Authenticate sets when it renews a session.
+type codeSent struct {
+	flow *http.Cookie
+}
+
+func (c codeSent) VisitRequestLoginCodeResponse(w http.ResponseWriter) error {
+	http.SetCookie(w, c.flow)
+	return RequestLoginCode204Response{}.VisitRequestLoginCodeResponse(w)
+}
+
+type codeChecked struct {
+	body    LoginResult
+	cookies []*http.Cookie
+}
+
+func (c codeChecked) VisitVerifyLoginCodeResponse(w http.ResponseWriter) error {
+	for _, cookie := range c.cookies {
+		http.SetCookie(w, cookie)
+	}
+	return VerifyLoginCode200JSONResponse{Body: c.body}.VisitVerifyLoginCodeResponse(w)
+}
+
 var sixDigits = regexp.MustCompile(`^[0-9]{6}$`)
+
+// retryAfterSeconds is the value of a Retry-After header, rounded up so the
+// client never asks too early.
+func retryAfterSeconds(d time.Duration) int {
+	return int(math.Ceil(d.Seconds()))
+}
 
 func (s *Server) StartGoogleLogin(ctx context.Context, req StartGoogleLoginRequestObject) (StartGoogleLoginResponseObject, error) {
 	returnTo := "/"
@@ -102,7 +145,7 @@ const googleFailedPath = "/login?error=google"
 
 func (s *Server) FinishGoogleLogin(ctx context.Context, _ FinishGoogleLoginRequestObject) (FinishGoogleLoginResponseObject, error) {
 	r := requestFrom(ctx)
-	clearFlow := s.deps.Auth.ClearGoogleCookie()
+	clearFlow := auth.ClearGoogleCookie()
 	signIn, err := s.deps.Auth.FinishGoogle(ctx, r, device(r))
 	switch {
 	case err == nil:
@@ -110,7 +153,7 @@ func (s *Server) FinishGoogleLogin(ctx context.Context, _ FinishGoogleLoginReque
 		if !insideTheApp(returnTo) {
 			returnTo = "/"
 		}
-		return redirect{location: returnTo, cookies: []*http.Cookie{clearFlow, auth.SessionCookie(signIn.Token)}}, nil
+		return redirect{location: returnTo, cookies: []*http.Cookie{clearFlow, auth.SessionCookie(signIn.Token), auth.KnownDeviceCookie(signIn.KnownDevices)}}, nil
 	case errors.Is(err, auth.ErrGoogleCancelled):
 		return redirect{location: "/login", cookies: []*http.Cookie{clearFlow}}, nil
 	default:

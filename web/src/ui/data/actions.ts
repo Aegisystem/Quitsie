@@ -8,9 +8,11 @@ export type RecordKind = 'expense' | 'settlement'
 
 // `formerMember`: a record with a former member can be neither deleted nor
 // restored, as that would change their Balance, which is zero.
+// `balance`: deleting or restoring it would take a Balance past what Quitsie
+// can hold (docs/reglas-de-negocio.md).
 // `gone`: the server no longer has it, or the User no longer sees it.
 // `offline`: no answer came back at all.
-export type ActionResult = 'done' | 'formerMember' | 'gone' | 'offline' | 'failed'
+export type ActionResult = 'done' | 'formerMember' | 'balance' | 'gone' | 'offline' | 'failed'
 
 interface Answer {
   error?: unknown
@@ -29,6 +31,7 @@ export function createActions({ api, engine }: { api: Api; engine: Pick<SyncEngi
     }
     const { error, response } = answer
     if (response.status === 409 && codeOf(error) === 'invalid_participants') return 'formerMember'
+    if (response.status === 400 && codeOf(error) === 'invalid_amounts') return 'balance'
     if (!response.ok && response.status !== 404) return 'failed'
     await engine.sync()
     return response.ok ? 'done' : 'gone'

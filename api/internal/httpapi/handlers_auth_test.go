@@ -2,6 +2,7 @@ package httpapi_test
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/url"
 	"reflect"
@@ -23,6 +24,10 @@ func TestSigningInWithAnEmailedCode(t *testing.T) {
 	resp := phone.do(http.MethodPost, "/api/v1/auth/login-code", `{"email":"ana@example.com"}`)
 	wantStatus(t, resp, http.StatusNoContent)
 	code := api.mail.lastCode(t, "ana@example.com")
+	flow := cookie(resp, auth.CodeFlowCookieName)
+	if !hidden(flow) || flow.MaxAge != 600 || len(flow.Value) < 26 {
+		t.Errorf("flow cookie = %v, want a hidden one of 128 bits or more for the 10 minutes of the code", flow)
+	}
 
 	resp = phone.do(http.MethodPost, "/api/v1/auth/login-code/verify", `{"email":"ana@example.com","code":"`+code+`"}`)
 	login := readJSON[httpapi.LoginResult](t, resp, http.StatusOK)
@@ -30,9 +35,14 @@ func TestSigningInWithAnEmailedCode(t *testing.T) {
 	if !login.NewUser || login.User.Email != "ana@example.com" || login.User.Name != "" || login.User.PreferredCurrency != "USD" {
 		t.Errorf("login = %+v, want a new User ana@example.com with no name and USD", login)
 	}
-	session := cookie(resp, auth.SessionCookieName)
-	if session == nil || !session.HttpOnly || !session.Secure || session.SameSite != http.SameSiteLaxMode {
+	if session := cookie(resp, auth.SessionCookieName); !hidden(session) {
 		t.Errorf("session cookie = %v, want an HttpOnly, Secure, SameSite=Lax cookie", session)
+	}
+	if known := cookie(resp, auth.KnownDeviceCookieName); !hidden(known) || known.MaxAge < 300*24*60*60 {
+		t.Errorf("known-device cookie = %v, want a hidden one that lasts a year", known)
+	}
+	if flow := cookie(resp, auth.CodeFlowCookieName); flow == nil || flow.MaxAge >= 0 {
+		t.Errorf("flow cookie = %v, want one that deletes it", flow)
 	}
 
 	me := readJSON[httpapi.User](t, phone.do(http.MethodGet, "/api/v1/me", ""), http.StatusOK)
@@ -41,9 +51,110 @@ func TestSigningInWithAnEmailedCode(t *testing.T) {
 	}
 }
 
+// hidden reports whether c is out of reach of scripts and of other sites.
+func hidden(c *http.Cookie) bool {
+	return c != nil && c.HttpOnly && c.Secure && c.SameSite == http.SameSiteLaxMode
+}
+
+// hostOnly reports whether a browser takes c: a cookie whose name starts with
+// __Host-, a deletion included, must be Secure, for Path=/ and without Domain.
+func hostOnly(c *http.Cookie) bool {
+	return strings.HasPrefix(c.Name, "__Host-") && c.Secure && c.Path == "/" && c.Domain == ""
+}
+
+// No other subdomain of the app's domain can set or shadow a cookie of
+// sign-in, and a browser ignores a cookie of such a name that breaks the
+// rules of the prefix: a sign-in or a sign-out would silently not happen.
+func TestEveryCookieIsBoundToTheHost(t *testing.T) {
+	var google *authtest.FakeGoogle
+	api := newTestAPI(t, withGoogle(t, &google))
+	browser := api.newClient(t)
+	var responses []*http.Response
+	send := func(method, target, body string) *http.Response {
+		resp := browser.do(method, target, body)
+		responses = append(responses, resp)
+		return resp
+	}
+
+	send(http.MethodPost, "/api/v1/auth/login-code", `{"email":"ana@example.com"}`)
+	send(http.MethodPost, "/api/v1/auth/login-code/verify", `{"email":"ana@example.com","code":"`+api.mail.lastCode(t, "ana@example.com")+`"}`)
+	stolen := browser.sessionCookie()
+	send(http.MethodPost, "/api/v1/auth/logout", "")
+	// A session that ended gets its cookie deleted.
+	responses = append(responses, api.withSessionCookie(t, stolen).do(http.MethodGet, "/api/v1/me", ""))
+	start := send(http.MethodGet, "/api/v1/auth/google", "")
+	send(http.MethodGet, strings.TrimPrefix(google.Consent(t, start.Header.Get("Location"), anaAtGoogle), api.srv.URL), "")
+	send(http.MethodGet, "/api/v1/auth/google/callback?error=server_error", "")
+
+	set, deleted := map[string]bool{}, map[string]bool{}
+	for _, resp := range responses {
+		for _, c := range resp.Cookies() {
+			if !hostOnly(c) {
+				t.Errorf("%s %s set %q, want a __Host- cookie: Secure, Path=/ and no Domain", resp.Request.Method, resp.Request.URL.Path, c.String())
+			}
+			if c.MaxAge < 0 {
+				deleted[c.Name] = true
+			} else {
+				set[c.Name] = true
+			}
+		}
+	}
+	all := []string{auth.SessionCookieName, auth.CodeFlowCookieName, auth.KnownDeviceCookieName, auth.GoogleCookieName}
+	for _, name := range all {
+		if !set[name] {
+			t.Errorf("no response set %s", name)
+		}
+	}
+	for _, name := range []string{auth.SessionCookieName, auth.CodeFlowCookieName, auth.GoogleCookieName} {
+		if !deleted[name] {
+			t.Errorf("no response deleted %s", name)
+		}
+	}
+}
+
+// Finding 5 of docs/revision-seguridad.md, through real cookie jars: knowing
+// Ana's email used to be enough to keep her from signing in for a day.
+func TestNobodyCanKeepAKnownDeviceFromSigningIn(t *testing.T) {
+	api := newTestAPI(t)
+	phone := api.newClient(t)
+	phone.ip = "203.0.113.7"
+	phone.signIn("ana@example.com")
+	// Signing out leaves the browser known.
+	wantStatus(t, phone.do(http.MethodPost, "/api/v1/auth/logout", ""), http.StatusNoContent)
+
+	// The attacker spends the codes of the email and ten wrong guesses.
+	for i := range 6 {
+		attacker := api.newClient(t)
+		attacker.ip = fmt.Sprintf("198.51.100.%d", i)
+		resp := attacker.do(http.MethodPost, "/api/v1/auth/login-code", `{"email":"ana@example.com"}`)
+		if resp.StatusCode != http.StatusNoContent {
+			continue
+		}
+		code := api.mail.lastCode(t, "ana@example.com")
+		wrong := "000000"
+		if code == wrong {
+			wrong = "000001"
+		}
+		for range 2 {
+			attacker.do(http.MethodPost, "/api/v1/auth/login-code/verify", `{"email":"ana@example.com","code":"`+wrong+`"}`)
+		}
+	}
+	newBrowser := api.newClient(t)
+	newBrowser.ip = "203.0.113.7"
+	wantProblem(t, newBrowser.do(http.MethodPost, "/api/v1/auth/login-code", `{"email":"ana@example.com"}`), http.StatusTooManyRequests, httpapi.ProblemCodeRateLimited)
+
+	wantStatus(t, phone.do(http.MethodPost, "/api/v1/auth/login-code", `{"email":"ana@example.com"}`), http.StatusNoContent)
+	code := api.mail.lastCode(t, "ana@example.com")
+	// The code is no use to anyone else, and nobody else can spend its attempts.
+	wantProblem(t, newBrowser.do(http.MethodPost, "/api/v1/auth/login-code/verify", `{"email":"ana@example.com","code":"`+code+`"}`), http.StatusBadRequest, httpapi.ProblemCodeLoginCodeExpired)
+	resp := phone.do(http.MethodPost, "/api/v1/auth/login-code/verify", `{"email":"ana@example.com","code":"`+code+`"}`)
+	readJSON[httpapi.LoginResult](t, resp, http.StatusOK)
+}
+
 // One request that reaches each operation of the contract.
 var everyOperation = []operationRequest{
 	{"GetHealth", http.MethodGet, "/api/v1/health", ""},
+	{"GetLoginMethods", http.MethodGet, "/api/v1/auth/methods", ""},
 	{"RequestLoginCode", http.MethodPost, "/api/v1/auth/login-code", `{"email":"ana@example.com"}`},
 	{"VerifyLoginCode", http.MethodPost, "/api/v1/auth/login-code/verify", `{"email":"ana@example.com","code":"000000"}`},
 	{"StartGoogleLogin", http.MethodGet, "/api/v1/auth/google?returnTo=/groups", ""},
@@ -82,7 +193,7 @@ var everyOperation = []operationRequest{
 // The operations anyone can call. GetInvite shows an invitation before its
 // guest signs in.
 var publicOperations = []string{
-	"GetHealth", "RequestLoginCode", "VerifyLoginCode", "StartGoogleLogin", "FinishGoogleLogin", "GetInvite",
+	"GetHealth", "GetLoginMethods", "RequestLoginCode", "VerifyLoginCode", "StartGoogleLogin", "FinishGoogleLogin", "GetInvite",
 }
 
 func TestOnlyPublicOperationsAnswerWithoutASession(t *testing.T) {
@@ -196,21 +307,38 @@ func TestALoginCodeMustBeTheOneSentAndStillLive(t *testing.T) {
 func TestLoginCodesAreLimitedPerEmail(t *testing.T) {
 	var clk *clock
 	api := newTestAPI(t, withClock(&clk))
-	phone := api.newClient(t)
-	request := func() *http.Response {
-		return phone.do(http.MethodPost, "/api/v1/auth/login-code", `{"email":"ana@example.com"}`)
+	request := func(i int) *http.Response {
+		browser := api.newClient(t)
+		browser.ip = fmt.Sprintf("198.51.100.%d", i)
+		return browser.do(http.MethodPost, "/api/v1/auth/login-code", `{"email":"ana@example.com"}`)
 	}
 
-	for range 5 {
-		wantStatus(t, request(), http.StatusNoContent)
+	for i := range 5 {
+		wantStatus(t, request(i), http.StatusNoContent)
 		clk.Advance(time.Minute)
 	}
-	resp := request()
+	resp := request(5)
 
 	wantProblem(t, resp, http.StatusTooManyRequests, httpapi.ProblemCodeRateLimited)
 	// The first of the 5 codes was sent 5 minutes ago; the hour ends in 55.
 	if got := resp.Header.Get("Retry-After"); got != "3300" {
 		t.Errorf("Retry-After = %q, want 3300 seconds", got)
+	}
+}
+
+// The client must tell this apart from its own limits: nobody gets a code.
+func TestASpentBudgetOfEmailsIsAServiceProblem(t *testing.T) {
+	var clk *clock
+	api := newTestAPI(t, withClock(&clk), func(_ *testAPI, cfg *auth.Config) { cfg.MailPerHour = 1 })
+	phone := api.newClient(t)
+	wantStatus(t, phone.do(http.MethodPost, "/api/v1/auth/login-code", `{"email":"ana@example.com"}`), http.StatusNoContent)
+	clk.Advance(15 * time.Minute)
+
+	resp := phone.do(http.MethodPost, "/api/v1/auth/login-code", `{"email":"beto@example.com"}`)
+
+	wantProblem(t, resp, http.StatusServiceUnavailable, httpapi.ProblemCodeMailBudgetSpent)
+	if got := resp.Header.Get("Retry-After"); got != "2700" {
+		t.Errorf("Retry-After = %q, want the 2700 seconds left in the hour", got)
 	}
 }
 
@@ -355,6 +483,34 @@ func TestDeletingTheAccount(t *testing.T) {
 	}
 }
 
+// The PWA shows the Google button only when the server says it can sign in
+// with Google: without an OAuth client, the button only leads to an error.
+func TestTheLoginMethodsSayWhetherGoogleCanSignIn(t *testing.T) {
+	var google *authtest.FakeGoogle
+	tests := []struct {
+		name string
+		api  *testAPI
+		want bool
+	}{
+		{"without an OAuth client", newTestAPI(t), false},
+		{"with one", newTestAPI(t, withGoogle(t, &google)), true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Asked before signing in.
+			resp := tt.api.newClient(t).do(http.MethodGet, "/api/v1/auth/methods", "")
+
+			if methods := readJSON[httpapi.LoginMethods](t, resp, http.StatusOK); methods.Google != tt.want {
+				t.Errorf("google = %v, want %v", methods.Google, tt.want)
+			}
+			// A kept answer would outlive a change of configuration.
+			if got := resp.Header.Get("Cache-Control"); got != "no-store" {
+				t.Errorf("Cache-Control = %q, want no-store", got)
+			}
+		})
+	}
+}
+
 var anaAtGoogle = authtest.GoogleAccount{Sub: "108", Email: "ana@gmail.com", EmailVerified: true, Name: "Ana Pérez"}
 
 // startGoogle follows the browser to Google and back: it returns the path
@@ -380,6 +536,9 @@ func TestSigningInWithGoogle(t *testing.T) {
 	}
 	if c := cookie(resp, auth.SessionCookieName); c == nil || !c.HttpOnly || !c.Secure {
 		t.Errorf("session cookie = %v, want a hidden, Secure cookie", c)
+	}
+	if c := cookie(resp, auth.KnownDeviceCookieName); !hidden(c) {
+		t.Errorf("known-device cookie = %v, want a hidden one", c)
 	}
 	if c := cookie(resp, auth.GoogleCookieName); c == nil || c.MaxAge >= 0 {
 		t.Errorf("flow cookie = %v, want one that deletes it", c)

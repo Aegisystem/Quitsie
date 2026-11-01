@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -93,6 +94,36 @@ func TestAGoogleAccountStaysLinkedWhenItsEmailChanges(t *testing.T) {
 	}
 }
 
+// A shared laptop where Beto signed in with a code and then Ana with Google:
+// it stays known to both, and keeps Ana's token the next time.
+func TestGoogleKeepsTheBrowserKnownToWhoeverSignedInThere(t *testing.T) {
+	f, g := newGoogleFixture(t)
+	ctx := context.Background()
+	betos := f.signedInBrowser(t, "beto@example.com", anaIP).KnownDevices
+	withCookie := func(known string) *http.Request {
+		req := f.googleCallback(t, g, anaAtGoogle)
+		req.AddCookie(auth.KnownDeviceCookie(known))
+		return req
+	}
+
+	first, err := f.svc.FinishGoogle(ctx, withCookie(betos), device)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tokens := strings.Split(first.KnownDevices, ".")
+	if len(tokens) != 2 || tokens[1] != betos {
+		t.Fatalf("cookie = %q, want a token for Ana and then Beto's %q", first.KnownDevices, betos)
+	}
+
+	again, err := f.svc.FinishGoogle(ctx, withCookie(first.KnownDevices), device)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again.KnownDevices != first.KnownDevices {
+		t.Errorf("cookie = %q, want the same %q", again.KnownDevices, first.KnownDevices)
+	}
+}
+
 func TestTheGoogleFlowCookieIsShortLivedAndHidden(t *testing.T) {
 	f, _ := newGoogleFixture(t)
 
@@ -103,8 +134,13 @@ func TestTheGoogleFlowCookieIsShortLivedAndHidden(t *testing.T) {
 	if !c.HttpOnly || !c.Secure || c.SameSite != http.SameSiteLaxMode {
 		t.Errorf("HttpOnly=%v Secure=%v SameSite=%v, want HttpOnly, Secure and Lax", c.HttpOnly, c.Secure, c.SameSite)
 	}
-	if c.MaxAge != 10*60 || c.Path != "/api/v1/auth/google/callback" {
-		t.Errorf("MaxAge=%d Path=%q, want 10 minutes on the callback only", c.MaxAge, c.Path)
+	if c.MaxAge != 10*60 {
+		t.Errorf("MaxAge = %d, want 10 minutes", c.MaxAge)
+	}
+	// Another subdomain could otherwise plant its own flow, and with it sign
+	// the browser in to someone else's account.
+	if !strings.HasPrefix(c.Name, "__Host-") || c.Path != "/" || c.Domain != "" {
+		t.Errorf("Name=%q Path=%q Domain=%q, want a __Host- cookie for the whole origin", c.Name, c.Path, c.Domain)
 	}
 }
 

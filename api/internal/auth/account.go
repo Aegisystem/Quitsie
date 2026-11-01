@@ -8,9 +8,10 @@ import (
 )
 
 // DeleteUser deletes the User's account. Their Members and Friends become
-// pending again with their names, so nobody else's Balances change, and
-// every session they had ends. Their email and Google account are freed:
-// signing in with either again creates a new User.
+// pending again with their names, so nobody else's Balances change, every
+// session they had ends, and the browsers they signed in from are forgotten.
+// Their email and Google account are freed: signing in with either again
+// creates a new User.
 func (s *Service) DeleteUser(ctx context.Context, userID string) error {
 	// Unlinking Members changes ledgers, so it takes a version for sync.
 	_, err := store.Write(ctx, s.db, func(q *store.Queries, version int64) error {
@@ -19,6 +20,9 @@ func (s *Service) DeleteUser(ctx context.Context, userID string) error {
 		}
 		if err := q.DeleteSessionsOfUser(ctx, userID); err != nil {
 			return fmt.Errorf("auth: delete sessions: %w", err)
+		}
+		if err := q.DeleteKnownDevicesOfUser(ctx, userID); err != nil {
+			return fmt.Errorf("auth: delete known devices: %w", err)
 		}
 		now := s.now()
 		if err := q.DeleteUser(ctx, store.DeleteUserParams{DeletedAt: &now, ID: userID}); err != nil {

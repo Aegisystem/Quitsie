@@ -17,7 +17,7 @@ export function regionLocale(): string {
 
 // Listings hide the decimals when they are zero ('45 €'); forms pass
 // `trim: false` to always show them ('45,00 €').
-export function formatMoney(minor: number, currency: string, opts: { signed?: boolean; trim?: boolean } = {}): string {
+export function formatMoney(minor: number | bigint, currency: string, opts: { signed?: boolean; trim?: boolean } = {}): string {
   return formatAmount(minor, currency, regionLocale(), { signed: opts.signed, hideZeroDecimals: opts.trim ?? true })
 }
 
@@ -37,12 +37,6 @@ export function readAmount(text: string, currency: string): Result<number, Parse
   return parseAmountIn(text, currency, regionLocale())
 }
 
-// The same for fields that only need the number: null when it is not one.
-export function parseAmount(text: string, currency: string): number | null {
-  const read = readAmount(text, currency)
-  return read.ok ? read.value : null
-}
-
 // Percentages are stored in hundredths (10000 = 100 %) and written, like
 // amounts, with Latin digits in the region's separators.
 export function formatPercent(hundredths: number): string {
@@ -54,9 +48,9 @@ export function formatPercentInput(hundredths: number): string {
   return new Intl.NumberFormat(regionLocale(), options).format(hundredths / 100)
 }
 
-export function parsePercent(text: string): number | null {
-  const read = parsePercentage(text.replace('%', ''), regionLocale())
-  return read.ok ? read.value : null
+// What the Usuario typed as a percentage, in hundredths, or why it is not one.
+export function readPercent(text: string): Result<number, ParseError> {
+  return parsePercentage(text.replace('%', ''), regionLocale())
 }
 
 // The unit one token stands for in a tally: a round number (1, 2 or 5 × 10ⁿ in

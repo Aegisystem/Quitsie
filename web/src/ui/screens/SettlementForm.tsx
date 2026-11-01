@@ -1,14 +1,15 @@
 import { useId, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { Member, User } from '../../api/client'
-import { liveLedger, type LedgerSummary } from '../../local'
+import { liveLedger, liveRecords, type LedgerSummary, settlementRecord } from '../../local'
 import { Figure, figureState, Icon } from '../components/icons'
 import { Screen, toast, useOnline } from '../components/Shell'
-import { amountError } from '../forms/amountError'
+import { amountError, balanceError } from '../forms/amountError'
 import { CurrencyOptions } from '../forms/CurrencyOptions'
 import { engine, ledgerName, myMember, replica, useLive } from '../data'
 import { liveUsedCurrencies, useUser } from '../forms/data'
 import { activeMembers } from '../forms/people'
+import { initialPeople, type SettlementFix, settlementRejectionText } from '../forms/settlement'
 import { todayISO } from '../dates'
 import { amountPlaceholder, formatAmountInput, formatMoney, readAmount } from '../money'
 import { navigate } from '../router'
@@ -20,12 +21,13 @@ interface Suggestion {
   currency?: string
 }
 
-export function SettlementForm({ ledgerId, ...suggestion }: Suggestion & { ledgerId: string }) {
+export function SettlementForm({ ledgerId, fromRejected, ...suggestion }: Suggestion & { ledgerId: string; fromRejected?: string }) {
   const { t } = useTranslation()
   const user = useUser()
   const [summary, loaded] = useLive(`ledger:${ledgerId}`, () => liveLedger(replica, ledgerId))
+  const [records, recordsLoaded] = useLive('records', () => liveRecords(replica))
   const back = { name: 'home' as const }
-  if (!loaded) return <Screen back={back} title={t('settlement.title')} children={null} />
+  if (!loaded || !recordsLoaded) return <Screen back={back} title={t('settlement.title')} children={null} />
   const me = user && myMember(summary?.members ?? [], user.id)
   if (!summary || !user || !me) {
     return (
@@ -34,28 +36,45 @@ export function SettlementForm({ ledgerId, ...suggestion }: Suggestion & { ledge
       </Screen>
     )
   }
-  return <SettlementFields summary={summary} user={user} me={me} {...suggestion} />
+  const rejected = records?.rejected.find((record) => record.id === fromRejected && record.ledgerId === ledgerId)
+  const fix = rejected?.kind === 'settlement' ? { id: rejected.id, reason: rejected.reason, draft: rejected.settlement } : undefined
+  return <SettlementFields summary={summary} user={user} me={me} fix={fix} {...suggestion} />
 }
 
-function SettlementFields({ summary, user, me, from, to, amount, currency: suggestedCurrency }: Suggestion & { summary: LedgerSummary; user: User; me: Member }) {
+function SettlementFields({
+  summary,
+  user,
+  me,
+  fix,
+  from,
+  to,
+  amount,
+  currency: suggestedCurrency,
+}: Suggestion & { summary: LedgerSummary; user: User; me: Member; fix?: SettlementFix }) {
   const { t } = useTranslation()
   const { ledger, members } = summary
   const online = useOnline()
   const ids = useId()
   const [used] = useLive(`usedCurrencies:${user.id}`, () => liveUsedCurrencies(replica, user.id))
 
-  // Only between active Members: a suggestion may be older than someone leaving.
+  // Only between active Members.
   const active = activeMembers(members, me)
   const activeId = (id?: string) => active.find((m) => m.id === id)?.id
   const groupCurrency = ledger.kind === 'group' ? ledger.currency : undefined
-  const [chosenCurrency, setCurrency] = useState(suggestedCurrency ?? user.preferredCurrency)
+  const draft = fix?.draft
+  const [chosenCurrency, setCurrency] = useState(draft?.currency ?? suggestedCurrency ?? user.preferredCurrency)
   const currency = groupCurrency ?? chosenCurrency
   const suggested = amount ? Number(amount) : undefined
 
-  const [fromId, setFromId] = useState(activeId(from) ?? me.id)
-  const [toId, setToId] = useState(activeId(to) ?? active.find((m) => m.id !== fromId)?.id ?? '')
-  const [amountText, setAmountText] = useState(suggested ? formatAmountInput(suggested, currency) : '')
-  const [date, setDate] = useState(todayISO())
+  const start = initialPeople(active, me, { from, to, fix })
+  const [fromId, setFromId] = useState(start.from)
+  const [toId, setToId] = useState(start.to)
+  // A record to fix keeps its number even if the Group's currency changed: the
+  // same relabeling every other record went through.
+  const [amountText, setAmountText] = useState(
+    draft ? formatAmountInput(draft.amount, draft.currency) : suggested ? formatAmountInput(suggested, currency) : '',
+  )
+  const [date, setDate] = useState(draft?.date ?? todayISO())
   const [touched, setTouched] = useState(false)
   const [saving, setSaving] = useState(false)
 
@@ -63,9 +82,13 @@ function SettlementFields({ summary, user, me, from, to, amount, currency: sugge
   const read = readAmount(amountText, currency)
   const value = read.ok ? read.value : 0
   const sameSuggestedPair = from === fromId && to === toId && suggested !== undefined && (groupCurrency !== undefined || currency === suggestedCurrency)
+  const people = fromId === toId ? t('settlement.samePerson') : !activeId(fromId) || !activeId(toId) ? t('settlement.onlyActive') : undefined
+  const settlement = settlementRecord({ fromMemberId: fromId, toMemberId: toId, amount: value, currency })
   const errors = {
-    people: fromId === toId ? t('settlement.samePerson') : !activeId(fromId) || !activeId(toId) ? t('settlement.onlyActive') : undefined,
-    amount: amountError(read, currency, t),
+    people,
+    amount:
+      amountError(read, currency, t) ??
+      (people ? undefined : balanceError(summary.balances, { added: { expenses: [], settlements: [settlement] } }, { me: me.id, nameOf }, t)),
   }
   const valid = !errors.people && !errors.amount
 
@@ -73,7 +96,10 @@ function SettlementFields({ summary, user, me, from, to, amount, currency: sugge
     setTouched(true)
     if (!valid || saving) return
     setSaving(true)
-    await engine.addSettlement({ ledgerId: ledger.id, fromMemberId: fromId, toMemberId: toId, amount: value, currency, date })
+    await engine.addSettlement(
+      { ledgerId: ledger.id, fromMemberId: fromId, toMemberId: toId, amount: value, currency, date },
+      fix ? { replacing: fix.id } : undefined,
+    )
     toast(online ? t('settlement.saved') : t('settlement.savedOffline'))
     navigate({ name: 'ledger', ledgerId: ledger.id, tab: ledger.kind === 'group' ? 'debts' : undefined }, { replace: true })
   }
@@ -96,7 +122,7 @@ function SettlementFields({ summary, user, me, from, to, amount, currency: sugge
   return (
     <Screen
       back={{ name: 'ledger', ledgerId: ledger.id }}
-      title={t('settlement.title')}
+      title={fix ? t('settlement.fixTitle') : t('settlement.title')}
       dock={
         <div className="dock-stack">
           {!online && <p className="dock-note">{t('expenseForm.offlineNote')}</p>}
@@ -127,6 +153,8 @@ function SettlementFields({ summary, user, me, from, to, amount, currency: sugge
         }}
       >
         <p className="form-context">{ledgerName(summary, user.id)}</p>
+
+        {fix && <p className="notice notice-problem">{settlementRejectionText(fix, groupCurrency, t)}</p>}
 
         <div className="settle-pair" aria-hidden="true">
           <span className="settle-person">

@@ -1,7 +1,8 @@
 import { liveQuery, type Observable } from 'dexie'
-import type { Activity, Debt, Expense, Member, NewExpense, NewSettlement, Settlement } from '../api/client'
-import { type Balance, type ExpenseRecord, provisionalBalances, type SettlementRecord } from '../domain'
+import type { Activity, Debt, Expense, Member, Settlement } from '../api/client'
+import { type Balance, provisionalBalances } from '../domain'
 import type { Ledger, QueuedRecord, RejectedRecord, Replica, UnsyncedRecord } from './db'
+import { expenseRecord, settlementRecord } from './records'
 
 // Live queries: each one emits what the screens show and emits again whenever
 // that changes, whether the change comes from a sync or from the queue. Reads
@@ -19,23 +20,6 @@ interface Stored {
   settlements: Settlement[]
   queue: QueuedRecord[]
 }
-
-const expenseRecord = ({ id, currency, paidShares, owedShares, deletedAt }: NewExpense & { deletedAt?: string }): ExpenseRecord => ({
-  id,
-  currency,
-  paidShares: paidShares.map(({ memberId, amount }) => ({ participantId: memberId, amount })),
-  owedShares: owedShares.map(({ memberId, amount }) => ({ participantId: memberId, amount })),
-  deletedAt,
-})
-
-const settlementRecord = ({ id, fromMemberId, toMemberId, amount, currency, deletedAt }: NewSettlement & { deletedAt?: string }): SettlementRecord => ({
-  id,
-  from: fromMemberId,
-  to: toMemberId,
-  amount,
-  currency,
-  deletedAt,
-})
 
 // Provisional Balances (ADR 0003): the replica plus the queue. Rejected records
 // do not count until the User fixes them, and accepted ones count once.

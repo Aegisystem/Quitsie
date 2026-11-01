@@ -32,6 +32,8 @@ type world struct {
 	auth *auth.Service
 	mail *outbox
 	h    http.Handler
+	// codes counts the emails askForCode used.
+	codes int
 }
 
 func newWorld(t *testing.T) *world {
@@ -76,10 +78,13 @@ func (w *world) signIn(name string) *person {
 	ctx := context.Background()
 	email := strings.ToLower(name) + "@example.com"
 	// One IP per person, so the limit of codes per IP never trips.
-	if err := w.auth.RequestCode(ctx, email, email); err != nil {
+	browser := auth.Browser{IP: email}
+	flow, err := w.auth.RequestCode(ctx, email, browser)
+	if err != nil {
 		w.t.Fatal(err)
 	}
-	signIn, err := w.auth.VerifyCode(ctx, email, w.mail.lastCode(w.t, email), "test", email)
+	browser.Flow = flow.Value
+	signIn, err := w.auth.VerifyCode(ctx, email, w.mail.lastCode(w.t, email), "test", browser)
 	if err != nil {
 		w.t.Fatal(err)
 	}

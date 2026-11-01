@@ -633,6 +633,21 @@ h3 {
   }
 }
 
+/* A row that empties: the tokens left over leave the way they came in, the
+   last one first, and give back their place so nothing after them jumps. */
+.token-out {
+  animation: token-out 0.5s var(--ease-out) both;
+  animation-delay: calc(var(--o, 0) * 40ms);
+}
+
+@keyframes token-out {
+  to {
+    margin-inline-end: calc(-1 * var(--token) * var(--f, 1) - 4px);
+    transform: scale(0.3);
+    opacity: 0;
+  }
+}
+
 .tally-legend {
   font-size: 0.8125rem;
   color: var(--ink-2);
@@ -888,10 +903,6 @@ h3 {
   background: currentColor;
   -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Ccircle cx='6' cy='6' r='4.6' fill='none' stroke='%23000' stroke-width='1.8'/%3E%3Cpath d='M1.6 10.4l8.8-8.8' stroke='%23000' stroke-width='1.8'/%3E%3C/svg%3E") center / contain no-repeat;
   mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Ccircle cx='6' cy='6' r='4.6' fill='none' stroke='%23000' stroke-width='1.8'/%3E%3Cpath d='M1.6 10.4l8.8-8.8' stroke='%23000' stroke-width='1.8'/%3E%3C/svg%3E") center / contain no-repeat;
-}
-
-.tone-problem::before {
-  margin-right: 1px;
 }
 
 .tag {
@@ -1708,6 +1719,12 @@ select.input,
   white-space: nowrap;
 }
 
+/* A person's field that cannot be read says why under its row, from the name on. */
+.p-error {
+  grid-column: 2 / -1;
+  margin: -6px 0 10px;
+}
+
 .p-remainder {
   position: absolute;
   right: 0;
@@ -1745,6 +1762,16 @@ select.input,
   gap: 2px 6px;
   margin: 8px 0 0;
   font-weight: 600;
+}
+
+/* A long text wraps beside its mark instead of leaving the mark alone on a line. */
+.closing-text {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.closing.tone-problem {
+  align-items: baseline;
 }
 
 .closing-sub {
@@ -2333,6 +2360,10 @@ select.input,
   .token-part,
   .toast {
     animation: none;
+  }
+
+  .token-out {
+    display: none;
   }
 
   .switch::after,

@@ -14,12 +14,12 @@ export type Route =
   | { name: 'newFriend' }
   | { name: 'newExpense'; ledgerId?: string; fromRejected?: string }
   | { name: 'editExpense'; ledgerId: string; expenseId: string }
-  | { name: 'settle'; ledgerId: string; from?: string; to?: string; amount?: string; currency?: string }
+  | { name: 'settle'; ledgerId: string; from?: string; to?: string; amount?: string; currency?: string; fromRejected?: string }
   | { name: 'inviteLink'; ledgerId: string }
   | { name: 'invite'; token: string }
   | { name: 'notFound' }
 
-function parse(hash: string): Route {
+export function parseRoute(hash: string): Route {
   const [path = '', query = ''] = hash.replace(/^#/, '').split('?')
   const params = new URLSearchParams(query)
   const parts = path.split('/').filter(Boolean).map(decodeURIComponent)
@@ -50,7 +50,10 @@ function parse(hash: string): Route {
       if (parts[1] && parts[2] === 'edit' && opt('ledger')) return { name: 'editExpense', ledgerId: opt('ledger') ?? '', expenseId: parts[1] }
       break
     case 'settle':
-      if (opt('ledger')) return { name: 'settle', ledgerId: opt('ledger') ?? '', from: opt('from'), to: opt('to'), amount: opt('amount'), currency: opt('currency') }
+      if (opt('ledger')) {
+        const suggestion = { from: opt('from'), to: opt('to'), amount: opt('amount'), currency: opt('currency') }
+        return { name: 'settle', ledgerId: opt('ledger') ?? '', ...suggestion, fromRejected: opt('fix') }
+      }
       break
     case 'invite':
       if (parts[1]) return { name: 'invite', token: parts[1] }
@@ -86,7 +89,7 @@ export function href(route: Route): string {
     case 'editExpense':
       return `#/expenses/${encodeURIComponent(route.expenseId)}/edit${q({ ledger: route.ledgerId })}`
     case 'settle':
-      return `#/settle${q({ ledger: route.ledgerId, from: route.from, to: route.to, amount: route.amount, currency: route.currency })}`
+      return `#/settle${q({ ledger: route.ledgerId, from: route.from, to: route.to, amount: route.amount, currency: route.currency, fix: route.fromRejected })}`
     case 'inviteLink':
       return `#/ledgers/${encodeURIComponent(route.ledgerId)}/invite`
     case 'invite':
@@ -118,7 +121,7 @@ export function useRoute(): Route {
   return useSyncExternalStore(subscribe, () => {
     if (location.hash !== cachedHash) {
       cachedHash = location.hash
-      cachedRoute = parse(location.hash)
+      cachedRoute = parseRoute(location.hash)
     }
     return cachedRoute
   })

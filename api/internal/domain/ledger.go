@@ -9,6 +9,9 @@ type Ledger struct {
 	// Currency is the Group currency. A Friendship has none: each Expense carries its own.
 	Currency Currency
 	Members  []Member
+	// balances are the Balances of the records counted with AddUp; none
+	// until then.
+	balances balanceSums
 }
 
 // checkRecord checks the rules that depend on the kind of ledger for an Expense

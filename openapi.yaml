@@ -24,9 +24,11 @@ info:
       next to a `currency`. Never floats.
     * **Errors** are `application/problem+json` (RFC 9457) with a stable
       `code`; clients branch on `code`, never on `title` or `detail`.
-    * **Sessions** travel in an HttpOnly cookie. Requests that change data
-      must carry an `Origin` header of the app's own domain (CSRF);
-      otherwise they get `403 origin_mismatch`.
+    * **Sessions** travel in an HttpOnly cookie. Every cookie the API sets
+      has a name with the `__Host-` prefix, so it is Secure, for `Path=/`
+      and without `Domain`, and no other subdomain can set it. Requests
+      that change data must carry an `Origin` header of the app's own
+      domain (CSRF); otherwise they get `403 origin_mismatch`.
     * A ledger the User cannot see answers `404 not_found`, the same as one
       that does not exist.
     * **Request limit.** Each IP (each /64 in IPv6) gets 300 requests per
@@ -78,6 +80,28 @@ paths:
               schema:
                 $ref: "#/components/schemas/Health"
 
+  /auth/methods:
+    get:
+      operationId: getLoginMethods
+      summary: Says which ways of signing in this server offers.
+      description: >
+        The sign-in screen asks before it shows the Google button: Google
+        needs an OAuth client in the server's configuration, and without one
+        `startGoogleLogin` only ends in `/login?error=google`. A code by email
+        is always offered. The answer only changes when the server restarts
+        with another configuration.
+      tags: [auth]
+      security: []
+      responses:
+        "200":
+          description: The ways of signing in.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginMethods"
+        default:
+          $ref: "#/components/responses/Problem"
+
   /auth/login-code:
     post:
       operationId: requestLoginCode
@@ -85,7 +109,12 @@ paths:
       description: >
         Answers 204 whether or not an account exists for the email, so the
         endpoint does not reveal who has one. The code expires after 10
-        minutes. Sending is limited per email and per IP.
+        minutes, and only this browser can check it: the answer sets a flow
+        cookie, and a new request from the same browser replaces its earlier
+        code (ADR 0011). Sending is limited per IP (per /56 in IPv6), and per
+        email unless the browser signed in to that email's User before, which
+        has a limit of its own. The server also sends a limited number of
+        emails per hour and per day to everyone together.
       tags: [auth]
       security: []
       requestBody:
@@ -97,6 +126,14 @@ paths:
       responses:
         "204":
           description: The code was sent, if the email can receive one.
+          headers:
+            Set-Cookie:
+              description: >
+                The flow cookie, `__Host-quitsie_code_flow`, that ties the
+                code to this browser. HttpOnly, Secure and SameSite=Lax, for
+                the 10 minutes of the code.
+              schema:
+                type: string
         "400":
           $ref: "#/components/responses/BadRequest"
         "429":
@@ -104,6 +141,19 @@ paths:
           headers:
             Retry-After:
               description: Seconds to wait before asking again.
+              schema:
+                type: integer
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "503":
+          description: >
+            The server sent every email it allows itself for now
+            (`mail_budget_spent`), so it sends no code to anyone.
+          headers:
+            Retry-After:
+              description: Seconds until the server sends emails again.
               schema:
                 type: integer
           content:
@@ -119,8 +169,11 @@ paths:
       summary: Exchanges a sign-in code for a session.
       description: >
         Creates the User the first time an email signs in (`newUser` is then
-        true and the client asks for a name and a Preferred currency). A code
-        admits 5 attempts at most.
+        true and the client asks for a name and a Preferred currency). Only
+        the browser that requested the code can check it, with its flow
+        cookie. A code admits 5 attempts at most, and an email 10 wrong ones
+        a day from browsers it never signed in from; each browser it signed
+        in from has 10 of its own.
       tags: [auth]
       security: []
       requestBody:
@@ -134,7 +187,11 @@ paths:
           description: Signed in.
           headers:
             Set-Cookie:
-              description: The session cookie.
+              description: >
+                The session cookie, and the known-device cookie,
+                `__Host-quitsie_known_device`, that tells later sign-ins this
+                browser signed in to the User before (HttpOnly, Secure, for a
+                year; signing out keeps it). It also deletes the flow cookie.
               schema:
                 type: string
           content:
@@ -143,8 +200,10 @@ paths:
                 $ref: "#/components/schemas/LoginResult"
         "400":
           description: >
-            The code is wrong (`login_code_invalid`) or expired
-            (`login_code_expired`), or the body is invalid.
+            The code is wrong (`login_code_invalid`), or this browser has no
+            live code for the email (`login_code_expired`): it expired, was
+            used, or was requested from another browser. Or the body is
+            invalid.
           content:
             application/problem+json:
               schema:
@@ -188,7 +247,9 @@ paths:
               schema:
                 type: string
             Set-Cookie:
-              description: Cookie with the OAuth state.
+              description: >
+                `__Host-quitsie_google`, with the OAuth state, for the 10
+                minutes of the flow.
               schema:
                 type: string
         default:
@@ -200,8 +261,9 @@ paths:
       summary: Google redirects back here; signs in and returns to the app.
       description: >
         Always answers with a redirect to the app: to `returnTo` on success,
-        creating the User if needed; to `/login` if the person declined; or
-        to `/login?error=google` on any other failure.
+        creating the User if needed and setting the session and known-device
+        cookies; to `/login` if the person declined; or to
+        `/login?error=google` on any other failure.
       tags: [auth]
       security: []
       parameters:
@@ -394,7 +456,9 @@ paths:
         an exchange rate. When the new currency has fewer decimals, the
         change is only allowed if no amount loses minor units; otherwise it
         answers
-        `409 currency_precision_loss` with the records to fix. Unsynced
+        `409 currency_precision_loss` with the records to fix. When it has
+        more, every Balance grows with the amounts, and the change is
+        refused if one would go beyond 2^53 - 1 minor units. Unsynced
         records created before the change will be rejected with
         `currency_mismatch`.
       tags: [groups]
@@ -412,7 +476,14 @@ paths:
               schema:
                 $ref: "#/components/schemas/Group"
         "400":
-          $ref: "#/components/responses/BadRequest"
+          description: >
+            The body is invalid (`validation_failed`), or a Balance would go
+            beyond 2^53 - 1 minor units in the new currency
+            (`invalid_amounts`).
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "404":
@@ -855,9 +926,10 @@ paths:
         Idempotent: each record carries an id generated by the client
         (UUIDv7), and a record whose id already exists in the same ledger and
         by the same author is accepted again without changes. Each record is
-        accepted or rejected on its own, with a reason; rejected records stay
-        on the device as Rejected records until the User fixes or discards
-        them.
+        accepted or rejected on its own, with a reason, Expenses first and in
+        the order sent, against the ledger as the records accepted before it
+        left it; rejected records stay on the device as Rejected records
+        until the User fixes or discards them.
       tags: [records]
       requestBody:
         required: true
@@ -904,7 +976,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/Expense"
         "400":
-          description: The body is invalid (`validation_failed`) or the shares do not add up to the total (`invalid_amounts`).
+          description: >
+            The body is invalid (`validation_failed`), or the shares do not
+            add up to the total or the edit would take a Balance beyond
+            2^53 - 1 minor units (`invalid_amounts`).
           content:
             application/problem+json:
               schema:
@@ -934,6 +1009,8 @@ paths:
       responses:
         "204":
           description: The Expense is deleted (or already was).
+        "400":
+          $ref: "#/components/responses/BalanceLimit"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "404":
@@ -963,6 +1040,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Expense"
+        "400":
+          $ref: "#/components/responses/BalanceLimit"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "404":
@@ -992,6 +1071,8 @@ paths:
       responses:
         "204":
           description: The Settlement is deleted (or already was).
+        "400":
+          $ref: "#/components/responses/BalanceLimit"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "404":
@@ -1021,6 +1102,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Settlement"
+        "400":
+          $ref: "#/components/responses/BalanceLimit"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "404":
@@ -1069,9 +1152,10 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "410":
           description: >
-            `since` is ahead of the server, for example after restoring a
-            backup (`cursor_invalid`). The client discards its replica, keeps
-            its Unsynced records, and pulls again from 0.
+            `since` is ahead of the server, or among the versions that
+            restoring a backup skipped (`cursor_invalid`). Either way the
+            replica may hold rows the server lost: the client discards it,
+            keeps its Unsynced records, and pulls again from 0.
           content:
             application/problem+json:
               schema:
@@ -1084,7 +1168,7 @@ components:
     sessionCookie:
       type: apiKey
       in: cookie
-      name: quitsie_session
+      name: __Host-quitsie_session
       description: >
         Opaque session token set by verifyLoginCode or finishGoogleLogin.
         HttpOnly, Secure and SameSite=Lax; it expires after 90 days without
@@ -1156,6 +1240,14 @@ components:
         application/problem+json:
           schema:
             $ref: "#/components/schemas/Problem"
+    BalanceLimit:
+      description: >
+        The change would take a Balance beyond 2^53 - 1 minor units, in
+        either direction (`invalid_amounts`).
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
     Unauthorized:
       description: There is no valid session (`unauthenticated`).
       content:
@@ -1220,6 +1312,7 @@ components:
         - origin_mismatch
         - not_found
         - rate_limited
+        - mail_budget_spent
         - login_code_invalid
         - login_code_expired
         - too_many_attempts
@@ -1274,8 +1367,9 @@ components:
       maximum: 1000000000000000
       description: >
         Positive amount of a record in the minor unit of its currency (ISO
-        4217), for example 1050 = 10.50 USD. At most 10^15, so adding up
-        Balances never overflows.
+        4217), for example 1050 = 10.50 USD. At most 10^15. That bounds one
+        record, not a Balance, which adds up many: a record that would take
+        a Balance beyond 2^53 - 1 is rejected with `invalid_amounts`.
       example: 1050
 
     Version:
@@ -1308,6 +1402,15 @@ components:
       enum: [equal, exact, percentage, weights, adjustment]
 
     # --- Auth and profile -----------------------------------------------
+
+    LoginMethods:
+      type: object
+      description: The ways of signing in besides the emailed code, which is always there.
+      required: [google]
+      properties:
+        google:
+          type: boolean
+          description: True when the server has an OAuth client of Google, so `startGoogleLogin` can sign in.
 
     LoginCodeRequest:
       type: object
@@ -1934,8 +2037,10 @@ components:
             Only when rejected. `ledger_unavailable`: the ledger was deleted
             or the User is no longer an active Member. `currency_mismatch`:
             the Group currency changed. `invalid_participants`: someone is
-            not an active Member. `invalid_amounts`: an amount is out of range
-            or the shares do not add up to the total. `id_conflict`: the id belongs to another record.
+            not an active Member. `invalid_amounts`: an amount is out of range,
+            the shares do not add up to the total, or the record would take a
+            Balance beyond 2^53 - 1 minor units, counting the records of the
+            batch accepted before it. `id_conflict`: the id belongs to another record.
             `limit_reached`: the ledger is full. `invalid_record`: any other rule of the contract.
           enum:
             - ledger_unavailable
@@ -2022,9 +2127,15 @@ components:
           type: integer
           format: int64
           minimum: 1
+          maximum: 9007199254740991
           description: >
             Positive amount in the minor unit of its currency. It adds up
-            many records, so unlike an Amount it may be over 10^15.
+            many records, so unlike an Amount it may be over 10^15, but
+            never over 2^53 - 1, up to which a JavaScript number holds
+            every integer exactly. The Balances stay within that, and so do the
+            simplified Debts; when a Debt between two people would not,
+            the ledger gets its simplified Debts even without Debt
+            simplification.
           example: 1050
         currency:
           $ref: "#/components/schemas/Currency"

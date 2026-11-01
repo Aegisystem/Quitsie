@@ -44,10 +44,16 @@ var (
 	ErrGoogleFailed = errors.New("auth: Google sign-in failed")
 )
 
+// GoogleEnabled reports whether the Service has a GoogleConfig, without
+// which BeginGoogle and FinishGoogle return ErrGoogleDisabled.
+func (s *Service) GoogleEnabled() bool {
+	return s.google != nil
+}
+
 const (
 	// GoogleCookieName is the cookie that keeps state, nonce and PKCE
 	// verifier while the browser is away at Google.
-	GoogleCookieName   = "quitsie_google"
+	GoogleCookieName   = "__Host-quitsie_google"
 	googleFlowLifetime = 10 * time.Minute
 )
 
@@ -55,8 +61,7 @@ const (
 // provider's endpoints on first use rather than at startup, so the server
 // still starts when Google is unreachable.
 type google struct {
-	cfg        GoogleConfig
-	cookiePath string
+	cfg GoogleConfig
 
 	mu       sync.Mutex
 	oauth    *oauth2.Config
@@ -67,14 +72,13 @@ func newGoogle(cfg GoogleConfig) (*google, error) {
 	if cfg.ClientID == "" || cfg.ClientSecret == "" || cfg.RedirectURL == "" {
 		return nil, errors.New("auth: Google needs ClientID, ClientSecret and RedirectURL")
 	}
-	redirect, err := url.Parse(cfg.RedirectURL)
-	if err != nil {
+	if _, err := url.Parse(cfg.RedirectURL); err != nil {
 		return nil, fmt.Errorf("auth: Google RedirectURL: %w", err)
 	}
 	if cfg.IssuerURL == "" {
 		cfg.IssuerURL = "https://accounts.google.com"
 	}
-	return &google{cfg: cfg, cookiePath: redirect.Path}, nil
+	return &google{cfg: cfg}, nil
 }
 
 // client returns the OAuth configuration and the ID token verifier,
@@ -117,17 +121,8 @@ func (s *Service) BeginGoogle(ctx context.Context, returnTo string) (authURL str
 	// authorization code useless.
 	state, nonce, verifier := rand.Text(), rand.Text(), oauth2.GenerateVerifier()
 	authURL = oauth.AuthCodeURL(state, oidc.Nonce(nonce), oauth2.S256ChallengeOption(verifier))
-	flow = &http.Cookie{
-		Name:     GoogleCookieName,
-		Value:    strings.Join([]string{state, nonce, verifier, base64.RawURLEncoding.EncodeToString([]byte(returnTo))}, "."),
-		Path:     s.google.cookiePath,
-		MaxAge:   int(googleFlowLifetime / time.Second),
-		HttpOnly: true,
-		Secure:   true,
-		// Lax still sends it on the top-level redirect back from Google.
-		SameSite: http.SameSiteLaxMode,
-	}
-	return authURL, flow, nil
+	value := strings.Join([]string{state, nonce, verifier, base64.RawURLEncoding.EncodeToString([]byte(returnTo))}, ".")
+	return authURL, hostCookie(GoogleCookieName, value, googleFlowLifetime), nil
 }
 
 // FinishGoogle handles the request Google redirects the browser to: it
@@ -191,6 +186,7 @@ func (s *Service) FinishGoogle(ctx context.Context, r *http.Request, device stri
 		return SignIn{}, fmt.Errorf("%w: %v", ErrGoogleFailed, err)
 	}
 
+	knownDevices := cookieValue(r, KnownDeviceCookieName)
 	var signIn SignIn
 	err = s.inTx(ctx, func(q *store.Queries) error {
 		user, created, err := s.userByGoogle(ctx, q, idToken.Subject, email, claims.Name)
@@ -201,7 +197,11 @@ func (s *Service) FinishGoogle(ctx context.Context, r *http.Request, device stri
 		if err != nil {
 			return err
 		}
-		signIn = SignIn{User: user, Token: token, NewUser: created, ReturnTo: returnTo}
+		known, err := s.rememberDevice(ctx, q, user.ID, knownDevices)
+		if err != nil {
+			return err
+		}
+		signIn = SignIn{User: user, Token: token, KnownDevices: known, NewUser: created, ReturnTo: returnTo}
 		return nil
 	})
 	if err != nil {
@@ -212,12 +212,8 @@ func (s *Service) FinishGoogle(ctx context.Context, r *http.Request, device stri
 
 // ClearGoogleCookie returns a cookie that makes the browser delete the flow
 // cookie once FinishGoogle has run.
-func (s *Service) ClearGoogleCookie() *http.Cookie {
-	path := "/"
-	if s.google != nil {
-		path = s.google.cookiePath
-	}
-	return &http.Cookie{Name: GoogleCookieName, Path: path, MaxAge: -1, HttpOnly: true, Secure: true, SameSite: http.SameSiteLaxMode}
+func ClearGoogleCookie() *http.Cookie {
+	return clearHostCookie(GoogleCookieName)
 }
 
 func splitFlow(value string) (state, nonce, verifier, returnTo string, ok bool) {

@@ -60,7 +60,7 @@ export function App() {
     case 'editExpense':
       return <EditExpense ledgerId={route.ledgerId} expenseId={route.expenseId} />
     case 'settle':
-      return <SettlementForm key={`${route.from}-${route.to}`} {...route} />
+      return <SettlementForm key={`${route.from}-${route.to}-${route.fromRejected}`} {...route} />
     case 'inviteLink':
       return <InviteLink ledgerId={route.ledgerId} />
     case 'invite':

@@ -49,17 +49,19 @@ flowchart LR
 - **HTTP**: `net/http` estándar. Los tipos y la interfaz de los manejadores se generan desde `openapi.yaml` con `oapi-codegen`.
 - **Datos**: SQLite en modo WAL con `modernc.org/sqlite` (Go puro, sin cgo, fácil de compilar para Linux desde cualquier máquina). Las consultas se escriben en SQL y `sqlc` genera el código Go con tipos. Las migraciones van con `goose` y se aplican al arrancar. El SQL se mantiene portable a PostgreSQL ([ADR 0006](adr/0006-sqlite.md)).
 - **Dominio**: valida Gastos y Liquidaciones (sumas y Participantes) y calcula Saldos y la Simplificación de deudas. No reimplementa los Métodos de reparto.
-- **Autenticación**: código de 6 dígitos por email (enviado con Resend) o Google con OpenID Connect ([ADR 0005](adr/0005-login-con-codigo-no-enlace.md)). La sesión es una cookie HttpOnly con un token opaco; en la base solo se guarda su hash. Caduca a los 90 días sin uso y se puede cerrar por dispositivo.
+- **Autenticación**: código de 6 dígitos por email (enviado con Resend) o Google con OpenID Connect ([ADR 0005](adr/0005-login-con-codigo-no-enlace.md)). Google solo se ofrece si el servidor tiene configurado su cliente OAuth: la PWA lo pregunta con `GET /auth/methods` y, si no, no muestra el botón. La sesión es una cookie HttpOnly con un token opaco; en la base solo se guarda su hash. Caduca a los 90 días sin uso y se puede cerrar por dispositivo.
 
 ## Infraestructura ([ADR 0007](adr/0007-go-nativo-en-vm-gratuita.md))
 
 | Pieza | Servicio | Costo |
 | --- | --- | --- |
 | Servidor | Google Cloud `e2-micro` en `us-east1`, la región gratuita más cercana a Latinoamérica | 0 |
+| IP pública de la VM | IPv4 externa de Google Cloud, que la VM necesita para salir a Internet | ~3,65 USD/mes ([decisión 5](pendientes.md#3-decisiones-del-dueño), [opciones](investigacion/ip-publica.md)) |
 | DNS, CDN y TLS | Cloudflare | 0 |
 | Entrada al servidor | Cloudflare Tunnel (`cloudflared`): la VM no abre puertos públicos | 0 |
 | Respaldos | Litestream → Cloudflare R2 | 0 hasta 10 GB |
 | Emails | Resend | 0 hasta 3.000 al mes |
+| Alertas | Un temporizador en la VM que escribe al dueño por Resend | 0 |
 | Código y CI | GitHub + Actions | 0 |
 | Dominio | Registrador a elegir | ~10–15 USD/año |
 
@@ -104,6 +106,12 @@ sequenceDiagram
   App->>L: Actualiza la réplica y vacía la cola
 ```
 
+### Restaurar un respaldo
+
+Un respaldo restaurado es una copia vieja de la base. La base perdida pudo entregar versiones por encima del contador del respaldo, y si el contador siguiera desde ahí, un dispositivo con el cursor entre ellas se saltaría filas nuevas y conservaría para siempre las que el servidor perdió. Por eso, en su primer arranque sobre una base restaurada, el servidor hace saltar el contador hasta la hora actual en microsegundos, o mil millones de versiones si eso llega más lejos, y anota el tramo saltado en `restore_gaps`. `GET /sync` responde `410` a un cursor dentro de un tramo, igual que a uno por delante del servidor, y el cliente descarta la réplica, conserva los Registros sin sincronizar y los rechazados, y trae todo desde 0. El reloj acota a la vez todas las copias de la base, porque el contador crece mucho más despacio que uno por microsegundo; así el salto cubre también un respaldo anterior a otra restauración, que no guarda el tramo de aquella. Los mil millones cubren un reloj atrasado. El servidor sabe que hubo una restauración por una marca junto a la base ([despliegue.md](despliegue.md#qué-pasa-al-restaurar)).
+
+Un cursor igual o anterior a la versión del respaldo no recibe `410`, aunque el dispositivo puede tener por aceptado un registro que el servidor perdió. Por eso, al terminar cada pull, un registro aceptado que no llegó a la réplica vuelve a ser un Registro sin sincronizar y se envía otra vez; si el servidor ya lo tenía, lo acepta sin duplicarlo.
+
 ## Modelo de datos
 
 Los importes se guardan como enteros en la unidad mínima de su moneda (centavos) y las monedas como código ISO 4217. Nunca se usan decimales de coma flotante.
@@ -114,8 +122,10 @@ Un **libro** (`Ledger`) es el contenedor de Gastos y Liquidaciones. Cada Grupo t
 | --- | --- |
 | `users` | email, nombre, Moneda preferida, identificador de Google, fecha de borrado |
 | `sessions` | hash del token, dispositivo, último uso |
-| `login_codes` | hash del código, caducidad, intentos |
-| `login_failures` | hash del email, códigos equivocados y fin de la ventana de 24 horas |
+| `login_codes` | hash del código, hash del flujo del navegador que lo pidió, caducidad, intentos |
+| `login_failures` | hash del email o del dispositivo conocido, códigos equivocados y fin de la ventana de 24 horas |
+| `known_devices` | hash del token de un navegador en el que el Usuario ya entró, Usuario, último uso |
+| `mail_sends` | correos con códigos enviados en cada hora del último día |
 | `ledgers` | tipo (`group` o `friendship`), nombre, Moneda del grupo (vacía en Amistades), Simplificación de deudas, contador de generación del Enlace de invitación, versión, fecha de borrado |
 | `members` | libro, Usuario vinculado (vacío si está pendiente), nombre, email, estado (`active` o `former`), versión |
 | `expenses` | identificador del cliente, libro, descripción, fecha, moneda, total, Categoría, Método de reparto (para reeditar), autor, versión, fecha de borrado |
@@ -124,20 +134,27 @@ Un **libro** (`Ledger`) es el contenedor de Gastos y Liquidaciones. Cada Grupo t
 | `settlements` | libro, de quién, a quién, importe, moneda, fecha, autor, versión, fecha de borrado |
 | `activities` | libro, Usuario, qué cambió, versión, cuándo |
 | `version_counter` | una sola fila con la última versión entregada (ver [Traer cambios](#traer-cambios)) |
+| `restore_gaps` | por cada restauración, el contador del respaldo y el valor al que saltó (ver [Restaurar un respaldo](#restaurar-un-respaldo)) |
 
 Los Saldos no se guardan: se calculan sumando, lo cual es rápido a esta escala.
 
 ## Seguridad
 
 - Toda consulta se limita a los libros en los que el Usuario tiene un Miembro activo.
-- Cookie `HttpOnly`, `Secure` y `SameSite=Lax`. Además, las peticiones que modifican datos deben traer un encabezado `Origin` del propio dominio (protección CSRF).
-- Los códigos de acceso caducan a los 10 minutos y admiten 5 intentos como máximo. También se limitan los envíos por email y por IP.
-- Un email admite 10 códigos equivocados al día, sumando todos sus códigos. Esa cuenta vive en la base, así que un código nuevo o un reinicio no dan más intentos. Una IP admite 60 verificaciones por hora.
+- Las cookies son `HttpOnly`, `Secure` y `SameSite=Lax`, y su nombre lleva el prefijo `__Host-`: el navegador solo las acepta de este mismo host, con `Path=/` y sin `Domain`, así que otro subdominio no puede fijarlas ni tapar las verdaderas. Las de flujo y de dispositivo conocido viajan por eso en toda petición, aunque solo las lee el inicio de sesión. Además, las peticiones que modifican datos deben traer un encabezado `Origin` del propio dominio (protección CSRF).
+- Toda respuesta lleva una `Content-Security-Policy` que solo admite los archivos de la propia app, sin scripts ni estilos en línea y sin dejarse enmarcar, además de `X-Content-Type-Options`, `Referrer-Policy: same-origin`, `Cross-Origin-Opener-Policy` y una `Permissions-Policy` que apaga cámara, micrófono, ubicación y pagos. Las de `/api/` llevan también `Cache-Control: no-store`.
+- En producción el servidor exige HTTPS por su cuenta: envía HSTS de un año y redirige a `QUITSIE_PUBLIC_ORIGIN` lo que Cloudflare vio llegar por HTTP. Lo sabe por `CF-Visitor` y `X-Forwarded-Proto`, que solo cree por loopback, como `CF-Connecting-IP`.
+- Los códigos de acceso caducan a los 10 minutos y admiten 5 intentos como máximo. Cada código queda atado al navegador que lo pidió con una cookie de flujo, así que nadie más puede comprobarlo ni gastar sus intentos ([ADR 0011](adr/0011-codigos-atados-al-navegador.md)).
+- Cada inicio de sesión deja una cookie de dispositivo conocido, que cerrar sesión no borra. Un dispositivo conocido no gasta los límites por email, que cualquiera puede agotar, y tiene los suyos: 5 códigos por hora y 10 equivocados al día. Así nadie puede impedir entrar a quien ya entró en ese navegador.
+- Una IP pide 10 códigos por hora; en IPv6 cuenta la red /56, porque un cliente suele tener 256 redes /64. Los navegadores desconocidos comparten 5 códigos por hora por email, y una IP pide 3 de ellos como máximo.
+- El servidor envía como máximo 40 correos por hora y 90 en 24 horas, entre todos, por debajo de los 100 diarios gratuitos de Resend. Las cifras son provisionales y se cambian con `QUITSIE_MAIL_MAX_PER_HOUR` y `QUITSIE_MAIL_MAX_PER_DAY`. La cuenta vive en la base, así que un reinicio no la borra. Al agotarse, pedir un código responde `503 mail_budget_spent` y el log tiene una línea `ERROR` por cada hora o día agotado.
+- Un email admite 10 códigos equivocados al día desde navegadores desconocidos, sumando todos sus códigos. Esa cuenta y la de cada dispositivo conocido viven en la base, así que un código nuevo o un reinicio no dan más intentos. Una IP admite 60 verificaciones por hora.
 - Los tokens de sesión son aleatorios y en la base solo se guarda su hash. Los Enlaces de invitación se derivan con un HMAC de una clave del servidor, así que no se guardan ([ADR 0010](adr/0010-enlaces-de-invitacion-derivados.md)).
 - Hay un límite de 300 peticiones por minuto por IP en Go, además del de Cloudflare. Detrás del túnel la IP real sale de `CF-Connecting-IP`, y ese encabezado solo se cree si la conexión llega por loopback, porque `cloudflared` corre en la misma VM. Por eso debe ser el único proceso que reenvía tráfico al puerto del servidor.
 - El cuerpo de las peticiones a la API tiene un tope de 2 MiB, suficiente para el lote más grande de `POST /records`. En `POST /auth/*` el tope es de 4 KiB.
 - Cada Usuario tiene un presupuesto de 5 MiB de cambios por hora, además del límite de peticiones.
 - Un Grupo admite 200 Miembros, un Usuario 200 libros y un libro 200.000 filas (ver [reglas](reglas-de-negocio.md#límites)).
+- Ningún Saldo pasa de 2^53 − 1 unidades mínimas, el mayor valor hasta el que el cliente lee exacto cualquier entero. El dominio suma los Saldos en 128 bits y rechaza al escribir el cambio que lleve uno más allá; el cliente comprueba lo mismo en los formularios.
 - Se atienden dos `GET /sync` a la vez y uno por Usuario. El resto espera hasta 5 segundos o recibe `429`, y el cliente reintenta.
 - `GOMEMLIMIT=700MiB` hace que el recolector de basura trabaje más antes de que el kernel mate el proceso, lo que borraría los límites guardados en memoria.
 
@@ -179,10 +196,11 @@ Los Saldos no se guardan: se calculan sumando, lo cual es rápido a esta escala.
 
 ## Despliegue y operación
 
-- En cada push, GitHub Actions ejecuta las pruebas de Go y de TypeScript, compila la PWA y la embebe en el binario Go (`linux/amd64`). Después prueba ese binario de punta a punta con Playwright en Chromium. Si esas pruebas fallan, no se despliega.
+- En cada push, GitHub Actions ejecuta las pruebas de Go y de TypeScript, compila la PWA y la embebe en el binario Go (`linux/amd64`). Después prueba ese binario de punta a punta con Playwright en Chromium. Si esas pruebas fallan, no se despliega. También revisa los scripts, los workflows y las unidades de `deploy/` con `shellcheck`, `actionlint` y `systemd-analyze`.
 - En cada push a `main`, copia el binario a la VM por SSH a través del túnel y reinicia el servicio. El reinicio dura alrededor de un segundo, aceptable en la v1.
 - La VM tiene tres servicios systemd: la aplicación, Litestream y `cloudflared`.
-- La restauración del respaldo (`litestream restore`) se prueba periódicamente.
+- Un temporizador prueba cada semana la restauración del respaldo (`litestream restore`).
+- Otro revisa la VM cada 5 minutos (salud de la aplicación, servicios, disco y errores en el registro) y avisa al dueño por email con Resend ([despliegue.md](despliegue.md#alertas)). Una VM caída del todo no puede avisar de sí misma; para eso hay un monitor externo opcional.
 
 ## Límites conocidos y cuándo crecer
 

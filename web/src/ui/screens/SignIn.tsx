@@ -1,8 +1,11 @@
+import { useQuery } from '@tanstack/react-query'
 import { useEffect, useId, useRef, useState, type CSSProperties } from 'react'
 import { useTranslation } from 'react-i18next'
 import { googleSignInUrl, session, type CallError, type SignedOutNotice } from '../../session'
 import { GoogleMark, Icon, Mark } from '../components/icons'
 import { useOnline } from '../components/Shell'
+import { loginMethodsStaleTime, offersGoogle } from './loginMethods'
+import { signInProblemText } from './signInProblem'
 
 // The server allows 5 attempts per code, and a new code replaces the old one.
 const MAX_ATTEMPTS = 5
@@ -25,6 +28,20 @@ export function SignIn({ notice }: { notice?: SignedOutNotice }) {
   const [sending, setSending] = useState(false)
   const [checking, setChecking] = useState(false)
   const codeRef = useRef<HTMLInputElement>(null)
+  // Google needs an OAuth client that the server may not have. Its button is
+  // the last thing in the form, so it appears when the server says so without
+  // moving anything above it, and the code works from the first paint.
+  // Reserving its place would leave an empty band under an «o» while Google
+  // is off. The query waits for the connection: TanStack Query's own idea of
+  // it starts online even when the app opens without network, and then it
+  // would never ask again.
+  const methods = useQuery({
+    queryKey: ['loginMethods'],
+    queryFn: () => session.loginMethods(),
+    staleTime: (query) => loginMethodsStaleTime(query.state.data),
+    enabled: online,
+  })
+  const google = offersGoogle(methods.data)
 
   useEffect(() => {
     if (step !== 'code' || resendIn <= 0) return
@@ -34,16 +51,7 @@ export function SignIn({ notice }: { notice?: SignedOutNotice }) {
 
   const focusCode = () => window.setTimeout(() => codeRef.current?.focus(), 50)
 
-  const callFailed = (error: CallError) => {
-    if (error.kind === 'offline') return t('signIn.offline')
-    if (error.code === 'rate_limited') {
-      if (!error.retryAfter) return t('signIn.rateLimited')
-      if (error.retryAfter > 3600) return t('signIn.rateLimitedForHours', { count: Math.ceil(error.retryAfter / 3600) })
-      return t('signIn.rateLimitedFor', { count: Math.ceil(error.retryAfter / 60) })
-    }
-    if (error.code === 'validation_failed') return t('signIn.invalidEmail')
-    return t('signIn.failed')
-  }
+  const callFailed = (error: CallError) => signInProblemText(t, error)
 
   const sendCode = async (resend: boolean) => {
     const address = email.trim()
@@ -152,13 +160,17 @@ export function SignIn({ notice }: { notice?: SignedOutNotice }) {
             <button type="submit" className="button button-primary button-block" disabled={sending || !online}>
               {sending ? t('signIn.sending') : t('signIn.sendCode')}
             </button>
-            <p className="divider">
-              <span>{t('signIn.or')}</span>
-            </p>
-            <button type="button" className="button button-secondary button-block" disabled={!online} onClick={signInWithGoogle}>
-              <GoogleMark />
-              {t('signIn.google')}
-            </button>
+            {google && (
+              <>
+                <p className="divider">
+                  <span>{t('signIn.or')}</span>
+                </p>
+                <button type="button" className="button button-secondary button-block" disabled={!online} onClick={signInWithGoogle}>
+                  <GoogleMark />
+                  {t('signIn.google')}
+                </button>
+              </>
+            )}
           </form>
         ) : (
           <form

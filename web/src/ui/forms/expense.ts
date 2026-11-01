@@ -1,5 +1,6 @@
 import type { Member, NewExpense, OwedShare, SplitMethod } from '../../api/client'
-import type { OwedShare as SplitShare } from '../../domain'
+import type { Records, OwedShare as SplitShare } from '../../domain'
+import { expenseRecord } from '../../local'
 import { formatAmountInput, formatPercentInput } from '../money'
 import type { SplitParticipant } from '../split'
 import { splitMethods } from '../types'
@@ -42,6 +43,11 @@ export function toOwedShares(shares: readonly SplitShare[]): OwedShare[] {
     amount,
     ...(splitValue === null ? {} : { splitValue }),
   }))
+}
+
+// An Expense as the Balances see it: who paid and who owes, in which currency.
+export function balanceRecords({ currency, paidShares, owedShares }: Pick<NewExpense, 'currency' | 'paidShares' | 'owedShares'>): Records {
+  return { expenses: [expenseRecord({ currency, paidShares, owedShares })], settlements: [] }
 }
 
 // What the former members have in an Expense, which cannot change

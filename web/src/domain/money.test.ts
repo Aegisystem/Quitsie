@@ -50,6 +50,29 @@ describe('formatAmount', () => {
   it('formats the largest safe amounts without floating-point rounding', () => {
     expect(formatAmount(9007199254740985, 'USD', 'en-US')).toBe('$90,071,992,547,409.85')
   })
+
+  it('formats a Balance at the limit either way, in listings too', () => {
+    expect(formatAmount(Number.MAX_SAFE_INTEGER, 'USD', 'en-US')).toBe('$90,071,992,547,409.91')
+    expect(formatAmount(-Number.MAX_SAFE_INTEGER, 'USD', 'en-US', { signed: true })).toBe('-$90,071,992,547,409.91')
+    expect(formatAmount(-Number.MAX_SAFE_INTEGER, 'JPY', 'en-US', { hideZeroDecimals: true })).toBe('-¥9,007,199,254,740,991')
+  })
+
+  it('formats a bigint exactly however large, as a total across ledgers', () => {
+    expect(formatAmount(9007199254740993n, 'USD', 'en-US')).toBe('$90,071,992,547,409.93')
+    expect(formatAmount(-1_800_000_000_000_000_000n, 'EUR', 'es-ES', { hideZeroDecimals: true })).toBe(`-18.000.000.000.000.000${nbsp}€`)
+  })
+
+  it('never throws on an integer past the safe integers: it shows it as the number holds it', () => {
+    // 2^53 + 1 does not exist as a number; it is already 2^53.
+    expect(formatAmount(Number.MAX_SAFE_INTEGER + 2, 'USD', 'en-US')).toBe('$90,071,992,547,409.92')
+    expect(formatAmount(1e21, 'USD', 'en-US', { hideZeroDecimals: true })).toBe('$10,000,000,000,000,000,000')
+  })
+
+  it('still throws on what is not an integer, a mistake in the calling code', () => {
+    expect(() => formatAmount(10.5, 'USD', 'en-US')).toThrow()
+    expect(() => formatAmount(Number.NaN, 'USD', 'en-US')).toThrow()
+    expect(() => formatAmount(Number.POSITIVE_INFINITY, 'USD', 'en-US')).toThrow()
+  })
 })
 
 describe('formatAmountInput', () => {
@@ -134,7 +157,7 @@ describe('parseAmount', () => {
     }
   })
 
-  it('rejects more than 10^15 minor units, so that sums of Balances never overflow', () => {
+  it('rejects more than 10^15 minor units, the most a record takes', () => {
     expect(parseAmount('10000000000000.00', 'USD', 'en-US')).toEqual({ ok: true, value: 10 ** 15 })
     expect(parseAmount('10000000000000.01', 'USD', 'en-US')).toEqual({ ok: false, error: 'too-large' })
     expect(parseAmount('-10000000000000.01', 'USD', 'en-US')).toEqual({ ok: false, error: 'too-large' })

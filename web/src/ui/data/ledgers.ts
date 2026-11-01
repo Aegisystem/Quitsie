@@ -21,7 +21,7 @@ export function ledgerName({ ledger, members }: Pick<LedgerSummary, 'ledger' | '
 
 // Amounts in different currencies are not comparable, so the order is the
 // preferred currency first and then by code, never by size.
-function inOrder(totals: Map<string, number>, preferredCurrency: string): Map<string, number> {
+function inOrder<T>(totals: Map<string, T>, preferredCurrency: string): Map<string, T> {
   return new Map([...totals].sort(([a], [b]) => (a === preferredCurrency ? -1 : b === preferredCurrency ? 1 : a.localeCompare(b))))
 }
 
@@ -31,17 +31,19 @@ export function myBalance({ balances }: Pick<LedgerSummary, 'balances'>, memberI
   return inOrder(new Map(mine.map(({ currency, amount }) => [currency, amount])), preferredCurrency)
 }
 
-// The User's total per currency across every Group and Friendship. Never converted.
-export function myTotals(home: readonly LedgerSummary[], user: Pick<User, 'id' | 'preferredCurrency'>): Map<string, number> {
-  const totals = new Map<string, number>()
+// The User's total per currency across every Group and Friendship. Never
+// converted. Each Balance stays within maxBalance, but the User can be in 200
+// ledgers, so the totals add up as bigints, exactly.
+export function myTotals(home: readonly LedgerSummary[], user: Pick<User, 'id' | 'preferredCurrency'>): Map<string, bigint> {
+  const totals = new Map<string, bigint>()
   for (const summary of home) {
     const me = myMember(summary.members, user.id)
     if (!me) continue
     for (const [currency, amount] of myBalance(summary, me.id, user.preferredCurrency)) {
-      totals.set(currency, (totals.get(currency) ?? 0) + amount)
+      totals.set(currency, (totals.get(currency) ?? 0n) + BigInt(amount))
     }
   }
-  return inOrder(new Map([...totals].filter(([, amount]) => amount !== 0)), user.preferredCurrency)
+  return inOrder(new Map([...totals].filter(([, amount]) => amount !== 0n)), user.preferredCurrency)
 }
 
 export interface BalanceProofLine {

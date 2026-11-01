@@ -24,6 +24,11 @@ type Deps struct {
 	InviteSecret []byte
 	// Now is the clock of the limit of requests per IP; nil is time.Now.
 	Now func() time.Time
+	// HTTPSOrigin is the public origin in production, such as
+	// "https://quitsie.app", and empty in development. With it every
+	// response asks for HTTPS only (HSTS), and a visitor Cloudflare saw on
+	// plain HTTP is sent there.
+	HTTPSOrigin string
 }
 
 // WithDeps gives the handlers their dependencies.

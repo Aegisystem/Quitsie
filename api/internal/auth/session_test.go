@@ -58,8 +58,9 @@ func TestTheSessionCookieIsHiddenFromScriptsAndOtherSites(t *testing.T) {
 	if !c.HttpOnly || !c.Secure || c.SameSite != http.SameSiteLaxMode {
 		t.Errorf("HttpOnly=%v Secure=%v SameSite=%v, want HttpOnly, Secure and Lax", c.HttpOnly, c.Secure, c.SameSite)
 	}
-	if c.Path != "/" || c.Domain != "" {
-		t.Errorf("Path=%q Domain=%q, want the whole origin and no Domain", c.Path, c.Domain)
+	// Nor can another subdomain set it, with the __Host- prefix.
+	if c.Name != "__Host-quitsie_session" || c.Path != "/" || c.Domain != "" {
+		t.Errorf("Name=%q Path=%q Domain=%q, want a __Host- cookie for the whole origin", c.Name, c.Path, c.Domain)
 	}
 	if c.MaxAge != 90*24*60*60 {
 		t.Errorf("MaxAge = %d, want 90 days", c.MaxAge)
@@ -148,14 +149,15 @@ func failTest(t *testing.T) auth.ErrorHandler {
 	}
 }
 
-// signInOn signs email in from device and returns the session token.
+// signInOn signs email in from a new browser on device and returns the
+// session token.
 func (f *fixture) signInOn(t *testing.T, email, device string) auth.SignIn {
 	t.Helper()
-	ctx := context.Background()
-	if err := f.svc.RequestCode(ctx, email, anaIP); err != nil {
+	b := f.newBrowser(anaIP)
+	if err := b.requestCode(email); err != nil {
 		t.Fatal(err)
 	}
-	signIn, err := f.svc.VerifyCode(ctx, email, f.mail.lastCode(t, email), device, anaIP)
+	signIn, err := b.verifyOn(email, f.mail.lastCode(t, email), device)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -2,13 +2,24 @@ package main
 
 import (
 	"bytes"
+	"context"
+	"database/sql"
+	"errors"
+	"io/fs"
 	"log/slog"
 	"maps"
+	"net"
+	"net/http"
+	"os"
+	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Aegisystem/Quitsie/api/internal/mail"
+	"github.com/Aegisystem/Quitsie/api/internal/store"
 )
 
 // production is a complete production environment.
@@ -59,6 +70,31 @@ func TestAProductionEnvironment(t *testing.T) {
 	}
 }
 
+// HSTS and the redirect to HTTPS would lock a developer's localhost out of
+// plain HTTP, so only production turns them on, whatever the origin.
+func TestOnlyProductionEnforcesHTTPS(t *testing.T) {
+	tests := []struct {
+		name   string
+		getenv func(string) string
+		want   string
+	}{
+		{"production by default", env(production, nil), "https://quitsie.app"},
+		{"production by name", env(production, map[string]string{"QUITSIE_ENV": "production"}), "https://quitsie.app"},
+		{"development", env(development, map[string]string{"QUITSIE_PUBLIC_ORIGIN": "https://quitsie.localhost"}), ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg, err := loadConfig(tt.getenv)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if cfg.httpsOrigin != tt.want {
+				t.Errorf("httpsOrigin = %q, want %q", cfg.httpsOrigin, tt.want)
+			}
+		})
+	}
+}
+
 func TestTheDefaultCurrencyIsDollars(t *testing.T) {
 	cfg, err := loadConfig(env(production, nil))
 	if err != nil {
@@ -66,6 +102,24 @@ func TestTheDefaultCurrencyIsDollars(t *testing.T) {
 	}
 	if cfg.defaultCurrency != "USD" {
 		t.Errorf("default currency = %q, want USD", cfg.defaultCurrency)
+	}
+}
+
+func TestTheBudgetOfEmails(t *testing.T) {
+	cfg, err := loadConfig(env(production, nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.mailPerHour != 40 || cfg.mailPerDay != 90 {
+		t.Errorf("budget = %d per hour and %d per day, want 40 and 90 by default", cfg.mailPerHour, cfg.mailPerDay)
+	}
+
+	cfg, err = loadConfig(env(production, map[string]string{"QUITSIE_MAIL_MAX_PER_HOUR": "100", "QUITSIE_MAIL_MAX_PER_DAY": "1000"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.mailPerHour != 100 || cfg.mailPerDay != 1000 {
+		t.Errorf("budget = %d per hour and %d per day, want the configured 100 and 1000", cfg.mailPerHour, cfg.mailPerDay)
 	}
 }
 
@@ -106,6 +160,9 @@ func TestProductionRefusesToStartWithABadEnvironment(t *testing.T) {
 		{"unknown currency", map[string]string{"QUITSIE_DEFAULT_CURRENCY": "XYZ"}, "QUITSIE_DEFAULT_CURRENCY"},
 		{"unknown environment", map[string]string{"QUITSIE_ENV": "staging"}, "QUITSIE_ENV"},
 		{"unknown mail sender", map[string]string{"QUITSIE_MAIL": "smtp"}, "QUITSIE_MAIL"},
+		{"emails per hour not a number", map[string]string{"QUITSIE_MAIL_MAX_PER_HOUR": "forty"}, "QUITSIE_MAIL_MAX_PER_HOUR"},
+		{"no emails per day", map[string]string{"QUITSIE_MAIL_MAX_PER_DAY": "0"}, "QUITSIE_MAIL_MAX_PER_DAY"},
+		{"more emails per hour than per day", map[string]string{"QUITSIE_MAIL_MAX_PER_HOUR": "100"}, "QUITSIE_MAIL_MAX_PER_DAY"},
 		// Anyone who reads the log could sign in as anyone.
 		{"development mail", map[string]string{"QUITSIE_MAIL": "log"}, "QUITSIE_MAIL"},
 	}
@@ -186,5 +243,127 @@ func TestDevelopmentCanPointAtAnotherOrigin(t *testing.T) {
 	}
 	if !slices.Equal(cfg.origins, []string{"http://localhost:5173"}) {
 		t.Errorf("origins = %v, want Vite once", cfg.origins)
+	}
+}
+
+// migrated opens a migrated database in a new directory and returns its path.
+func migrated(t *testing.T) (*sql.DB, string) {
+	t.Helper()
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "quitsie.db")
+	db, err := store.Open(ctx, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { db.Close() })
+	if err := store.Migrate(ctx, db); err != nil {
+		t.Fatal(err)
+	}
+	return db, path
+}
+
+func currentVersion(t *testing.T, db *sql.DB) int64 {
+	t.Helper()
+	v, err := store.New(db).CurrentVersion(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return v
+}
+
+func TestAStartWithoutTheMarkerKeepsTheVersions(t *testing.T) {
+	db, path := migrated(t)
+
+	if err := recordRestore(context.Background(), slog.Default(), db, restoredMarker(path)); err != nil {
+		t.Fatal(err)
+	}
+
+	if v := currentVersion(t, db); v != 0 {
+		t.Errorf("version = %d, want 0: nothing was restored", v)
+	}
+}
+
+func TestAStartAfterARestoreJumpsOnceAndRemovesTheMarker(t *testing.T) {
+	db, path := migrated(t)
+	marker := restoredMarker(path)
+	if err := os.WriteFile(marker, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var logs bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logs, nil))
+
+	if err := recordRestore(context.Background(), logger, db, marker); err != nil {
+		t.Fatal(err)
+	}
+
+	jumped := currentVersion(t, db)
+	if jumped < 1_000_000_000 {
+		t.Errorf("version = %d after a restore, want a jump of at least a billion", jumped)
+	}
+	if _, err := os.Stat(marker); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("the marker is still there (%v), so the next start would record the restore again", err)
+	}
+	if !strings.Contains(logs.String(), "jumped_version="+strconv.FormatInt(jumped, 10)) {
+		t.Errorf("log = %q, want the jump in it", logs.String())
+	}
+	if err := recordRestore(context.Background(), logger, db, marker); err != nil {
+		t.Fatal(err)
+	}
+	if v := currentVersion(t, db); v != jumped {
+		t.Errorf("version = %d after the next start, want %d: the restore was recorded already", v, jumped)
+	}
+}
+
+// logLines hands over each write of a logger; slog writes a record at once.
+type logLines chan string
+
+func (l logLines) Write(p []byte) (int, error) {
+	l <- string(p)
+	return len(p), nil
+}
+
+// The alerts on the VM read the level=ERROR lines of the journal, so what
+// net/http logs about a broken handler must be one of them, stack included.
+func TestABrokenHandlerIsLoggedAsAnError(t *testing.T) {
+	tests := []struct {
+		name    string
+		handler http.HandlerFunc
+		want    string
+	}{
+		{"panic", func(http.ResponseWriter, *http.Request) { panic("boom") }, "http: panic serving"},
+		{"header written twice", func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			w.WriteHeader(http.StatusInternalServerError)
+		}, "http: superfluous response.WriteHeader call"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			logs := make(logLines, 1)
+			srv := newHTTPServer("", tt.handler, slog.New(slog.NewTextHandler(logs, nil)))
+			ln, err := net.Listen("tcp", "127.0.0.1:0")
+			if err != nil {
+				t.Fatal(err)
+			}
+			go srv.Serve(ln)
+			t.Cleanup(func() { srv.Close() })
+
+			if resp, err := http.Get("http://" + ln.Addr().String()); err == nil {
+				resp.Body.Close()
+			}
+
+			select {
+			case line := <-logs:
+				if !strings.Contains(line, "level=ERROR") || !strings.Contains(line, tt.want) {
+					t.Errorf("logged %q, want a level=ERROR line with %q", line, tt.want)
+				}
+				// journald splits on newlines, and only the first line would
+				// carry the level.
+				if n := strings.Count(line, "\n"); n != 1 {
+					t.Errorf("logged %d lines, want the whole record on one: %q", n, line)
+				}
+			case <-time.After(5 * time.Second):
+				t.Fatal("logged nothing")
+			}
+		})
 	}
 }

@@ -157,30 +157,57 @@ func (s *Server) clock() func() time.Time {
 	return time.Now
 }
 
-// clientIP is who a request counts as for the limits per IP.
+// throughTunnel reports whether a request came through cloudflared, and so
+// whether the headers Cloudflare writes about the visitor can be believed.
 //
-// Whether a request came through the tunnel is decided by the peer of its
-// connection, which a client cannot forge. cloudflared runs on this machine
-// and connects over loopback, so that peer means "behind the tunnel", where
-// every visitor shares 127.0.0.1 and Cloudflare writes the real address in
-// CF-Connecting-IP. Any other peer reached this port directly, which only
-// happens if QUITSIE_ADDR leaves loopback: nothing stopped it from writing that
-// header, so only its own address counts. On the VM the port is not public,
-// and cloudflared must stay the only process that forwards traffic to it.
+// It is decided by the peer of the connection, which a client cannot forge.
+// cloudflared runs on this machine and connects over loopback, so that peer
+// means "behind the tunnel". Any other peer reached this port directly, which
+// only happens if QUITSIE_ADDR leaves loopback: nothing stopped it from
+// writing those headers itself. On the VM the port is not public, and
+// cloudflared must stay the only process that forwards traffic to it.
+func throughTunnel(r *http.Request) bool {
+	peer, err := netip.ParseAddrPort(r.RemoteAddr)
+	return err == nil && peer.Addr().Unmap().IsLoopback()
+}
+
+// IPv6 customers get a whole network, not one address: a /64 at least, and
+// often a /56 that holds 256 of them. The limits count each network as one
+// client: requests by the /64, and login codes by the /56, because each one
+// is an email out of the server's budget.
+const (
+	requestPrefixBits = 64
+	sendPrefixBits    = 56
+)
+
+// clientIP is who a request counts as for the limits per IP.
 func clientIP(r *http.Request) string {
+	return clientNetwork(r, requestPrefixBits)
+}
+
+// senderIP is who a request for a login code counts as for the limits on
+// sending codes.
+func senderIP(r *http.Request) string {
+	return clientNetwork(r, sendPrefixBits)
+}
+
+// clientNetwork is the address a request comes from, or its network of
+// ipv6Bits in IPv6. Behind the tunnel every visitor shares 127.0.0.1 and
+// Cloudflare writes the real address in CF-Connecting-IP; any other peer only
+// counts as itself.
+func clientNetwork(r *http.Request, ipv6Bits int) string {
 	peer, err := netip.ParseAddrPort(r.RemoteAddr)
 	if err != nil {
 		return r.RemoteAddr
 	}
 	ip := peer.Addr().Unmap()
-	if ip.IsLoopback() {
+	if throughTunnel(r) {
 		if visitor, err := netip.ParseAddr(r.Header.Get("CF-Connecting-IP")); err == nil {
 			ip = visitor.Unmap()
 		}
 	}
-	// One IPv6 customer holds a whole /64, so a single address means nothing.
 	if ip.Is6() {
-		if network, err := ip.Prefix(64); err == nil {
+		if network, err := ip.Prefix(ipv6Bits); err == nil {
 			return network.String()
 		}
 	}

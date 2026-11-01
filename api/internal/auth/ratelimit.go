@@ -7,13 +7,21 @@ import (
 
 // Limits on sending login codes, so nobody can flood an inbox or use
 // Quitsie to send spam. The IP limit is looser because many people can
-// share one address behind a carrier's NAT.
+// share one address behind a carrier's NAT, but each code is an email out of
+// the server's budget, so one address gets a few people's worth.
+//
+// Anybody can spend the limit per email, so a known device has its own
+// quota instead (ADR 0011). Other browsers also have a smaller one per pair
+// of IP and email, so that one sender cannot take all of an email's codes
+// from someone at another address.
 const (
-	sendWindow      = time.Hour
-	maxSendsPerMail = 5
-	maxSendsPerIP   = 30
+	sendWindow             = time.Hour
+	maxSendsPerMail        = 5
+	maxSendsPerPair        = 3
+	maxSendsPerIP          = 10
+	maxSendsPerKnownDevice = 5
 	// maxVerificationsPerIP stops one sender from spreading guesses over many
-	// emails. It allows two tries per code of maxSendsPerIP.
+	// emails, whose codes it may have asked for from other addresses.
 	maxVerificationsPerIP = 60
 	// maxLimiterKeys bounds the memory of a limiter to some 80 MB. Reaching it
 	// takes tens of thousands of addresses within an hour.
@@ -45,18 +53,10 @@ type quota struct {
 func (l *limiter) allow(now time.Time, quotas ...quota) (ok bool, retryAfter time.Duration) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	l.sweep(now)
-
-	since := now.Add(-l.window)
-	for _, q := range quotas {
-		if hits := recent(l.hits[q.key], since); len(hits) >= q.max {
-			// The key has room once the event that filled it leaves the window.
-			retryAfter = max(retryAfter, hits[len(hits)-q.max].Add(l.window).Sub(now))
-		}
-	}
-	if retryAfter > 0 {
+	if retryAfter := l.untilRoom(now, quotas); retryAfter > 0 {
 		return false, retryAfter
 	}
+	since := now.Add(-l.window)
 	for _, q := range quotas {
 		hits, known := l.hits[q.key]
 		if !known {
@@ -65,6 +65,27 @@ func (l *limiter) allow(now time.Time, quotas ...quota) (ok bool, retryAfter tim
 		l.hits[q.key] = append(recent(hits, since), now)
 	}
 	return true, 0
+}
+
+// wait reports how long until every quota's key has room for one more event,
+// zero if they have room now, as allow would. It records nothing, so a caller
+// can refuse early and still call allow once nothing else can refuse.
+func (l *limiter) wait(now time.Time, quotas ...quota) time.Duration {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.untilRoom(now, quotas)
+}
+
+func (l *limiter) untilRoom(now time.Time, quotas []quota) (retryAfter time.Duration) {
+	l.sweep(now)
+	since := now.Add(-l.window)
+	for _, q := range quotas {
+		if hits := recent(l.hits[q.key], since); len(hits) >= q.max {
+			// The key has room once the event that filled it leaves the window.
+			retryAfter = max(retryAfter, hits[len(hits)-q.max].Add(l.window).Sub(now))
+		}
+	}
+	return retryAfter
 }
 
 // makeRoom forgets one key if there are maxKeys already, which means an attack

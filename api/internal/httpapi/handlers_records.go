@@ -242,8 +242,11 @@ func (s *Server) PullChanges(ctx context.Context, req PullChangesRequestObject) 
 		return PullChanges400ApplicationProblemPlusJSONResponse{BadRequestApplicationProblemPlusJSONResponse(p)}, nil
 	}
 	c, err := sync.Pull(ctx, s.deps.DB, user.ID, req.Params.Since)
-	if errors.Is(err, sync.ErrCursorAhead) {
+	switch {
+	case errors.Is(err, sync.ErrCursorAhead):
 		return PullChanges410ApplicationProblemPlusJSONResponse(recordProblem(http.StatusGone, ProblemCodeCursorInvalid, "The cursor is ahead of the server.", "")), nil
+	case errors.Is(err, sync.ErrCursorLost):
+		return PullChanges410ApplicationProblemPlusJSONResponse(recordProblem(http.StatusGone, ProblemCodeCursorInvalid, "The cursor is from before the server restored a backup.", "")), nil
 	}
 	if err != nil {
 		return nil, err

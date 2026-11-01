@@ -1,12 +1,12 @@
 # Revisión de seguridad
 
-Revisión previa a abrir Quitsie al público, hecha el 2026-10-31 sobre el commit `26948a3` de `main`. El vocabulario sigue [CONTEXT.md](../CONTEXT.md). Los hallazgos 1 a 4, 7, 10 y 12 se arreglaron después, y cada uno dice con qué commits y qué se volvió a medir.
+Revisión previa a abrir Quitsie al público, hecha el 2026-10-31 sobre el commit `26948a3` de `main`. El vocabulario sigue [CONTEXT.md](../CONTEXT.md). Los hallazgos 1 a 7, 10, 12, 13 y 14 se arreglaron después, y cada uno dice con qué commits y qué se volvió a medir.
 
-> **El repositorio es público y este documento explica cómo reproducir ataques.** Los hallazgos 5, 6, 8, 9, 11, 13 y 14 siguen abiertos.
+> **El repositorio es público y este documento explica cómo reproducir ataques.** Los hallazgos 8, 9 y 11 siguen abiertos.
 
 ## Resumen
 
-Hay **14 hallazgos verificados: 1 crítico, 2 altos, 7 medios y 4 bajos**. **Los cuatro que bloqueaban abrir al público (1 a 4) están arreglados**, y también el 7, el 10 y el 12. El aislamiento entre libros aguantó todo lo que se le probó: sin un enlace válido, nadie leyó ni cambió un libro ajeno. Los problemas graves son de disponibilidad, y el único camino hacia una cuenta ajena es adivinar su código (hallazgo 4).
+Hay **14 hallazgos verificados: 1 crítico, 2 altos, 7 medios y 4 bajos**. **Los cuatro que bloqueaban abrir al público (1 a 4) están arreglados**, y también el 5, el 6, el 7, el 10, el 12, el 13 y el 14. Quedan abiertos tres, y los tres esperan una decisión del dueño. El aislamiento entre libros aguantó todo lo que se le probó: sin un enlace válido, nadie leyó ni cambió un libro ajeno. Los problemas graves son de disponibilidad, y el único camino hacia una cuenta ajena es adivinar su código (hallazgo 4).
 
 | # | Gravedad | Hallazgo | Estado | Quién puede |
 | --- | --- | --- | --- | --- |
@@ -14,18 +14,18 @@ Hay **14 hallazgos verificados: 1 crítico, 2 altos, 7 medios y 4 bajos**. **Los
 | 2 | Alta | Un email de Miembro pendiente rompe `GET /sync` para todo el Grupo | **Arreglado** | Quien tenga el enlace |
 | 3 | Alta | Una sola cuenta agota la memoria, la CPU y el disco | **Arreglado** | Cualquier Usuario |
 | 4 | Media | Los intentos de código no tienen tope por cuenta | **Arreglado** | Cualquiera |
-| 5 | Media | Cualquiera impide entrar a otra persona durante un día | Abierto, empeoró con el arreglo del 4 | Cualquiera |
-| 6 | Media | El envío de correos no tiene tope global | Abierto | Cualquiera |
+| 5 | Media | Cualquiera impide entrar a otra persona durante un día | **Arreglado** | Cualquiera |
+| 6 | Media | El envío de correos no tiene tope global | **Arreglado** | Cualquiera |
 | 7 | Media | El limitador de códigos crece sin tope en memoria | **Arreglado** | Cualquiera |
 | 8 | Media | Quien fue sacado de un Grupo vuelve con el enlace viejo | Abierto | Antiguo Miembro |
 | 9 | Media | La réplica sigue en el dispositivo tras cerrar la sesión a distancia | Abierto | Quien tenga el dispositivo |
 | 10 | Media | El email sobrevive al borrado de la cuenta y reaparece | **Arreglado** | Miembros del Grupo |
 | 11 | Baja | Quien entra con el enlace ve los emails de los Miembros pendientes | Abierto | Quien tenga el enlace |
 | 12 | Baja | Un enlace falsificado carga el libro entero antes de comprobarse | **Arreglado** | Cualquiera con un id de libro |
-| 13 | Baja | Los Saldos desbordan `int64` e invierten las Deudas | Abierto | Miembro del Grupo |
-| 14 | Baja | Pedir un código recorre toda la tabla con el bloqueo de escritura | Abierto | Cualquiera con más de mil direcciones |
+| 13 | Baja | Los Saldos desbordan `int64` e invierten las Deudas | **Arreglado** | Miembro del Grupo |
+| 14 | Baja | Pedir un código recorre toda la tabla con el bloqueo de escritura | **Arreglado** | Cualquiera con más de mil direcciones |
 
-Los hallazgos 8 y 11 necesitan una decisión de producto.
+Los hallazgos 8, 9 y 11 necesitan una decisión de producto: las decisiones 1, 3 y 2 de [pendientes.md](pendientes.md#3-decisiones-del-dueño).
 
 **Gravedad.** Crítica: alguien sin cuenta tumba el servicio o lee datos ajenos. Alta: una cuenta normal deja sin servicio a otras personas. Media: daño acotado a una persona o incumplimiento de una regla de privacidad. Baja: efecto pequeño o limitado al propio libro.
 
@@ -136,7 +136,7 @@ La preparación lleva unos 4 minutos respetando el límite. La VM tiene 1 GB: el
 
 Un pull completo de esa cuenta tarda 40 s y 50 páginas. El cliente real, en el navegador, recorrió dos páginas de un libro de 36.000 filas y guardó los 12.000 Gastos con el Saldo correcto.
 
-**Riesgo que queda.** Los límites son por cuenta, y el presupuesto y los pulls simultáneos viven en memoria. Una persona con varias cuentas los suma, y cada IP puede pedir 30 códigos por hora. Dos cuentas con libros llenos pueden ocupar las dos plazas de `GET /sync`.
+**Riesgo que queda.** Los límites son por cuenta, y el presupuesto y los pulls simultáneos viven en memoria. Una persona con varias cuentas los suma, y cada IP puede pedir 10 códigos por hora (eran 30 antes del arreglo del hallazgo 6). Dos cuentas con libros llenos pueden ocupar las dos plazas de `GET /sync`.
 
 ### 4. Los intentos de código no tienen tope por cuenta
 
@@ -164,7 +164,7 @@ Con este tope, una cuenta concreta acumula 3.650 intentos sobre un millón en un
 
 ### 5. Cualquiera impide entrar a otra persona durante un día
 
-**Media. Abierto.** Cualquiera, sin cuenta. El arreglo del hallazgo 4 lo empeoró: el bloqueo pasó de una hora a 24 horas. Antes de ese arreglo el atacante podía repetirlo cada hora, así que el bloqueo ya podía ser permanente; ahora le cuesta menos peticiones.
+**Media. Arreglado en `f21c01c`.** Cualquiera, sin cuenta. El arreglo del hallazgo 4 lo empeoró: el bloqueo pasó de una hora a 24 horas. Antes de ese arreglo el atacante podía repetirlo cada hora, así que el bloqueo ya podía ser permanente; ahora le cuesta menos peticiones.
 
 **Archivos:** `api/internal/auth/code.go:62` y `:127`, `api/internal/auth/ratelimit.go:13`.
 
@@ -178,11 +178,25 @@ Con este tope, una cuenta concreta acumula 3.650 intentos sobre un millón en un
 
 Las sesiones abiertas y Google no se ven afectados: el daño recae en quien estrena dispositivo o quedó sin sesión y entra con código.
 
-**Arreglo.** Ata cada código al navegador que lo pidió con una cookie de flujo `HttpOnly`, y cuenta los intentos por flujo y el cupo de envíos por pareja de email e IP. El tope por email de 10 fallos se mantiene como techo más alto, para que un atacante con muchas IP no recupere los intentos que quitó el hallazgo 4.
+**Arreglo** ([ADR 0011](adr/0011-codigos-atados-al-navegador.md)). La propuesta original, atar el código al navegador y mantener el tope por email, no cerraba la tercera forma: los diez fallos del atacante en sus propios flujos seguían bloqueando el email. Por eso se añadieron los dispositivos conocidos.
+
+1. Pedir un código deja una cookie de flujo `HttpOnly` con 128 bits aleatorios, y `login_codes` guarda su hash. Solo ese navegador puede comprobar el código, los 5 intentos son de ese código, y pedir otro desde el mismo navegador reemplaza solo el suyo.
+2. Cada inicio de sesión, con código o con Google, deja una cookie de dispositivo conocido que dura un año y que cerrar sesión no borra. La tabla `known_devices` guarda el hash de su token, 20 por Usuario como máximo, y borrar la cuenta los olvida. Un dispositivo conocido no gasta los límites por email y tiene los suyos: 5 códigos por hora y 10 equivocados al día, contados en la base.
+3. Los navegadores desconocidos conservan los límites del email: 5 códigos por hora y 10 fallos al día. Una IP pide 3 de esos 5, así que un atacante en otra dirección no se los lleva todos, y un email tiene 5 códigos vivos de navegadores desconocidos como máximo, también tras un reinicio. El tope del hallazgo 4 no cambia.
+
+**Medido después, contra el binario real**, con `curl` y `CF-Connecting-IP` rotado por loopback. Ana entró una vez desde su teléfono y cerró sesión.
+
+- Primera forma: el atacante pidió 4 códigos desde cuatro IP y el quinto recibió `429`; con el de Ana suman los 5 del email. El teléfono de Ana recibió 204, y un navegador nuevo de Ana, `429`.
+- Tercera forma: tras diez intentos fallidos del atacante con dos códigos suyos, un navegador nuevo de Ana recibe `429` con `Retry-After: 86400`, y el teléfono comprueba su código y entra. Tras reiniciar el binario pasa lo mismo.
+- Segunda forma: Beto pidió un código desde un navegador que nunca había usado. El atacante gastó los 5 intentos de su propio código, y el código real de Beto no le sirvió ni desde su navegador ni desde uno sin flujo (`429 too_many_attempts` y `400 login_code_expired`). Beto entró al primer intento.
+- Hallazgo 4: 30 IP, cada una con un flujo nuevo, consiguieron 10 intentos equivocados sobre un email. Las demás recibieron `429` con `Retry-After: 86400`.
+- En Chromium, la PWA entra con código sin cambios en el cliente. Tras cerrar sesión conserva la cookie de dispositivo, con `document.cookie` vacío, y vuelve a entrar después del mismo ataque, mientras otro navegador ve «Hubo demasiados intentos con este email».
+
+**Riesgo que queda.** Quien estrena dispositivo, o borró las cookies, depende de los límites del email, y cualquiera puede bloquearle los códigos un día. Google y las sesiones abiertas no se ven afectados. Quien comparta la IP de la víctima, o su /56, puede gastar el cupo de esa IP durante una hora. Quien robe la cookie de dispositivo de alguien gana 10 intentos al día sobre esa cuenta.
 
 ### 6. El envío de correos no tiene tope global
 
-**Media.** Cualquiera, sin cuenta.
+**Media. Arreglado en `76bb9be`.** Cualquiera, sin cuenta.
 
 **Archivos:** `api/internal/auth/ratelimit.go:14`, `api/internal/auth/code.go:62`.
 
@@ -190,7 +204,23 @@ Las sesiones abiertas y Google no se ven afectados: el daño recae en quien estr
 
 **Verificado.** Treinta envíos aceptados desde una IP a direcciones distintas y `429` en el siguiente. El plus-addressing (`ana+1@…`) cuenta como direcciones distintas. El agotamiento de la cuota real no se probó.
 
-**Arreglo.** Añade un tope global por hora y por día que deje de enviar y avise. Baja `maxSendsPerIP` a 10 y agrupa las IPv6 por /56 para este límite. Si llega el abuso, añade Cloudflare Turnstile, gratuito, delante de pedir código.
+**Arreglo.**
+
+1. El servidor envía como máximo 40 correos con códigos por hora de reloj y 90 en 24 horas, entre todos, por debajo de los 100 diarios gratuitos de Resend. Las cifras son provisionales y se cambian con `QUITSIE_MAIL_MAX_PER_HOUR` y `QUITSIE_MAIL_MAX_PER_DAY`. La cuenta vive en la tabla `mail_sends`, por horas, así que un reinicio no la borra. Un correo que no se pudo enviar no cuenta.
+2. Con el tope alcanzado, pedir un código responde `503 mail_budget_spent` con `Retry-After`, sin gastar los cupos de quien lo pide, y la pantalla de entrada dice que por ahora no se pueden enviar códigos. El correo que agota la hora o el día deja una línea `ERROR` en el log: una por cada hora o día agotado, no una por petición.
+3. Una IP pide 10 códigos por hora en vez de 30, y los límites de envío cuentan las IPv6 por /56. El límite general de peticiones y el de verificaciones siguen contando por /64.
+4. Turnstile queda para cuando llegue el abuso.
+
+**Medido después, contra el binario real.**
+
+- Una IPv4 recibe 204 en 10 pedidos y `429` con `Retry-After: 3600` en el 11.º.
+- Diez /64 de un mismo /56 reciben 204, el siguiente /64 recibe `429` y otro /56 recibe 204.
+- Con un tope de 3 por hora, el cuarto pedido responde `503 mail_budget_spent` con `Retry-After` hasta la hora siguiente, y lo mismo tras reiniciar el binario. El log tiene una sola línea `ERROR`.
+- En Chromium, la PWA muestra «No podemos enviar más códigos por ahora. Vuelve a intentarlo en 5 minutos.»
+
+La cuota real de Resend no se probó.
+
+**Riesgo que queda.** El tope protege la cuenta de Resend, no el servicio: cuatro IP agotan una hora y nueve agotan el día, y entonces nadie entra con código hasta que se libere. Google y las sesiones abiertas siguen funcionando. La línea `ERROR` avisa, y Turnstile es el siguiente paso.
 
 ### 7. El limitador de códigos crece sin tope en memoria
 
@@ -278,7 +308,7 @@ La regla actual dice que quien vuelve recupera su Antiguo Miembro, lo cual tiene
 
 ### 13. Los Saldos desbordan `int64` e invierten las Deudas
 
-**Baja.** Miembro del Grupo. Solo afecta a su propio libro, donde ya podía poner cualquier cifra.
+**Baja. Arreglado en `72aaa7f`, `d927991`, `e968cec`, `8f20889`, `588144a` y `7458809`.** Miembro del Grupo. Solo afecta a su propio libro, donde ya podía poner cualquier cifra.
 
 **Archivos:** `api/internal/domain/balance.go:30-33`, `api/internal/domain/validate_expense.go:108`, `docs/reglas-de-negocio.md:11`.
 
@@ -286,11 +316,22 @@ La regla actual dice que quien vuelve recupera su Antiguo Miembro, lo cual tiene
 
 **Verificado.** 9.300 Gastos de 10^15 en 93 peticiones y 3 segundos. Lo real es que la otra persona debe 9.300.000.000.000.000.000; `GET /sync` dice que el pagador debe 9.146.744.073.709.551.616 a esa persona, con el sentido invertido. No hubo pánicos.
 
-**Arreglo.** Rechaza al escribir cualquier registro que deje un Saldo por encima de 2^62, con `invalid_amounts`. El tope de filas del hallazgo 3 no lo impide, porque 9.300 Gastos caben en un libro. Corrige la frase de las reglas.
+**Arreglo.** El tope no es 2^62, como proponía esta revisión, sino 2^53 − 1 (9.007.199.254.740.991), algo más de nueve Gastos de 10^15. El cliente maneja los importes como números de JavaScript, exactos solo hasta ahí: por encima, `JSON.parse` ya los redondea y `formatAmount` lanzaba una excepción al pintarlos. Con el binario de `e73d9b0`, diez Gastos de 10^15, un Saldo de 10^16 muy lejos de 2^62, dejaron en blanco Inicio y el Grupo de quien los pagó, con `10000000000000000 is not an integer amount in minor units`. El tope de filas del hallazgo 3 no lo impide, porque 9.300 Gastos caben en un libro.
+
+1. `domain.MaxBalance` vale 2^53 − 1. `ledgers.Snapshot.Domain` suma los Saldos del libro en 128 bits, así que ni el número de registros ni la vuelta de un `int64` engañan la comprobación. Los validadores por los que ya pasaba cada escritura rechazan con `invalid_amounts` el cambio que lleve más allá del tope algún Saldo que mueva: crear, editar, borrar y restaurar Gastos y Liquidaciones, y cambiar la Moneda del grupo a una con más decimales. En `POST /records` cada registro se juzga contra el libro tal como lo dejaron los aceptados antes en el mismo lote. Reclamar no mueve registros ni junta libros, así que no necesita comprobación.
+2. Las Deudas simplificadas nunca superan los Saldos, pero las Deudas entre dos personas sí: Gastos en círculo (Ana paga por Beto, Beto por Carla, Carla por Ana) las hacen crecer con todos los Saldos en cero. Comprobarlas al escribir costaría hasta 2 s con el bloqueo de escritura tomado, en un libro lleno de Gastos de 100 pagadores por 100 deudores. En su lugar, `GET /sync` las suma en 128 bits y, si alguna pasa del tope, entrega las simplificadas.
+3. El cliente tiene el mismo tope, `maxBalance`. Los formularios de Gasto y Liquidación lo comprueban con los Saldos provisionales antes de guardar, con o sin conexión: «Con esto, tu saldo pasaría de lo que Quitsie puede apuntar.» El total de Inicio, que reúne hasta 200 libros, se suma con `bigint` y se muestra exacto, y `formatAmount` ya no lanza con un entero grande.
+4. Las reglas, el contrato y los comentarios ya no dicen que el tope de 10^15 evita el desbordamiento.
+
+Cada escritura suma ahora los Saldos del libro una vez: 14 ms para 198.000 Aportes y Cuotas en una prueba de rendimiento, además de la carga del libro que ya hacía. A cambio, `GET /sync` ya no calcula las Deudas entre parejas de un libro con Simplificación para tirarlas.
+
+**Medido después, contra el binario real.** El mismo ataque, 93 lotes de 100 Gastos de 10^15, tardó 0,9 s: se aceptaron 9 y se rechazaron 9.291 con `invalid_amounts`. `GET /sync` trajo 9 Gastos y una sola Deuda, de Beto a Ana por 9 × 10^15, en el sentido correcto. Restaurar uno borrado tras volver al tope, y editar uno de 1 USD a 10^13 USD, respondieron 400 `invalid_amounts`. En el navegador, Inicio mostró sin errores un total de 180 billones de dólares, de dos Grupos al tope y más allá de 2^53, y el formulario no dejó guardar un Gasto que llevaba un Saldo más allá del tope.
+
+**Riesgo que queda.** Un Grupo sin Simplificación cuyas Deudas entre parejas pasan del tope muestra las simplificadas sin avisar de ello; hacen falta billones dando vueltas en círculo. Los libros guardados antes del arreglo no se revisan, porque aún no hay producción.
 
 ### 14. Pedir un código recorre toda la tabla con el bloqueo de escritura
 
-**Baja. Abierto.** Cualquiera con más de mil direcciones, sin cuenta. Apareció al volver a medir el hallazgo 7.
+**Baja. Arreglado en `bf6c2c1`.** Cualquiera con más de mil direcciones, sin cuenta. Apareció al volver a medir el hallazgo 7.
 
 **Archivos:** `api/internal/auth/code.go:94`, `api/internal/store/queries/login_codes.sql` y `api/migrations/00001_initial_schema.sql`.
 
@@ -298,13 +339,20 @@ La regla actual dice que quien vuelve recupera su Antiguo Miembro, lo cual tiene
 
 **Verificado.** Con 36.000 códigos vivos, cada tanda de 90.000 peticiones pasó de 11 a 75 s, y 21 peticiones aceptadas respondieron 500 con `database is locked`. `EXPLAIN QUERY PLAN` muestra `SCAN login_codes`. El efecto sobre otros Usuarios no se midió. Por lectura, `DeleteExpiredSessions` repite el patrón en cada inicio de sesión.
 
-**Arreglo.** Añade una migración con índices sobre `login_codes (expires_at)` y `sessions (last_used_at)`.
+**Arreglo.** La migración 00003 añade índices sobre `login_codes (expires_at)`, `sessions (last_used_at)` y `login_failures (resets_at)`, que `DeleteEndedLoginFailures` también recorría en cada pedido de código. Una prueba comprueba con `EXPLAIN QUERY PLAN` que los tres borrados buscan por su índice.
+
+**Medido después, contra el binario real**, en Linux con 4 vCPU y 36.000 códigos vivos sembrados en la base. «Sin índices» es la misma base con los tres índices quitados. El plan pasa a `SEARCH login_codes USING INDEX login_codes_expires_at`.
+
+| Medida | Sin índices | Con índices |
+| --- | --- | --- |
+| Pedir un código, mediana de 300 seguidos | 16 ms | 1 ms |
+| 3.000 pedidos, 30 a la vez | 54 s, 47 respondieron 500 con `database is locked` | 4 s, ningún 500 |
 
 ## A comprobar al desplegar
 
 Son afirmaciones de la documentación que nada en el repositorio cumple. Dependen del panel de Cloudflare, así que no se pudieron probar.
 
-- **HTTPS forzado y HSTS.** Ni el asistente ni la documentación activan «Always Use HTTPS» ni HSTS, y `quitsie.com` no está en la lista de precarga, a diferencia de `.app`. Sin ellos, quien escriba `http://quitsie.com` en una red hostil puede recibir una página alterada que capture su email y su código. Actívalos en la etapa 6 del asistente.
+- **HTTPS forzado y HSTS.** Ni el asistente ni la documentación activan «Always Use HTTPS» ni HSTS, y `quitsie.com` no está en la lista de precarga, a diferencia de `.app`. Sin ellos, quien escriba `http://quitsie.com` en una red hostil puede recibir una página alterada que capture su email y su código. **El servidor ya los exige en producción** (`255fecf`): envía `Strict-Transport-Security: max-age=31536000` y redirige a HTTPS lo que Cloudflare vio llegar por HTTP, así que «Always Use HTTPS» pasa a ser una segunda capa, aún recomendable ([despliegue](despliegue.md#https)). Queda comprobar tras el primer despliegue que `http://` responde 301 a través del túnel real. La primera visita por `http://` en una red hostil solo la protege la lista de precarga, que exige `includeSubDomains` y es decisión del dueño.
 - **El «límite de Cloudflare».** `docs/arquitectura.md:134` y `docs/despliegue.md:122` lo mencionan, pero nada lo crea: hay que definir una regla. Añade una para `/api/v1/auth/*` que además limite el tamaño del cuerpo.
 - **`CF-Connecting-IP` a través del túnel real.** Comprueba tras el primer despliegue que dos visitantes distintos tienen cubos distintos y que el encabezado enviado por un cliente se sobrescribe.
 
@@ -312,12 +360,12 @@ Son afirmaciones de la documentación que nada en el repositorio cumple. Depende
 
 No son hallazgos: no se encontró forma de aprovecharlos. Conviene añadirlos por si otra cosa falla.
 
-- **Cabeceras.** Ninguna respuesta lleva `Content-Security-Policy`, `X-Content-Type-Options`, `frame-ancestors` ni `Referrer-Policy`. Con los scripts propios, una CSP estricta cabe sin esfuerzo, y sería la última barrera si un XSS futuro intentara leer la réplica. Enmarcar la app no sirve de nada hoy porque `SameSite=Lax` deja fuera la cookie.
-- **API sin `Cache-Control: no-store`.** Las respuestas de `/api/` no lo declaran. No se inspeccionó la caché HTTP del navegador tras cerrar sesión.
-- **Cookie con prefijo `__Host-`**, para que un subdominio nunca pueda fijarla.
+- **Cabeceras.** Ninguna respuesta lleva `Content-Security-Policy`, `X-Content-Type-Options`, `frame-ancestors` ni `Referrer-Policy`. Con los scripts propios, una CSP estricta cabe sin esfuerzo, y sería la última barrera si un XSS futuro intentara leer la réplica. Enmarcar la app no sirve de nada hoy porque `SameSite=Lax` deja fuera la cookie. **Hecho** (`95eec57`): toda respuesta, de la PWA o de la API, lleva una CSP sin `'unsafe-inline'` que solo admite archivos propios e imágenes `data:` y prohíbe enmarcar la app, junto con `X-Content-Type-Options`, `Referrer-Policy: same-origin`, `Cross-Origin-Opener-Policy` y `Permissions-Policy`. En Chromium se recorrieron el inicio de sesión, el botón de Google, Inicio, un Grupo con un Gasto creado desde el formulario, sus pestañas, Invitar, el enlace abierto, Actividad, Cuenta y la salida: ninguna violación ni aviso en la consola, y el service worker se registró y abrió la app sin red.
+- **API sin `Cache-Control: no-store`.** Las respuestas de `/api/` no lo declaran. No se inspeccionó la caché HTTP del navegador tras cerrar sesión. **Hecho** (`95eec57`): toda respuesta bajo `/api/` lo lleva, también los errores y las rutas que no existen. Los archivos de `assets/` siguen siendo `immutable`.
+- **Cookie con prefijo `__Host-`**, para que un subdominio nunca pueda fijarla. **Hecho** (`dfff52d`): las cuatro cookies del inicio de sesión lo llevan, la de sesión, la de flujo del código, la de dispositivo conocido y la de flujo de Google, así que todas van con `Path=/`. Una cookie plantada por otro subdominio delante de la verdadera metía al navegador en la cuenta de otro, con la sesión o el flujo de Google, o lo dejaba como desconocido y bloqueable, con la de dispositivo conocido. `__Secure-` no basta, porque ese subdominio también va por HTTPS. En Chromium, una página de `evil.google.localhost` dejó para `google.localhost` cookies con los nombres viejos y con `__Secure-`, pero ninguna con `__Host-`. El inicio de sesión con código, la sesión tras recargar, la salida, el dispositivo conocido con el email agotado y el flujo de Google funcionan igual en `http://google.localhost`.
 - **Duración máxima de sesión.** Hoy se renueva indefinidamente mientras se use.
 - **Borrar la cuenta sin código reciente.** Una sesión robada basta para hacerlo.
-- **GitHub Actions por etiqueta.** Fijarlas por SHA protege el flujo que maneja la clave de despliegue.
+- **GitHub Actions por etiqueta.** Fijarlas por SHA protege el flujo que maneja la clave de despliegue. **Hecho** (`57e8469`): cada `uses:` apunta a un commit, con la versión en un comentario, y la CI pasa `actionlint` y `shellcheck`.
 
 ## Revisado sin hallazgos
 
@@ -362,6 +410,6 @@ Las de npm vienen de `vite-plugin-pwa` (`workbox-build`, `ejs`, `glob`, `deepmer
 - **Google real.** Solo el proveedor falso de las pruebas.
 - **Resend real.** Ni cuotas ni rebotes.
 - **La VM `e2-micro`.** La caída por memoria y el llenado del disco se dedujeron de lo medido en local. Las mediciones posteriores a los arreglos también son locales.
-- **Service worker en ejecución.** No llegó a registrarse en el navegador integrado, que falló al obtener el script, aunque el servidor lo entrega con 200. La conclusión sale de leer el `sw.js` generado.
+- **Service worker en ejecución.** No llegó a registrarse en el navegador integrado, que falló al obtener el script, aunque el servidor lo entrega con 200. La conclusión sale de leer el `sw.js` generado. Después, al probar las cabeceras, sí se registró en Chromium con la CSP puesta: precargó la interfaz y abrió la app sin red.
 - **Safari en iOS y la PWA instalada.**
 - **La caché HTTP del navegador** tras cerrar sesión.

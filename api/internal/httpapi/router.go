@@ -12,6 +12,7 @@ import (
 
 // NewHandler serves the whole binary from one origin: the API under /api/v1
 // and the compiled PWA everywhere else, so there is no CORS to configure.
+// Every response of both goes out with securityHeaders.
 func NewHandler(s *Server, pwa fs.FS) http.Handler {
 	api := http.NewServeMux()
 	ops := NewStrictHandlerWithOptions(s, []StrictMiddlewareFunc{requireSession, withRequest}, StrictHTTPServerOptions{
@@ -37,7 +38,7 @@ func NewHandler(s *Server, pwa fs.FS) http.Handler {
 	// cannot, and whatever watches it must never be limited.
 	mux.Handle("GET /api/v1/health", api)
 	mux.Handle("/", limit(pwaHandler(pwa)))
-	return mux
+	return securityHeaders(s.deps.HTTPSOrigin, mux)
 }
 
 // guard refuses API requests that change data from another origin (CSRF),
@@ -57,6 +58,7 @@ func (s *Server) guard(next http.Handler) http.Handler {
 // not have signed in yet.
 var publicOperations = map[string]bool{
 	"GetHealth":         true,
+	"GetLoginMethods":   true,
 	"RequestLoginCode":  true,
 	"VerifyLoginCode":   true,
 	"StartGoogleLogin":  true,

@@ -293,6 +293,14 @@ describe('Google', () => {
     expect(isGoogleFailure(new URL('https://quitsie.app/'))).toBe(false)
     expect(isGoogleFailure(new URL('https://quitsie.app/login'))).toBe(false)
   })
+
+  it('asks the server whether it can sign in with Google', async () => {
+    const { session } = setup({ 'GET /auth/methods': () => json(200, { google: true }) })
+    expect(await session.loginMethods()).toEqual({ ok: true, value: { google: true } })
+
+    const offline = setup({ 'GET /auth/methods': unreachable })
+    expect(await offline.session.loginMethods()).toEqual({ ok: false, error: { kind: 'offline' } })
+  })
 })
 
 describe('the data on the device', () => {

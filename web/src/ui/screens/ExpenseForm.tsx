@@ -4,11 +4,12 @@ import { api, type Category, type Member, type NewExpense as NewExpenseRecord, t
 import { liveExpenses, liveHome, liveLedger, liveRecords, type ExpenseView, type LedgerSummary, type RejectionReason } from '../../local'
 import { CategoryGlyph, Figure, figureState, GroupGlyph, Icon } from '../components/icons'
 import { Screen, toast, useOnline } from '../components/Shell'
-import { amountError } from '../forms/amountError'
+import { amountError, balanceError } from '../forms/amountError'
 import { CurrencyOptions } from '../forms/CurrencyOptions'
 import { engine, ledgerName, myMember, replica, useLive } from '../data'
 import { liveUsedCurrencies, useUser } from '../forms/data'
 import {
+  balanceRecords,
   changedFormerShare,
   formerParticipant,
   formerShares,
@@ -20,11 +21,12 @@ import {
   type SplitValues,
 } from '../forms/expense'
 import { activeMembers, isActive } from '../forms/people'
-import { updateExpense, type UpdateOutcome } from '../forms/updateExpense'
+import { afterEdit, updateExpense, type UpdateOutcome } from '../forms/updateExpense'
+import { problemPointer, readValue, valueError } from '../forms/values'
 import { categories } from '../types'
 import { previewOwedShares, type SplitParticipant } from '../split'
 import { formatDay, todayISO } from '../dates'
-import { amountPlaceholder, formatAmountInput, formatMoney, formatPercent, parseAmount, parsePercent, readAmount } from '../money'
+import { amountPlaceholder, formatAmountInput, formatMoney, formatPercent, readAmount } from '../money'
 import { href, navigate } from '../router'
 
 export function NewExpense({ ledgerId, fromRejected }: { ledgerId?: string; fromRejected?: string }) {
@@ -185,27 +187,25 @@ function ExpenseForm({ summary, user, me, purpose }: { summary: LedgerSummary; u
   // A form always shows every decimal of the currency.
   const money = (minor: number) => formatMoney(minor, currency, { trim: false })
 
+  // A person's field that cannot be read blocks saving and says why, as the
+  // total does; it never counts as zero. Fields that do not count are not read:
+  // a former member's, or the adjustment of someone left out.
+  const valueProblems = new Map<string, string>()
   const participants: SplitParticipant[] = splitting.map((m) => {
     const kept = former.owed.get(m.id)
     if (kept) return formerParticipant(kept, method)
-    const text = values[method][m.id] ?? ''
+    if (method === 'equal') return { memberId: m.id, included: included[m.id] ?? false, value: 0 }
+    const on = method !== 'adjustment' || (included[m.id] ?? false)
+    const read = readValue(values[method][m.id] ?? '', method, currency)
+    if (!read.ok && on) valueProblems.set(m.id, valueError(read.error, method, currency, t))
+    const value = read.ok ? read.value : 0
     switch (method) {
-      case 'equal':
-        return { memberId: m.id, included: included[m.id] ?? false, value: 0 }
-      case 'exact': {
-        const v = parseAmount(text, currency) ?? 0
-        return { memberId: m.id, included: v !== 0, value: v }
-      }
-      case 'percentage': {
-        const v = parsePercent(text) ?? 0
-        return { memberId: m.id, included: v !== 0, value: v }
-      }
-      case 'weights': {
-        const v = Number.parseInt(text, 10)
-        return { memberId: m.id, included: v > 0, value: Number.isFinite(v) ? v : 0 }
-      }
       case 'adjustment':
-        return { memberId: m.id, included: included[m.id] ?? false, value: parseAmount(text, currency) ?? 0 }
+        return { memberId: m.id, included: on, value }
+      case 'weights':
+        return { memberId: m.id, included: value > 0, value }
+      default:
+        return { memberId: m.id, included: value !== 0, value }
     }
   })
 
@@ -213,18 +213,49 @@ function ExpenseForm({ summary, user, me, purpose }: { summary: LedgerSummary; u
   const shareOf = (id: string) => preview.shares.find((x) => x.memberId === id)
   const formerChange = preview.owedShares && changedFormerShare(former, preview.owedShares)
 
+  const paidProblems = new Map<string, string>()
   const paidShares = manyPayers
-    ? payers.map((m) => ({ memberId: m.id, amount: former.paid.get(m.id) ?? parseAmount(paidText[m.id] ?? '', currency) ?? 0 })).filter((p) => p.amount > 0)
+    ? payers
+        .map((m) => {
+          const kept = former.paid.get(m.id)
+          if (kept !== undefined) return { memberId: m.id, amount: kept }
+          const read = readValue(paidText[m.id] ?? '', 'paid', currency)
+          if (!read.ok) paidProblems.set(m.id, valueError(read.error, 'paid', currency, t))
+          return { memberId: m.id, amount: read.ok ? read.value : 0 }
+        })
+        .filter((p) => p.amount > 0)
     : [{ memberId: payer, amount: total }]
   const paidLeft = total - paidShares.reduce((sum, p) => sum + p.amount, 0)
 
+  // The lines away from the fields (the status of the split or of the payers,
+  // and the dock) point at the first one that cannot be read, by name.
+  const problemOf = (problems: ReadonlyMap<string, string>, field: 'value' | 'paid') => {
+    const [id] = [...problems.keys()]
+    if (id === undefined) return undefined
+    return problemPointer(field, id === me.id ? undefined : nameOf(id), t)
+  }
+  const valueProblem = problemOf(valueProblems, 'value')
+  const paidProblem = problemOf(paidProblems, 'paid')
+
   const percentSum = participants.reduce((sum, p) => sum + (method === 'percentage' ? p.value : 0), 0)
+  const splitOk = !valueProblem && !preview.issue && preview.unassigned === 0 && !formerChange
+  const owedShares = toOwedShares(preview.owedShares ?? [])
+  // Only once the split and the payers close is it known whose Balance moves, and how far.
+  const closes = splitOk && !paidProblem && paidLeft === 0
   const errors = {
-    amount: amountError(read, currency, t),
+    amount:
+      amountError(read, currency, t) ??
+      (closes
+        ? balanceError(
+            summary.balances,
+            { added: balanceRecords({ currency, paidShares, owedShares }), removed: editing && balanceRecords(editing.expense) },
+            { me: me.id, nameOf },
+            t,
+          )
+        : undefined),
     description: description.trim() === '' ? t('expenseForm.descriptionRequired') : undefined,
   }
-  const splitOk = !preview.issue && preview.unassigned === 0 && !formerChange
-  const valid = !errors.amount && !errors.description && splitOk && paidLeft === 0
+  const valid = !errors.amount && !errors.description && closes
 
   // Someone else got there first, whether the server said so or a sync brought it.
   const changed =
@@ -237,6 +268,9 @@ function ExpenseForm({ summary, user, me, purpose }: { summary: LedgerSummary; u
   }, [changed])
 
   const setValue = (id: string, text: string) => setValues((v) => ({ ...v, [method]: { ...v[method], [id]: text } }))
+  // Any change the User makes: every field of the form reports it with a change
+  // event, and the few controls that do not call it themselves.
+  const edited = () => setFailure(afterEdit)
 
   const save = async () => {
     setTouched(true)
@@ -251,7 +285,7 @@ function ExpenseForm({ summary, user, me, purpose }: { summary: LedgerSummary; u
       category,
       splitMethod: method,
       paidShares,
-      owedShares: toOwedShares(preview.owedShares ?? []),
+      owedShares,
     }
     if (editing) {
       const outcome = await updateExpense(api, editing.expense.id, { ...content, expectedVersion: editing.version })
@@ -279,6 +313,7 @@ function ExpenseForm({ summary, user, me, purpose }: { summary: LedgerSummary; u
 
   let closing: { tone: 'even' | 'problem' | 'quiet'; text: string }
   if (total <= 0) closing = { tone: 'quiet', text: errors.amount ?? t('expenseForm.amountRequired') }
+  else if (valueProblem) closing = { tone: 'problem', text: valueProblem }
   else if (preview.issue === 'noParticipants') closing = { tone: 'problem', text: t('expenseForm.noParticipants') }
   else if (preview.issue === 'noWeights') closing = { tone: 'problem', text: t('expenseForm.noWeights') }
   else if (preview.issue === 'negativeShare') closing = { tone: 'problem', text: t('expenseForm.negativeShare') }
@@ -302,6 +337,7 @@ function ExpenseForm({ summary, user, me, purpose }: { summary: LedgerSummary; u
     errors.amount ??
     errors.description ??
     (!splitOk ? closing.text : undefined) ??
+    paidProblem ??
     (paidLeft > 0
       ? t('expenseForm.payersLeft', { amount: money(paidLeft) })
       : paidLeft < 0
@@ -366,6 +402,7 @@ function ExpenseForm({ summary, user, me, purpose }: { summary: LedgerSummary; u
       <form
         className="form"
         noValidate
+        onChange={edited}
         onSubmit={(e) => {
           e.preventDefault()
           void save()
@@ -441,7 +478,17 @@ function ExpenseForm({ summary, user, me, purpose }: { summary: LedgerSummary; u
           <div className="chips chips-scroll" role="radiogroup" aria-label={t('categories.label')}>
             {categories.map((c) => (
               <label key={c} className="chip chip-glyph">
-                <input type="radio" name={`${ids}-category`} checked={category === c} onChange={() => setCategory(c)} onClick={() => category === c && setCategory(undefined)} />
+                <input
+                  type="radio"
+                  name={`${ids}-category`}
+                  checked={category === c}
+                  onChange={() => setCategory(c)}
+                  onClick={() => {
+                    if (category !== c) return
+                    setCategory(undefined)
+                    edited()
+                  }}
+                />
                 <CategoryGlyph category={c} size={20} />
                 <span>{t(`categories.${c}`)}</span>
               </label>
@@ -465,40 +512,67 @@ function ExpenseForm({ summary, user, me, purpose }: { summary: LedgerSummary; u
                   </option>
                 ))}
               </select>
-              <button type="button" className="button button-small button-quiet" onClick={() => setManyPayers(true)}>
+              <button
+                type="button"
+                className="button button-small button-quiet"
+                onClick={() => {
+                  setManyPayers(true)
+                  edited()
+                }}
+              >
                 {t('expenseForm.severalPayers')}
               </button>
             </div>
           ) : (
             <>
               <ul className="people">
-                {payers.map((m) => (
-                  <li key={m.id} className="p-row p-row-input">
-                    <Figure state={figureState(m)} size={24} />
-                    <span className="p-name">{nameOf(m.id)}</span>
-                    <input
-                      className="input input-amount"
-                      inputMode="decimal"
-                      placeholder="0"
-                      aria-label={t('expenseForm.valueFor', { name: nameOf(m.id) })}
-                      value={paidText[m.id] ?? ''}
-                      disabled={former.paid.has(m.id)}
-                      onChange={(e) => setPaidText((p) => ({ ...p, [m.id]: e.target.value }))}
-                    />
-                  </li>
-                ))}
+                {payers.map((m) => {
+                  const problem = touched ? paidProblems.get(m.id) : undefined
+                  return (
+                    <li key={m.id} className="p-row p-row-input">
+                      <Figure state={figureState(m)} size={24} />
+                      <span className="p-name">{nameOf(m.id)}</span>
+                      <input
+                        className="input input-amount"
+                        inputMode="decimal"
+                        placeholder="0"
+                        aria-label={t('expenseForm.valueFor', { name: nameOf(m.id) })}
+                        value={paidText[m.id] ?? ''}
+                        disabled={former.paid.has(m.id)}
+                        onChange={(e) => setPaidText((p) => ({ ...p, [m.id]: e.target.value }))}
+                        aria-invalid={!!problem}
+                        aria-describedby={problem ? `${ids}-paid-${m.id}` : undefined}
+                      />
+                      {problem && (
+                        <p className="field-error p-error" id={`${ids}-paid-${m.id}`}>
+                          {problem}
+                        </p>
+                      )}
+                    </li>
+                  )
+                })}
               </ul>
               <div className="split-status">
-                <p className={`closing tone-${paidLeft === 0 ? 'even' : 'problem'}`}>
-                  {paidLeft === 0 && <Icon name="check" size={18} />}
-                  {paidLeft === 0
-                    ? t('expenseForm.payersOk')
-                    : paidLeft > 0
-                      ? t('expenseForm.payersLeft', { amount: money(paidLeft) })
-                      : t('expenseForm.payersOver', { amount: money(-paidLeft) })}
+                <p className={`closing tone-${!paidProblem && paidLeft === 0 ? 'even' : 'problem'}`}>
+                  {!paidProblem && paidLeft === 0 && <Icon name="check" size={18} />}
+                  <span className="closing-text">
+                    {paidProblem ??
+                      (paidLeft === 0
+                        ? t('expenseForm.payersOk')
+                        : paidLeft > 0
+                          ? t('expenseForm.payersLeft', { amount: money(paidLeft) })
+                          : t('expenseForm.payersOver', { amount: money(-paidLeft) }))}
+                  </span>
                 </p>
                 {former.paid.size === 0 && (
-                  <button type="button" className="button button-small button-quiet" onClick={() => setManyPayers(false)}>
+                  <button
+                    type="button"
+                    className="button button-small button-quiet"
+                    onClick={() => {
+                      setManyPayers(false)
+                      edited()
+                    }}
+                  >
                     {t('expenseForm.onePayer')}
                   </button>
                 )}
@@ -529,6 +603,7 @@ function ExpenseForm({ summary, user, me, purpose }: { summary: LedgerSummary; u
               const on = participants.find((p) => p.memberId === m.id)?.included ?? false
               // Once the split closes, a Cuota of zero is real (1 cent among three).
               const owes = !!share && on && (share.amount !== 0 || !!preview.owedShares)
+              const problem = touched ? valueProblems.get(m.id) : undefined
               return (
                 <li key={m.id} className={`p-row${on ? '' : ' is-out'}`}>
                   {checkable ? (
@@ -556,6 +631,8 @@ function ExpenseForm({ summary, user, me, purpose }: { summary: LedgerSummary; u
                         value={values[method][m.id] ?? ''}
                         disabled={kept || (method === 'adjustment' && !included[m.id])}
                         onChange={(e) => setValue(m.id, e.target.value)}
+                        aria-invalid={!!problem}
+                        aria-describedby={problem ? `${ids}-value-${m.id}` : undefined}
                       />
                       <span className="p-unit" aria-hidden="true">
                         {method === 'percentage' ? '%' : method === 'weights' ? t('expenseForm.weightUnit') : ''}
@@ -566,6 +643,11 @@ function ExpenseForm({ summary, user, me, purpose }: { summary: LedgerSummary; u
                     {owes ? money(share.amount) : '—'}
                     {share && share.remainder > 0 && <sup className="p-remainder">+{money(share.remainder)}</sup>}
                   </span>
+                  {problem && (
+                    <p className="field-error p-error" id={`${ids}-value-${m.id}`}>
+                      {problem}
+                    </p>
+                  )}
                 </li>
               )
             })}
@@ -578,7 +660,7 @@ function ExpenseForm({ summary, user, me, purpose }: { summary: LedgerSummary; u
           </div>
           <p className={`closing tone-${closing.tone}`} role="status">
             {closing.tone === 'even' && <Icon name="check" size={18} />}
-            {closing.text}
+            <span className="closing-text">{closing.text}</span>
             {total > 0 && !preview.issue && (
               <span className="closing-sub">{t('expenseForm.assigned', { assigned: money(preview.assigned), total: money(total) })}</span>
             )}
@@ -626,6 +708,8 @@ function failureText(failure: UpdateOutcome, t: ReturnType<typeof useTranslation
       return t('expenseForm.failedCurrency')
     case 'participants':
       return t('expenseForm.failedParticipants')
+    case 'balance':
+      return t('expenseForm.failedBalance')
     case 'gone':
       return t('expenseForm.failedGone')
     case 'offline':

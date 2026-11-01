@@ -6,7 +6,8 @@
 //
 //	QUITSIE_ADDR                  address to listen on (default 127.0.0.1:8080; cloudflared connects to it)
 //	QUITSIE_DB_PATH               SQLite file (default quitsie.db)
-//	QUITSIE_ENV                   production (default) or development
+//	QUITSIE_ENV                   production (default) or development; production also sends HSTS and
+//	                              redirects visitors Cloudflare saw on plain HTTP to QUITSIE_PUBLIC_ORIGIN
 //	QUITSIE_PUBLIC_ORIGIN         required: the app's base URL, such as https://quitsie.app (development defaults to http://localhost:8080)
 //	QUITSIE_MAIL                  resend (default), or log to write emails to the log, login codes included; development only
 //	QUITSIE_RESEND_API_KEY        required with resend: the key of the Resend account
@@ -14,6 +15,8 @@
 //	QUITSIE_GOOGLE_CLIENT_ID      OAuth client in Google Cloud; without it and its secret, Google sign-in is off
 //	QUITSIE_GOOGLE_CLIENT_SECRET  secret of that client
 //	QUITSIE_DEFAULT_CURRENCY      PreferredCurrency of new Users (default USD)
+//	QUITSIE_MAIL_MAX_PER_HOUR     most login-code emails sent in a clock hour (default 40)
+//	QUITSIE_MAIL_MAX_PER_DAY      most login-code emails sent in 24 hours (default 90, under Resend's free 100)
 //	QUITSIE_INVITE_SECRET         required: at least 32 bytes that sign the Invite links; changing it revokes them all
 //	                              (development generates one on each start if it is missing)
 //
@@ -23,6 +26,7 @@ package main
 import (
 	"context"
 	"crypto/rand"
+	"database/sql"
 	"embed"
 	"errors"
 	"fmt"
@@ -32,6 +36,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -87,12 +92,17 @@ func run(logger *slog.Logger) error {
 	if err := store.Migrate(ctx, db); err != nil {
 		return err
 	}
+	if err := recordRestore(ctx, logger, db, restoredMarker(cfg.dbPath)); err != nil {
+		return err
+	}
 
 	authService, err := auth.New(auth.Config{
 		DB:              db,
 		Mail:            sender,
 		DefaultCurrency: cfg.defaultCurrency,
 		Google:          cfg.google,
+		MailPerHour:     cfg.mailPerHour,
+		MailPerDay:      cfg.mailPerDay,
 	})
 	if err != nil {
 		return err
@@ -107,15 +117,9 @@ func run(logger *slog.Logger) error {
 		Auth:         authService,
 		Origins:      cfg.origins,
 		InviteSecret: cfg.inviteSecret,
+		HTTPSOrigin:  cfg.httpsOrigin,
 	})
-	srv := &http.Server{
-		Addr:              cfg.addr,
-		Handler:           httpapi.NewHandler(api, pwa),
-		ReadHeaderTimeout: 10 * time.Second,
-		// Longer than the slowest pull, with its wait to get in.
-		WriteTimeout: 60 * time.Second,
-		IdleTimeout:  2 * time.Minute,
-	}
+	srv := newHTTPServer(cfg.addr, httpapi.NewHandler(api, pwa), logger)
 	serveErr := make(chan error, 1)
 	go func() { serveErr <- srv.ListenAndServe() }()
 	logger.Info("listening", "url", "http://"+cfg.addr, "version", version, "db", cfg.dbPath)
@@ -136,6 +140,53 @@ func run(logger *slog.Logger) error {
 	return nil
 }
 
+// restoredMarker is the file that says the database came back from a backup
+// and the server has not recorded it yet. deploy/quitsie-restore.sh leaves it
+// next to the database when `litestream restore` brings one back, and the
+// operator does the same after a restore by hand (docs/despliegue.md).
+func restoredMarker(dbPath string) string { return dbPath + ".restored" }
+
+// recordRestore records the restore that marker announces, before the server
+// hands out any version, and then removes the marker. If the server stops in
+// between, the next start records the restore again, which is harmless.
+func recordRestore(ctx context.Context, logger *slog.Logger, db *sql.DB, marker string) error {
+	if _, err := os.Stat(marker); errors.Is(err, fs.ErrNotExist) {
+		return nil
+	} else if err != nil {
+		return fmt.Errorf("restore marker: %w", err)
+	}
+	gap, err := store.RecordRestore(ctx, db, time.Now())
+	if err != nil {
+		return err
+	}
+	logger.Warn("the database came from a backup: sync versions jumped, and devices that synced after the backup will rebuild their replicas",
+		"restored_version", gap.RestoredVersion, "jumped_version", gap.JumpedVersion)
+	if err := os.Remove(marker); err != nil {
+		return fmt.Errorf("the restore is recorded, but the next start would record it again: %w", err)
+	}
+	return nil
+}
+
+// newHTTPServer serves handler on addr.
+func newHTTPServer(addr string, handler http.Handler, logger *slog.Logger) *http.Server {
+	return &http.Server{
+		Addr:              addr,
+		Handler:           handler,
+		ReadHeaderTimeout: 10 * time.Second,
+		// Longer than the slowest pull, with its wait to get in.
+		WriteTimeout: 60 * time.Second,
+		IdleTimeout:  2 * time.Minute,
+		// What net/http logs on its own is a bug in a handler (a panic, a
+		// header written twice, a bad Content-Length) or a failure to accept
+		// connections, such as running out of file descriptors. All of it
+		// needs the owner, and the alerts only read level=ERROR; without
+		// this it goes through the log package at INFO. The server speaks
+		// plain HTTP to cloudflared, so the TLS handshake errors that
+		// scanners cause never reach it.
+		ErrorLog: slog.NewLogLogger(logger.Handler(), slog.LevelError),
+	}
+}
+
 // config is the server's configuration, read from the environment.
 type config struct {
 	addr   string
@@ -143,9 +194,15 @@ type config struct {
 	// origins are the app's own origins; requests that change data must
 	// come from one of them.
 	origins []string
+	// httpsOrigin is the public origin in production, where the server
+	// enforces HTTPS; empty in development.
+	httpsOrigin string
 	// logMail writes emails to the log instead of sending them with resend.
-	logMail         bool
-	resend          mail.ResendConfig
+	logMail bool
+	resend  mail.ResendConfig
+	// mailPerHour and mailPerDay are the budget of login-code emails.
+	mailPerHour     int
+	mailPerDay      int
 	google          *auth.GoogleConfig
 	defaultCurrency string
 	inviteSecret    []byte
@@ -200,6 +257,9 @@ func loadConfig(getenv func(string) string) (config, error) {
 	if development && origin != viteOrigin {
 		cfg.origins = append(cfg.origins, viteOrigin)
 	}
+	if !development {
+		cfg.httpsOrigin = origin
+	}
 
 	if _, ok := domain.Currency(cfg.defaultCurrency).Decimals(); !ok {
 		return config{}, fmt.Errorf("QUITSIE_DEFAULT_CURRENCY is not an ISO 4217 currency: %q", cfg.defaultCurrency)
@@ -220,6 +280,17 @@ func loadConfig(getenv func(string) string) (config, error) {
 		cfg.logMail = true
 	default:
 		return config{}, fmt.Errorf("QUITSIE_MAIL must be resend or log, not %q", sender)
+	}
+
+	var err error
+	if cfg.mailPerHour, err = positive(getenv, "QUITSIE_MAIL_MAX_PER_HOUR", auth.DefaultMailPerHour); err != nil {
+		return config{}, err
+	}
+	if cfg.mailPerDay, err = positive(getenv, "QUITSIE_MAIL_MAX_PER_DAY", auth.DefaultMailPerDay); err != nil {
+		return config{}, err
+	}
+	if cfg.mailPerHour > cfg.mailPerDay {
+		return config{}, fmt.Errorf("QUITSIE_MAIL_MAX_PER_HOUR (%d) cannot exceed QUITSIE_MAIL_MAX_PER_DAY (%d)", cfg.mailPerHour, cfg.mailPerDay)
 	}
 
 	id, secret := getenv("QUITSIE_GOOGLE_CLIENT_ID"), getenv("QUITSIE_GOOGLE_CLIENT_SECRET")
@@ -243,6 +314,20 @@ func loadConfig(getenv func(string) string) (config, error) {
 		return config{}, fmt.Errorf("QUITSIE_INVITE_SECRET must have at least %d bytes", invites.MinSecretLength)
 	}
 	return cfg, nil
+}
+
+// positive reads the variable key as a whole number of at least 1, or
+// fallback if it is not set.
+func positive(getenv func(string) string, key string, fallback int) (int, error) {
+	v := getenv(key)
+	if v == "" {
+		return fallback, nil
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n < 1 {
+		return 0, fmt.Errorf("%s must be a whole number of at least 1, not %q", key, v)
+	}
+	return n, nil
 }
 
 // checkOrigin requires a bare origin, because browsers compare it character

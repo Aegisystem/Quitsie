@@ -31,7 +31,9 @@ test('signing out warns about an UnsyncedRecord, lets the User cancel, and empti
   expect(Object.keys(rows)).toContain('queue')
   expect(Object.values(rows).every((count) => count === 0)).toBe(true)
   expect(await page.evaluate(() => Object.keys(localStorage).filter((key) => key.startsWith('quitsie.')))).toEqual([])
-  expect(await page.context().cookies()).toEqual([])
+  // Only the known-device cookie stays, on purpose: it lets this browser sign in
+  // again even when someone spent the email's limits (ADR 0011).
+  expect((await page.context().cookies()).map(({ name }) => name)).toEqual(['__Host-quitsie_known_device'])
 
   // Signing in again brings back what the server has, and only that.
   await page.context().unroute(noRecords)

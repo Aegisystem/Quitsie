@@ -6,6 +6,7 @@ import "fmt"
 // it. The rules of ValidateExpense apply, except that a former member who
 // takes part in stored may stay, as long as their PaidShare and OwedShare do
 // not change: they left with a zero Balance (docs/reglas-de-negocio.md).
+// Replacing stored with updated must keep every Balance within MaxBalance.
 func ValidateExpenseUpdate(ledger Ledger, stored, updated Expense) error {
 	before, after := sharesByMember(stored), sharesByMember(updated)
 	kept := make(map[string]bool)
@@ -18,7 +19,13 @@ func ValidateExpenseUpdate(ledger Ledger, stored, updated Expense) error {
 		}
 		kept[m.ID] = true
 	}
-	return ValidateExpense(ledger.keeping(kept), updated)
+	if err := validateExpense(ledger.keeping(kept), updated); err != nil {
+		return err
+	}
+	moves := make(balanceSums)
+	moves.expense(stored, true)
+	moves.expense(updated, false)
+	return ledger.checkBalances(moves)
 }
 
 // keeping returns a copy of l in which the given Members count as active.

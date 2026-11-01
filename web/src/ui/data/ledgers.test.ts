@@ -89,9 +89,17 @@ describe('myTotals', () => {
       ]),
     ]
     expect([...myTotals(home, user)]).toEqual([
-      ['EUR', 150],
-      ['USD', -20],
+      ['EUR', 150n],
+      ['USD', -20n],
     ])
+  })
+
+  it('adds up exactly past the safe integers, which one ledger never reaches but two can', () => {
+    const home = [
+      summary(group, [member('a', 'me')], [{ participantId: 'a', currency: 'EUR', amount: Number.MAX_SAFE_INTEGER }]),
+      summary(friendship, [member('b', 'me')], [{ participantId: 'b', currency: 'EUR', amount: 2 }]),
+    ]
+    expect(myTotals(home, user).get('EUR')).toBe(9007199254740993n)
   })
 
   it('leaves out a currency that cancels out across ledgers', () => {

@@ -33,12 +33,12 @@ Requisitos en tu ordenador: `gh` con sesión iniciada (`gh auth login`) y `gclou
 | 6 | Creas el túnel de Cloudflare y publicas el dominio hacia `localhost:8080`. |
 | 7 | Genera un par de claves SSH solo para desplegar; la privada va directa al secreto `DEPLOY_SSH_KEY`. |
 | 8 | Creas el token de R2 para Litestream. |
-| 9 | Copia `deploy/` a la VM y ejecuta `provision.sh`, donde escribes las claves de R2 y el token del túnel. |
+| 9 | Te pide el email de las alertas, copia `deploy/` a la VM y ejecuta `provision.sh`, donde escribes las claves de R2 y el token del túnel. |
 | 10 | Creas un token de servicio de Cloudflare Access; sus dos valores van a secretos de GitHub. |
 | 11 | Creas la aplicación de Access para `ssh.<dominio>` y después publicas esa ruta en el túnel. |
 | 12 | Creas la clave de Resend y rellenas `/etc/quitsie/quitsie.env`, que es obligatorio; el asistente comprueba que no falte ninguna variable. |
 | 13 | Configura las variables de GitHub y lanza el primer despliegue. |
-| 14 | Ejecuta la prueba de restauración. |
+| 14 | Ejecuta la prueba de restauración, que después la VM repite cada semana, y envía un correo de prueba de las [alertas](#alertas). |
 
 Al terminar, `https://<dominio>/` muestra la página de estado de la PWA y `https://<dominio>/api/v1/health` responde `{"status":"ok","database":"ok","version":"<commit>"}`.
 
@@ -53,7 +53,7 @@ Al terminar, `https://<dominio>/` muestra la página de estado de la PWA y `http
 | `QUITSIE_MAIL_FROM` | Remitente de un dominio verificado en Resend: `"Quitsie <codigos@<dominio>>"`. |
 | `QUITSIE_INVITE_SECRET` | 32 bytes o más que firman los Enlaces de invitación; genéralos con `openssl rand -base64 32`. Cambiarlo revoca todos los enlaces, así que guárdalo también en tu gestor de contraseñas: este archivo no está en el respaldo. |
 
-Son opcionales `QUITSIE_GOOGLE_CLIENT_ID` y `QUITSIE_GOOGLE_CLIENT_SECRET` (sin los dos no hay inicio de sesión con Google) y `QUITSIE_DEFAULT_CURRENCY`. Después de cambiar el archivo, reinicia con `sudo systemctl restart quitsie`.
+Son opcionales `QUITSIE_GOOGLE_CLIENT_ID` y `QUITSIE_GOOGLE_CLIENT_SECRET` (sin los dos no hay inicio de sesión con Google), `QUITSIE_DEFAULT_CURRENCY`, y `QUITSIE_MAIL_MAX_PER_HOUR` y `QUITSIE_MAIL_MAX_PER_DAY`, el tope de correos con códigos por hora y por 24 horas (40 y 90 por defecto, por debajo de los 100 diarios gratuitos de Resend). Las cifras son provisionales: súbelas si el tráfico normal las alcanza o si pasas a un plan de pago. Después de cambiar el archivo, reinicia con `sudo systemctl restart quitsie`.
 
 ### Dónde vive cada secreto
 
@@ -67,6 +67,15 @@ Nada secreto está en el repositorio ni pasa por un chat. Las plantillas `deploy
 | Clave SSH privada de despliegue | secreto `DEPLOY_SSH_KEY` de GitHub | el asistente, directo desde `ssh-keygen` |
 | Token de servicio de Access | secretos `CF_ACCESS_CLIENT_ID` y `CF_ACCESS_CLIENT_SECRET` de GitHub | el asistente, con entrada oculta |
 | Dominio, clave pública de la VM | variables `QUITSIE_URL`, `DEPLOY_SSH_HOST` y `DEPLOY_SSH_HOST_KEY` de GitHub (públicas) | el asistente |
+| Email de las alertas (no es secreto) | `/etc/quitsie/alert.env` en la VM (modo 600) | `provision.sh`, con el valor que le pasa el asistente (etapa 9) |
+
+### HTTPS
+
+El servidor exige HTTPS por su cuenta en producción. Toda respuesta lleva `Strict-Transport-Security: max-age=31536000`, y una visita que Cloudflare vio llegar por `http://` se redirige a `QUITSIE_PUBLIC_ORIGIN` con la misma ruta: 301 en `GET` y `HEAD`, 308 en lo demás. El servidor lo sabe por los encabezados `CF-Visitor` y `X-Forwarded-Proto`, que Cloudflare escribe y `cloudflared` reenvía, y solo los cree si la conexión llega por loopback. Una petición sin ellos, como la comprobación de salud del despliegue en `127.0.0.1`, nunca se redirige.
+
+Aun así conviene activar en Cloudflare **SSL/TLS → Edge Certificates → Always Use HTTPS**, para que la redirección ocurra en el borde sin llegar a la VM. Si activas también HSTS allí, usa la misma duración. `includeSubDomains` y `preload` quedan fuera a propósito: el primero alcanza a todos los subdominios, `ssh.<dominio>` incluido, y entrar en la lista de precarga de los navegadores es difícil de deshacer. Solo la precarga protege la primera visita por `http://` en una red hostil, así que activarlos es una decisión del dueño.
+
+Para comprobarlo tras el despliegue: `curl -sI http://<dominio>/` responde 301 hacia `https://` (de Cloudflare si «Always Use HTTPS» está activo, del servidor si no), y `curl -sI https://<dominio>/` trae `strict-transport-security`.
 
 ## Despliegue continuo
 
@@ -92,6 +101,10 @@ flowchart LR
 
 Las migraciones se aplican al arrancar y solo avanzan. Si un despliegue revierte, el binario viejo arranca contra el esquema nuevo: mantén cada migración compatible con la versión anterior (añadir antes de quitar).
 
+**La CI revisa lo que no se ejecuta en ella.** El job `lint` de `ci.yml` pasa `shellcheck` por los scripts, `actionlint` por los workflows y `systemd-analyze verify` por las unidades de `deploy/`, en paralelo con la compilación y con versiones fijadas. Si falla, `main` queda en rojo y no se despliega. Una excepción deliberada de `shellcheck` lleva su `# shellcheck disable=SCxxxx` con el motivo.
+
+**Acciones fijadas.** Los dos workflows usan cada acción de GitHub por el SHA de su commit, con la versión en un comentario, así que nadie cambia lo que corre moviendo un tag. Para subir una, busca el último tag de su versión mayor con `git ls-remote --tags https://github.com/actions/<acción>`, toma su SHA (el de la línea `^{}` si el tag es anotado) y cambia el SHA y el comentario.
+
 ## Operar la VM
 
 Acceso de emergencia, sin pasar por Cloudflare:
@@ -107,15 +120,19 @@ systemctl status quitsie litestream cloudflared
 journalctl -u quitsie -n 100 --no-pager
 journalctl -u litestream -u quitsie-restore -n 50 --no-pager
 curl -s http://127.0.0.1:8080/api/v1/health
+systemctl list-timers 'quitsie-*'
+journalctl -u quitsie-alert-check -u 'quitsie-alert@*' -n 50 --no-pager
 ```
 
 | Pieza | Unidad o archivo | Notas |
 | --- | --- | --- |
 | Aplicación | `quitsie.service`, `/usr/local/bin/quitsie` | Escucha en `127.0.0.1:8080`; la base está en `/var/lib/quitsie/quitsie.db` (0750, solo `quitsie`). |
-| Restauración al arrancar | `quitsie-restore.service` | Solo actúa si no hay base. Tiene las credenciales de R2; la aplicación no. Si R2 no responde en una VM nueva falla, y la aplicación y Litestream no arrancan: mejor parada que con una base vacía que se aparte del respaldo. |
+| Restauración al arrancar | `quitsie-restore.service`, `/usr/local/sbin/quitsie-restore` | Solo actúa si no hay base. Tiene las credenciales de R2; la aplicación no. Si R2 no responde en una VM nueva falla, y la aplicación y Litestream no arrancan: mejor parada que con una base vacía que se aparte del respaldo. Si trae una base, deja la marca `quitsie.db.restored` para la aplicación ([Qué pasa al restaurar](#qué-pasa-al-restaurar)). |
 | Respaldo | `litestream.service`, `/etc/litestream.yml` | Réplica continua a R2; conserva una semana de puntos de restauración. |
 | Entrada | `cloudflared.service` | Se actualiza con `apt upgrade`. |
 | Despliegue | `/usr/local/sbin/quitsie-deploy` | Lo ejecuta el usuario `deploy`. |
+| Alertas | `quitsie-alert-check.timer`, `quitsie-alert@.service`, `/usr/local/sbin/quitsie-alert-check` | Revisa la VM cada 5 minutos y te escribe ([Alertas](#alertas)). Guarda lo ya avisado en `/var/lib/quitsie-alert`. |
+| Prueba de restauración | `quitsie-restore-test.timer`, `/usr/local/sbin/quitsie-restore-test` | Cada semana; si falla, avisa. |
 
 **Aplicar cambios de `deploy/`** (unidades, `litestream.yml`, versión de Litestream): conecta por IAP, actualiza el checkout y ejecuta otra vez `sudo bash deploy/provision.sh`. Es idempotente y no vuelve a pedir lo que ya tiene. Para subir Litestream, cambia `LITESTREAM_VERSION` y `LITESTREAM_SHA256` en `provision.sh` (el digest sale de `gh api repos/benbjohnson/litestream/releases/tags/v<versión>`).
 
@@ -134,19 +151,52 @@ curl -s http://127.0.0.1:8080/api/v1/health
 | Clave de Resend | Crea una nueva en Resend, `sudoedit /etc/quitsie/quitsie.env`, `sudo systemctl restart quitsie`, y revoca la vieja. |
 | Secreto de invitaciones | `sudoedit /etc/quitsie/quitsie.env` y `sudo systemctl restart quitsie`. Revoca todos los Enlaces de invitación a la vez. |
 
+## Alertas
+
+La VM se vigila a sí misma, sin servicios de pago ni cuentas nuevas. Cada 5 minutos, `quitsie-alert-check.timer` ejecuta `/usr/local/sbin/quitsie-alert-check` ([`deploy/alert-check.sh`](../deploy/alert-check.sh)), que te escribe a `QUITSIE_ALERT_EMAIL` por Resend, con la clave y el remitente de `/etc/quitsie/quitsie.env`.
+
+| Comprobación | Avisa cuando |
+| --- | --- |
+| Aplicación | `GET /api/v1/health` en `127.0.0.1:8080` no devuelve 200 tres veces seguidas. No se mira antes del primer despliegue ni mientras `quitsie-deploy` trabaja. |
+| Servicios | `quitsie`, `litestream` o `cloudflared` no están activos, o systemd los volvió a arrancar solo desde la comprobación anterior. `quitsie-restore` o la prueba semanal de restauración fallaron. |
+| Disco | El disco de `/var/lib/quitsie` llega al 85 %. |
+| Errores | Llegó al registro de `quitsie` o de `litestream` una línea `level=ERROR`, un `panic` o un `fatal error`. La aplicación registra en ERROR todo lo que necesita al dueño, también cada respuesta 500. |
+
+Además, `quitsie`, `litestream`, `cloudflared`, `quitsie-restore` y la prueba semanal de restauración llevan `OnFailure=quitsie-alert@%n.service`: cuando systemd marca una como fallida, el aviso sale en ese momento, sin esperar a la siguiente comprobación.
+
+**Prueba semanal de restauración.** `quitsie-restore-test.timer` ejecuta `quitsie-restore-test` cada lunes hacia las 13:00 UTC, con un retraso al azar de hasta una hora, a través de `quitsie-restore-test.service`. Si la VM estaba apagada, lo hace al arrancar. Antes del primer despliegue no hay base y se salta. Si falla, te escribe; cuando lo arregles, `sudo systemctl start quitsie-restore-test` la repite y el siguiente aviso dice que se resolvió. Su salida: `journalctl -u quitsie-restore-test -n 50`.
+
+- **Un correo por problema, no uno cada 5 minutos.** Todo lo que encuentra una comprobación va en un solo correo. Si sigue fallando, se repite como mucho cada 4 horas, y cuando vuelve a funcionar llega «todo vuelve a funcionar». Los errores no tienen arreglo que detectar: se acumulan y salen juntos, como mucho cada 4 horas.
+- **Como mucho 10 correos de alerta al día.** Comparten la cuenta de Resend con los códigos de acceso, y el plan gratuito envía 100 al día.
+- **El correo no copia las líneas enteras.** De cada línea de error solo va su mensaje (`msg`), recortado; el resto de campos puede llevar datos de los Usuarios.
+- **Sin email, solo el registro.** Con `QUITSIE_ALERT_EMAIL` vacío, lo que encuentra se queda en el registro de la unidad. Para cambiar la dirección: `sudoedit /etc/quitsie/alert.env`; no hace falta reiniciar nada.
+- **Probarlo.** `sudo quitsie-alert-check --test` envía un correo de prueba, y `sudo quitsie-alert-check` hace una comprobación y dice qué ve.
+- Un despliegue que revierte también puede avisar: los errores del binario nuevo quedan en el registro.
+
+**Si la VM entera cae, no puede avisar de sí misma.** Tampoco ve un túnel que en la VM parece activo pero no llega a Cloudflare. Para eso, crea gratis un monitor externo, por ejemplo en UptimeRobot, que pida `https://<dominio>/api/v1/health` cada 5 minutos y te escriba si no devuelve 200. Es opcional; el asistente lo recuerda al final.
+
 ## Respaldo y restauración
 
 Litestream lee el WAL de SQLite y copia los cambios a `s3://quitsie-backups/quitsie.db` en R2 con un retraso de alrededor de un segundo, más una instantánea diaria. Con el intervalo por defecto escribe en R2 una vez por segundo mientras la aplicación escribe; la capa gratuita de R2 incluye 1.000.000 de escrituras al mes (comprueba la cifra vigente en el panel). Con poco tráfico sobra; si algún día se acerca, sube `sync-interval` en `litestream.yml`.
 
+### Qué pasa al restaurar
+
+Un respaldo es una copia vieja de la base. Un dispositivo que sincronizó después del instante restaurado guarda filas que el servidor ya no tiene, y su cursor apunta a versiones que la base restaurada volvería a entregar. Para que no se mezclen, la aplicación, en su primer arranque sobre una base restaurada, hace saltar la versión de sincronización y anota el tramo saltado. Esos dispositivos reciben `410` y rehacen su réplica desde cero, sin perder sus Registros sin sincronizar ([arquitectura.md](arquitectura.md#restaurar-un-respaldo)).
+
+La aplicación lo sabe por la marca `/var/lib/quitsie/quitsie.db.restored`. `quitsie-restore` la deja cuando trae una base de R2, y la aplicación la borra al arrancar, después de saltar y antes de atender a nadie. En `journalctl -u quitsie` queda una línea `the database came from a backup` con `restored_version` y `jumped_version`.
+
+- Si la aplicación se detiene entre el salto y el borrado de la marca, el siguiente arranque salta otra vez. No hace daño, y tampoco lo hace una marca sin restauración.
+- Si falta la marca tras una restauración, no hay salto, y los dispositivos que sincronizaron después del instante restaurado pueden perder filas sin aviso. Ante la duda, crea la marca.
+
 ### Prueba de restauración
 
-Un respaldo que nunca se ha restaurado no es un respaldo. Haz la prueba al terminar la instalación, después de cualquier cambio en R2 o en las credenciales, y una vez al mes. En la VM:
+Un respaldo que nunca se ha restaurado no es un respaldo. La VM hace esta prueba cada semana y avisa si falla ([Alertas](#alertas)). Hazla también a mano al terminar la instalación y después de cualquier cambio en R2 o en las credenciales. En la VM:
 
 ```bash
 sudo quitsie-restore-test
 ```
 
-Restaura el último respaldo en una carpeta temporal con `litestream restore -integrity-check full`, comprueba `PRAGMA integrity_check`, compara la versión de sincronización del respaldo con la de la base viva y termina con `OK` o con error. No toca la base real ni la réplica. Es lo mismo que, a mano:
+Restaura el último respaldo en una carpeta temporal con `litestream restore -integrity-check full`, comprueba `PRAGMA integrity_check`, compara la versión de sincronización del respaldo con la de la base viva, cuenta las restauraciones registradas en el respaldo y termina con `OK` o con error. Después de una restauración, la cuenta debe incluirla. No toca la base real ni la réplica. Es lo mismo que, a mano:
 
 ```bash
 sudo -i
@@ -155,12 +205,32 @@ litestream restore -config /etc/litestream.yml -o /var/tmp/restored.db -integrit
 sqlite3 /var/tmp/restored.db 'PRAGMA integrity_check;'      # ok
 ```
 
-Para volver a un instante anterior (por ejemplo, tras un borrado masivo), añade `-timestamp 2026-10-20T15:00:00Z`; cada restauración necesita su propia ruta de salida. Primero ejecuta con `-dry-run` para ver a qué punto llegaría.
+Para ver un instante anterior, añade `-timestamp 2026-10-20T15:00:00Z`; cada restauración necesita su propia ruta de salida. Primero ejecuta con `-dry-run` para ver a qué punto llegaría.
+
+### Restaurar a mano
+
+Para devolver la base viva a un instante anterior, por ejemplo tras un borrado masivo. Sin `-timestamp` trae el último respaldo. Lo escrito después de ese instante se pierde, incluidas las sesiones abiertas desde entonces: esos Usuarios vuelven a entrar. Mientras dure, no lances despliegues, porque uno arrancaría la aplicación a mitad. En la VM:
+
+```bash
+sudo -i
+systemctl stop quitsie litestream
+set -a; . /etc/quitsie/litestream.env; set +a
+dir=/var/tmp/quitsie-$(date -u +%Y%m%dT%H%M%SZ); mkdir "$dir"
+litestream restore -config /etc/litestream.yml -o "$dir/restored.db" -integrity-check full \
+  -timestamp 2026-10-20T15:00:00Z /var/lib/quitsie/quitsie.db
+mv /var/lib/quitsie/quitsie.db* "$dir"/      # la base reemplazada, con su -wal y su -shm
+install -o quitsie -g quitsie -m 600 "$dir/restored.db" /var/lib/quitsie/quitsie.db
+install -o quitsie -g quitsie -m 600 /dev/null /var/lib/quitsie/quitsie.db.restored
+systemctl start litestream quitsie
+journalctl -u quitsie -n 20 --no-pager | grep jumped_version
+```
+
+La segunda `install` crea la marca, y es obligatoria ([Qué pasa al restaurar](#qué-pasa-al-restaurar)). Si `journalctl` no muestra `jumped_version`, la aplicación arrancó sin la marca: detenla, crea la marca y vuelve a arrancarla cuanto antes, porque cada escritura sin salto puede reutilizar una versión perdida. Guarda la base reemplazada hasta comprobar que la restaurada está bien. Se probó con Litestream 0.5.17 y una réplica en disco: Litestream sigue replicando la base nueva, y una restauración posterior la trae con lo escrito después.
 
 ### Perder la VM
 
 1. **Apaga o borra la VM vieja** si sigue viva: dos máquinas replicando a la misma ruta de R2 estropean el respaldo.
-2. Crea una VM nueva (etapa 5 del asistente) y ejecuta `provision.sh` con las mismas claves de R2 y el token del túnel. Al arrancar Litestream, `quitsie-restore` trae la base de R2 antes de que nada la use.
+2. Crea una VM nueva (etapa 5 del asistente) y ejecuta `provision.sh` con las mismas claves de R2 y el token del túnel. Al arrancar Litestream, `quitsie-restore` trae la base de R2 antes de que nada la use y deja la marca. La aplicación salta las versiones en su primer arranque, con el despliegue del paso 4.
 3. Rellena otra vez `/etc/quitsie/quitsie.env`, que no está en el respaldo, con el mismo `QUITSIE_INVITE_SECRET`: uno nuevo revocaría todos los Enlaces de invitación.
 4. Actualiza la variable `DEPLOY_SSH_HOST_KEY` de GitHub (la VM nueva tiene otra clave de host; `provision.sh` la imprime al final) y lanza el despliegue: `gh workflow run deploy.yml --ref main`.
 
@@ -176,9 +246,11 @@ Con `quitsie.com` como principal, haz que `quitsie.app` redirija a él: añade a
 | Responde 502 | El túnel funciona pero no hay aplicación: aún no hay despliegue, o `quitsie.service` no arrancó (`journalctl -u quitsie`). |
 | El primer despliegue falla con «did not become healthy» y `journalctl -u quitsie` nombra una variable `QUITSIE_…` | `/etc/quitsie/quitsie.env` está incompleto: rellénalo ([Variables de la aplicación](#variables-de-la-aplicación)), reinicia el servicio y vuelve a desplegar. |
 | `quitsie.service` dice «dependency failed» | `quitsie-restore.service` falló: credenciales de R2 incorrectas o R2 inaccesible (`journalctl -u quitsie-restore`). No arranca a propósito. |
+| Tras una restauración, `quitsie.service` no arranca y su log dice «check the clock» | El reloj de la VM va tan adelantado que el salto de versiones pasaría de lo que la PWA lee con exactitud. Corrige la hora (`timedatectl status`) y reinicia el servicio: la marca sigue ahí. |
 | El workflow falla en «Install the binary…» con un error de Access o 255 | Token de servicio caducado o mal copiado, o la aplicación de Access no incluye el token en una política Service Auth. |
 | El workflow falla con «host key verification failed» | La variable `DEPLOY_SSH_HOST_KEY` no es la de la VM actual. |
 | El deploy termina con «rolling back» | El binario nuevo no llegó a estar sano; el anterior sigue sirviendo. El log trae las últimas líneas del servicio. |
+| No llegan las alertas | `sudo quitsie-alert-check --test` dice por qué: falta `QUITSIE_ALERT_EMAIL`, la clave de Resend, o ya salieron los 10 correos del día. |
 | Una unidad no arranca por el aislamiento (`status=2xx` en `systemctl status`) | Se endureció sin poder probarlo en la VM real. Comenta la directiva sospechosa en `deploy/` (p. ej. `CapabilityBoundingSet=` o `RestrictNamespaces=`), vuelve a ejecutar `provision.sh` y avisa para corregir el archivo. |
 
 ## Qué contiene `deploy/`
@@ -188,7 +260,12 @@ Con `quitsie.com` como principal, haz que `quitsie.app` redirija a él: añade a
 | `first-deploy-wizard.sh` | La guía interactiva del primer despliegue. |
 | `provision.sh` | Prepara la VM (idempotente). |
 | `quitsie-deploy.sh` | Se instala como `/usr/local/sbin/quitsie-deploy`: instala el binario, reinicia y revierte. |
+| `quitsie-restore.sh` | Se instala como `/usr/local/sbin/quitsie-restore`; lo ejecuta `quitsie-restore.service`. |
 | `restore-test.sh` | Se instala como `/usr/local/sbin/quitsie-restore-test`. |
+| `alert-check.sh` | Se instala como `/usr/local/sbin/quitsie-alert-check`: las [alertas](#alertas). |
+| `alert-check.test.sh` | Prueba `alert-check.sh` con sustitutos de `curl`, `systemctl` y `journalctl`; la ejecuta la CI. |
 | `quitsie.service`, `quitsie-restore.service`, `litestream.service`, `cloudflared.service` | Unidades systemd. |
+| `quitsie-alert-check.service`, `quitsie-alert-check.timer`, `quitsie-alert@.service` | Unidades de las alertas. |
+| `quitsie-restore-test.service`, `quitsie-restore-test.timer` | La prueba de restauración de cada semana. |
 | `litestream.yml` | Configuración de Litestream (sin secretos). |
 | `*.env.example` | Nombres de las variables de `/etc/quitsie/*.env`. |

@@ -9,6 +9,8 @@
 Description=Cloudflare Tunnel: the only way in to Quitsie
 After=network-online.target
 Wants=network-online.target
+# Emails the owner when systemd marks it as failed (deploy/alert-check.sh).
+OnFailure=quitsie-alert@%n.service
 
 [Service]
 Type=notify

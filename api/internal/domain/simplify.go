@@ -18,7 +18,9 @@ import (
 // the same Balances always give the same Debts.
 //
 // The Balances of each currency must add up to zero, as Balances returns them.
-// The Debts come sorted by currency, debtor and creditor.
+// Each payment is at most what its debtor owes and its creditor is owed, so no
+// Debt goes beyond the Balances, nor beyond MaxBalance. The Debts come sorted
+// by currency, debtor and creditor.
 func SimplifyDebts(balances []Balance) []Debt {
 	byCurrency := make(map[Currency][]Balance)
 	for _, b := range balances {

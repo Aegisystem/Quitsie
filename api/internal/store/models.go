@@ -33,6 +33,13 @@ type Expense struct {
 	DeletedAt   *time.Time
 }
 
+type KnownDevice struct {
+	TokenHash  string
+	UserID     string
+	CreatedAt  time.Time
+	LastUsedAt time.Time
+}
+
 type Ledger struct {
 	ID                   string
 	Kind                 string
@@ -52,12 +59,18 @@ type LoginCode struct {
 	ExpiresAt time.Time
 	Attempts  int64
 	CreatedAt time.Time
+	FlowHash  *string
 }
 
 type LoginFailure struct {
 	EmailHash string
 	Failures  int64
 	ResetsAt  time.Time
+}
+
+type MailSend struct {
+	Hour time.Time
+	Sent int64
 }
 
 type Member struct {
@@ -82,6 +95,12 @@ type PaidShare struct {
 	ExpenseID string
 	MemberID  string
 	Amount    int64
+}
+
+type RestoreGap struct {
+	RestoredVersion int64
+	JumpedVersion   int64
+	RestoredAt      time.Time
 }
 
 type Session struct {

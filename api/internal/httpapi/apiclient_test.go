@@ -120,6 +120,10 @@ type client struct {
 	http   *http.Client
 	origin string
 	device string
+	// ip is the address the client comes from, which the server reads from
+	// CF-Connecting-IP because the test server listens on loopback. Empty is
+	// 127.0.0.1.
+	ip string
 }
 
 func (a *testAPI) newClient(t *testing.T) *client {
@@ -157,6 +161,9 @@ func (c *client) do(method, path, body string) *http.Response {
 		req.Header.Set("Origin", c.origin)
 	}
 	req.Header.Set("User-Agent", c.device)
+	if c.ip != "" {
+		req.Header.Set("CF-Connecting-IP", c.ip)
+	}
 	resp, err := c.http.Do(req)
 	if err != nil {
 		c.t.Fatal(err)
