@@ -1233,6 +1233,7 @@ components:
         - already_member
         - friendship_exists
         - name_required
+        - limit_reached
         - body_too_large
         - cursor_invalid
         - internal_error
@@ -1933,13 +1934,14 @@ components:
             the Group currency changed. `invalid_participants`: someone is
             not an active Member. `invalid_amounts`: an amount is out of range
             or the shares do not add up to the total. `id_conflict`: the id belongs to another record.
-            `invalid_record`: any other rule of the contract.
+            `limit_reached`: the ledger is full. `invalid_record`: any other rule of the contract.
           enum:
             - ledger_unavailable
             - currency_mismatch
             - invalid_participants
             - invalid_amounts
             - id_conflict
+            - limit_reached
             - invalid_record
         detail:
           type: string

@@ -223,6 +223,8 @@ func recordFailure(err error) (p Problem, ok bool) {
 			return recordProblem(http.StatusConflict, ProblemCodeInvalidParticipants, "Someone cannot take part in this record.", detail), true
 		case sync.ReasonInvalidAmounts:
 			return recordProblem(http.StatusBadRequest, ProblemCodeInvalidAmounts, "The amounts are not valid.", detail), true
+		case sync.ReasonLimitReached:
+			return recordProblem(http.StatusConflict, ProblemCodeLimitReached, "The ledger is full.", detail), true
 		default:
 			return recordProblem(http.StatusBadRequest, ProblemCodeValidationFailed, "The request does not match the API contract.", detail), true
 		}

@@ -388,6 +388,7 @@ export const es = {
       invalid_participants: 'Alguien de este registro ya no es miembro del grupo.',
       invalid_amounts: 'Los importes no cuadran o se salen de lo que Quitsie puede apuntar.',
       id_conflict: 'Este registro choca con otro que ya existe.',
+      limit_reached: 'Este grupo o amistad llegó al máximo de registros que Quitsie puede guardar.',
       invalid_record: 'Al servidor le falta algo en este registro o no pudo leerlo.',
     },
     offlineHint: 'Para corregirlos o descartarlos necesitas conexión.',
@@ -509,6 +510,7 @@ export const es = {
     invalid: 'No pudimos guardarlo: revisa lo que escribiste.',
     rateLimited: 'Demasiados intentos seguidos. Espera un poco y vuelve a intentarlo.',
     nameRequired: 'Primero escribe tu nombre en Cuenta.',
+    limitReached: 'Llegaste al máximo que Quitsie permite aquí.',
     gone: 'Esto ya no está en tu lista.',
   },
   person: {

@@ -264,6 +264,7 @@ const (
 	ProblemCodeInvalidAmounts        ProblemCode = "invalid_amounts"
 	ProblemCodeInvalidParticipants   ProblemCode = "invalid_participants"
 	ProblemCodeInviteLinkInvalid     ProblemCode = "invite_link_invalid"
+	ProblemCodeLimitReached          ProblemCode = "limit_reached"
 	ProblemCodeLoginCodeExpired      ProblemCode = "login_code_expired"
 	ProblemCodeLoginCodeInvalid      ProblemCode = "login_code_invalid"
 	ProblemCodeMemberNotClaimed      ProblemCode = "member_not_claimed"
@@ -302,6 +303,8 @@ func (e ProblemCode) Valid() bool {
 	case ProblemCodeInvalidParticipants:
 		return true
 	case ProblemCodeInviteLinkInvalid:
+		return true
+	case ProblemCodeLimitReached:
 		return true
 	case ProblemCodeLoginCodeExpired:
 		return true
@@ -362,6 +365,7 @@ const (
 	RecordResultReasonInvalidParticipants RecordResultReason = "invalid_participants"
 	RecordResultReasonInvalidRecord       RecordResultReason = "invalid_record"
 	RecordResultReasonLedgerUnavailable   RecordResultReason = "ledger_unavailable"
+	RecordResultReasonLimitReached        RecordResultReason = "limit_reached"
 )
 
 // Valid indicates whether the value is a known member of the RecordResultReason enum.
@@ -378,6 +382,8 @@ func (e RecordResultReason) Valid() bool {
 	case RecordResultReasonInvalidRecord:
 		return true
 	case RecordResultReasonLedgerUnavailable:
+		return true
+	case RecordResultReasonLimitReached:
 		return true
 	default:
 		return false
@@ -938,7 +944,7 @@ type RecordResult struct {
 	Id     openapi_types.UUID `json:"id"`
 	Kind   RecordResultKind   `json:"kind"`
 
-	// Reason Only when rejected. `ledger_unavailable`: the ledger was deleted or the User is no longer an active Member. `currency_mismatch`: the Group currency changed. `invalid_participants`: someone is not an active Member. `invalid_amounts`: an amount is out of range or the shares do not add up to the total. `id_conflict`: the id belongs to another record. `invalid_record`: any other rule of the contract.
+	// Reason Only when rejected. `ledger_unavailable`: the ledger was deleted or the User is no longer an active Member. `currency_mismatch`: the Group currency changed. `invalid_participants`: someone is not an active Member. `invalid_amounts`: an amount is out of range or the shares do not add up to the total. `id_conflict`: the id belongs to another record. `limit_reached`: the ledger is full. `invalid_record`: any other rule of the contract.
 	Reason *RecordResultReason `json:"reason,omitempty"`
 	Status RecordResultStatus  `json:"status"`
 
@@ -951,7 +957,7 @@ type RecordResult struct {
 // RecordResultKind defines model for RecordResult.Kind.
 type RecordResultKind string
 
-// RecordResultReason Only when rejected. `ledger_unavailable`: the ledger was deleted or the User is no longer an active Member. `currency_mismatch`: the Group currency changed. `invalid_participants`: someone is not an active Member. `invalid_amounts`: an amount is out of range or the shares do not add up to the total. `id_conflict`: the id belongs to another record. `invalid_record`: any other rule of the contract.
+// RecordResultReason Only when rejected. `ledger_unavailable`: the ledger was deleted or the User is no longer an active Member. `currency_mismatch`: the Group currency changed. `invalid_participants`: someone is not an active Member. `invalid_amounts`: an amount is out of range or the shares do not add up to the total. `id_conflict`: the id belongs to another record. `limit_reached`: the ledger is full. `invalid_record`: any other rule of the contract.
 type RecordResultReason string
 
 // RecordResultStatus defines model for RecordResult.Status.

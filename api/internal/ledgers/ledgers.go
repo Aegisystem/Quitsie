@@ -11,6 +11,20 @@ import (
 	"github.com/Aegisystem/Quitsie/api/internal/store"
 )
 
+// MaxRows is the most rows a ledger holds: its records, their shares and its
+// Activities. A Group with 20,000 Expenses of five people each stays well under
+// it. It bounds what one pull, one Debt calculation and one write can cost.
+const MaxRows = 200_000
+
+// Full reports whether the ledger ledgerID has reached MaxRows.
+func Full(ctx context.Context, q *store.Queries, ledgerID string) (bool, error) {
+	rows, err := q.CountLedgerRows(ctx, ledgerID)
+	if err != nil {
+		return false, fmt.Errorf("count rows of %s: %w", ledgerID, err)
+	}
+	return rows >= MaxRows, nil
+}
+
 // Snapshot is a ledger with its Members and all its records, deleted ones
 // included, as read in one go.
 type Snapshot struct {

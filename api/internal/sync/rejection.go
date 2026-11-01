@@ -26,6 +26,8 @@ const (
 	ReasonInvalidAmounts Reason = "invalid_amounts"
 	// ReasonIDConflict: the id belongs to another record.
 	ReasonIDConflict Reason = "id_conflict"
+	// ReasonLimitReached: the ledger is full (ledgers.MaxRows).
+	ReasonLimitReached Reason = "limit_reached"
 	// ReasonInvalidRecord: any other rule.
 	ReasonInvalidRecord Reason = "invalid_record"
 )
@@ -38,6 +40,9 @@ type Rejection struct {
 
 func (r *Rejection) Error() string { return string(r.Reason) + ": " + r.Err.Error() }
 func (r *Rejection) Unwrap() error { return r.Err }
+
+// errLedgerFull is why a full ledger rejects a record.
+var errLedgerFull = errors.New("the ledger is full")
 
 // rejection tells why the domain rejected a record.
 func rejection(err error) *Rejection {
