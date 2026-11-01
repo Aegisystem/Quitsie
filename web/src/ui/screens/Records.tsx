@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { overMaxBalance } from '../../domain'
-import { liveHome, liveRecords } from '../../local'
+import { liveHome, liveRecords, settlementRecord } from '../../local'
 import { Amount, SyncMark } from '../components/Balance'
 import { CategoryGlyph, Icon, SettlementGlyph } from '../components/icons'
 import { Screen, toast, useOnline } from '../components/Shell'
@@ -141,7 +141,7 @@ function RejectedRow({ rejected, summary, user }: { rejected: RejectedRecord; su
     !!group &&
     overMaxBalance(summary?.balances ?? [], {
       expenses: [],
-      settlements: [{ id: rejected.id, from: rejected.settlement.fromMemberId, to: rejected.settlement.toMemberId, amount: relabeled, currency: group.currency }],
+      settlements: [settlementRecord({ ...rejected.settlement, amount: relabeled, currency: group.currency })],
     }) !== undefined
 
   const fixCurrency = async () => {
