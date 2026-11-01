@@ -1029,7 +1029,7 @@ export interface components {
             toMemberId: string;
             /**
              * Format: int64
-             * @description Positive amount in the minor unit of its currency. It adds up many records, so unlike an Amount it may be over 10^15, but never over 2^53 - 1, the largest integer a JavaScript number holds exactly. The Balances stay within that, and so do the simplified Debts; when a Debt between two people would not, the ledger gets its simplified Debts even without Debt simplification.
+             * @description Positive amount in the minor unit of its currency. It adds up many records, so unlike an Amount it may be over 10^15, but never over 2^53 - 1, up to which a JavaScript number holds every integer exactly. The Balances stay within that, and so do the simplified Debts; when a Debt between two people would not, the ledger gets its simplified Debts even without Debt simplification.
              * @example 1050
              */
             amount: number;

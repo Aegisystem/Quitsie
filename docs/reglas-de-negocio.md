@@ -8,7 +8,7 @@ Reglas acordadas durante el diseño. El vocabulario sigue [CONTEXT.md](../CONTEX
 - Las Categorías son: comida, supermercado, transporte, alojamiento, vivienda, servicios, ocio, compras, salud, regalos y otros.
 - Tiene al menos un Aporte y al menos una Cuota; los Aportes suman el total y las Cuotas también.
 - Los Aportes son mayores que cero. Una Cuota puede quedar en cero por redondeo (1 céntimo al 50 %), y se guarda igualmente para no perder el reparto al reeditar.
-- Ningún importe supera 10^15 unidades mínimas de su moneda, para que las sumas de Saldos nunca desborden.
+- Ningún importe supera 10^15 unidades mínimas de su moneda. Eso limita cada registro, no los Saldos, que suman muchos: ellos tienen su propio tope (ver [Límites](#límites)).
 - Con Porcentajes, cada porcentaje admite hasta dos decimales y entre todos suman exactamente 100.
 - Con Proporciones, los pesos son enteros positivos; una proporción como 1,5:1 se escribe 3:2.
 - Con Ajustes, un ajuste puede ser negativo, pero ninguna Cuota puede quedar por debajo de cero.
@@ -23,6 +23,7 @@ Reglas acordadas durante el diseño. El vocabulario sigue [CONTEXT.md](../CONTEX
 
 - Sin Simplificación de deudas, las Deudas se calculan Gasto a Gasto: dentro de cada Gasto, quienes deben les deben a quienes pusieron de más, en proporción a lo que cada uno puso de más, con el sobrante repartido de forma determinista. Luego se compensan las Deudas en sentidos opuestos y se restan las Liquidaciones.
 - Con Simplificación de deudas, se parte de los Saldos y quien más debe le paga a quien más se le debe, hasta saldar todo. Deja como mucho un pago menos que el número de personas con Saldo distinto de cero; es una aproximación al mínimo.
+- Una Deuda simplificada nunca supera los Saldos de quienes la deben y la cobran. Una Deuda entre dos personas sí puede: si Ana paga por Beto, Beto por Carla y Carla por Ana, cada pareja se debe más con cada vuelta y los Saldos siguen en cero. Si alguna superara el tope de los Saldos (ver [Límites](#límites)), el libro muestra las Deudas simplificadas, que saldan lo mismo.
 
 ## Grupos
 
@@ -41,6 +42,7 @@ Reglas acordadas durante el diseño. El vocabulario sigue [CONTEXT.md](../CONTEX
 
 - Se puede cambiar en cualquier momento. El cambio reetiqueta todos los Gastos y Liquidaciones del Grupo, también los borrados (mismos números, otra moneda), y nunca aplica tipos de cambio.
 - Si la moneda nueva tiene menos decimales (USD → CLP), el cambio solo se permite cuando ningún importe perdería céntimos, incluidos los de Gastos y Liquidaciones borrados, porque se pueden restaurar; si no, la aplicación indica qué corregir.
+- Si tiene más decimales (CLP → USD), los mismos números son importes y Saldos mayores en unidades mínimas. El cambio se rechaza si algún importe pasaría de 10^15 o algún Saldo de su tope (ver [Límites](#límites)).
 - Los Registros sin sincronizar creados antes del cambio llegan como Registros rechazados, para que su autor confirme la moneda.
 - El cambio queda en la Actividad.
 - Las monedas de fondos de ISO 4217 (por ejemplo CLF, COU o UYI) no se ofrecen en la interfaz.
@@ -77,11 +79,14 @@ Reglas acordadas durante el diseño. El vocabulario sigue [CONTEXT.md](../CONTEX
 
 - Un libro guarda 200.000 filas como máximo, contando Gastos, Aportes, Cuotas, Liquidaciones y Actividades.
 - Un libro lleno solo admite borrar Gastos y Liquidaciones, salir, sacar a un Miembro, deshacer una Reclamación y borrar el Grupo. Un Registro sin sincronizar que no cabe queda como Registro rechazado.
+- Ningún Saldo pasa de 2^53 − 1 unidades mínimas de su moneda, a favor ni en contra: 9.007.199.254.740.991, unos 90 billones en dólares, o algo más de nueve Gastos del importe máximo. La aplicación maneja los importes como números de JavaScript, que guardan exacto cualquier entero hasta ahí: por encima, el dispositivo leería los Saldos y las Deudas redondeados.
+- Se rechaza cualquier cambio que llevaría un Saldo más allá de ese tope: crear, editar, borrar o restaurar un Gasto o una Liquidación, y cambiar la Moneda del grupo. Solo se miran los Saldos que el cambio mueve. Los formularios lo avisan antes de guardar, y un Registro sin sincronizar que no cabe queda como Registro rechazado.
 - Un Usuario puede enviar 5 MiB de cambios por hora. Leer, cerrar sesión y cerrar otras sesiones no cuentan.
 
 ## Presentación
 
 - Los importes se muestran con el formato numérico de la región del Usuario (en México, 7,589.67; en Colombia, 7.589,67).
+- El total de Inicio suma, por moneda, los Saldos del Usuario en todos sus Grupos y Amistades. Puede pasar del tope de un Saldo, y se muestra exacto igualmente.
 - En los listados se ocultan los decimales cuando son cero; en los formularios se muestran siempre.
 - Al escribir un importe, si después del punto no vienen exactamente tres cifras, el punto se lee como separador decimal aunque en esa región separe los miles ("10.50" son 10,50 en Colombia).
 

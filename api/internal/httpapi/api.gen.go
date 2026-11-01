@@ -533,7 +533,7 @@ type CurrencyPrecisionProblem struct {
 
 // Debt How much one person owes another specific person.
 type Debt struct {
-	// Amount Positive amount in the minor unit of its currency. It adds up many records, so unlike an Amount it may be over 10^15, but never over 2^53 - 1, the largest integer a JavaScript number holds exactly. The Balances stay within that, and so do the simplified Debts; when a Debt between two people would not, the ledger gets its simplified Debts even without Debt simplification.
+	// Amount Positive amount in the minor unit of its currency. It adds up many records, so unlike an Amount it may be over 10^15, but never over 2^53 - 1, up to which a JavaScript number holds every integer exactly. The Balances stay within that, and so do the simplified Debts; when a Debt between two people would not, the ledger gets its simplified Debts even without Debt simplification.
 	//
 	//
 	// Example: 1050

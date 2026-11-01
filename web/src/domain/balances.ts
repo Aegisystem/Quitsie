@@ -38,9 +38,9 @@ export interface Balance {
   amount: number
 }
 
-// No Balance goes past maxBalance minor units, either way: 2^53 − 1, the
-// largest integer a number holds exactly, so every Balance reaches the screen
-// exact. The server refuses any change that would take one past it
+// No Balance goes past maxBalance minor units, either way: 2^53 − 1, up to
+// which a number holds every integer exactly, so every Balance reaches the
+// screen exact. The server refuses any change that would take one past it
 // (domain.MaxBalance in api/internal/domain), and the forms check it first
 // (docs/reglas-de-negocio.md).
 export const maxBalance = Number.MAX_SAFE_INTEGER
