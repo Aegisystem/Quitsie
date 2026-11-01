@@ -112,6 +112,9 @@ func run(logger *slog.Logger) error {
 		Addr:              cfg.addr,
 		Handler:           httpapi.NewHandler(api, pwa),
 		ReadHeaderTimeout: 10 * time.Second,
+		// Longer than the slowest pull, with its wait to get in.
+		WriteTimeout: 60 * time.Second,
+		IdleTimeout:  2 * time.Minute,
 	}
 	serveErr := make(chan error, 1)
 	go func() { serveErr <- srv.ListenAndServe() }()

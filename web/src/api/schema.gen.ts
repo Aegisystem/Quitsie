@@ -560,7 +560,7 @@ export interface paths {
         };
         /**
          * Returns everything that changed since a cursor in the User's Groups and Friendships.
-         * @description Returns every row with a version greater than `since` in the ledgers where the User has an active Member, plus whole ledgers the User joined or claimed since then even if their changes are older. With `since=0` it returns everything, as on the first sign-in on a device. Keep calling with the returned `cursor` while `hasMore` is true.
+         * @description Returns every row with a version greater than `since` in the ledgers where the User has an active Member, plus whole ledgers the User joined or claimed since then even if their changes are older. With `since=0` it returns everything, as on the first sign-in on a device. A response stops after about 20,000 rows: keep calling with the returned `cursor` while `hasMore` is true. When too many pulls run at once it answers 429 (`rate_limited`), and the client tries again.
          */
         get: operations["pullChanges"];
         put?: never;

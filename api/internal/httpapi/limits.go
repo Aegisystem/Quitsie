@@ -35,6 +35,12 @@ const (
 	// five of the largest batches at once and a steady trickle after that, and
 	// it is what keeps one account from filling the disk.
 	writeKiBPerHour = 5 << 10
+
+	// maxPullsAtOnce is how many GET /sync run at a time. Each can take around
+	// 100 MB until its answer is out, and the VM has 1 GB. A pull that waits
+	// longer than pullWait answers 429, and the client tries again.
+	maxPullsAtOnce = 2
+	pullWait       = 5 * time.Second
 )
 
 // limitBody stops reading a request at limit bytes. Decoding the body then
@@ -43,6 +49,25 @@ func limitBody(limit int64, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		r.Body = http.MaxBytesReader(w, r.Body, limit)
 		next.ServeHTTP(w, r)
+	})
+}
+
+// gate lets n requests through next at a time. A request that cannot get in
+// within wait answers 429, and one that gives up leaves the queue. It wraps the
+// handler and not the operation because writing the answer is what costs most.
+func gate(n int, wait time.Duration, next http.Handler) http.Handler {
+	slots := make(chan struct{}, n)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		timeout := time.NewTimer(wait)
+		defer timeout.Stop()
+		select {
+		case slots <- struct{}{}:
+			defer func() { <-slots }()
+			next.ServeHTTP(w, r)
+		case <-timeout.C:
+			tooMany(w, time.Second, "The server is busy.")
+		case <-r.Context().Done():
+		}
 	})
 }
 
