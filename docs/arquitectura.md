@@ -104,6 +104,10 @@ sequenceDiagram
   App->>L: Actualiza la réplica y vacía la cola
 ```
 
+### Restaurar un respaldo
+
+Un respaldo restaurado es una copia vieja de la base. La base perdida pudo entregar versiones por encima del contador del respaldo, y si el contador siguiera desde ahí, un dispositivo con el cursor entre ellas se saltaría filas nuevas y conservaría para siempre las que el servidor perdió. Por eso, en su primer arranque sobre una base restaurada, el servidor hace saltar el contador hasta la hora actual en microsegundos, o mil millones de versiones si eso llega más lejos, y anota el tramo saltado en `restore_gaps`. `GET /sync` responde `410` a un cursor dentro de un tramo, igual que a uno por delante del servidor, y el cliente descarta la réplica, conserva los Registros sin sincronizar y los rechazados, y trae todo desde 0. El reloj acota a la vez todas las copias de la base, porque el contador crece mucho más despacio que uno por microsegundo; así el salto cubre también un respaldo anterior a otra restauración, que no guarda el tramo de aquella. Los mil millones cubren un reloj atrasado. El servidor sabe que hubo una restauración por una marca junto a la base ([despliegue.md](despliegue.md#qué-pasa-al-restaurar)).
+
 ## Modelo de datos
 
 Los importes se guardan como enteros en la unidad mínima de su moneda (centavos) y las monedas como código ISO 4217. Nunca se usan decimales de coma flotante.
@@ -124,6 +128,7 @@ Un **libro** (`Ledger`) es el contenedor de Gastos y Liquidaciones. Cada Grupo t
 | `settlements` | libro, de quién, a quién, importe, moneda, fecha, autor, versión, fecha de borrado |
 | `activities` | libro, Usuario, qué cambió, versión, cuándo |
 | `version_counter` | una sola fila con la última versión entregada (ver [Traer cambios](#traer-cambios)) |
+| `restore_gaps` | por cada restauración, el contador del respaldo y el valor al que saltó (ver [Restaurar un respaldo](#restaurar-un-respaldo)) |
 
 Los Saldos no se guardan: se calculan sumando, lo cual es rápido a esta escala.
 
