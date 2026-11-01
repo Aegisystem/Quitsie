@@ -5,10 +5,21 @@ import "fmt"
 // ValidateExpense checks a new Expense before it is stored in ledger, or a
 // deleted one before it is restored. Every Participant must be an active
 // Member, so restoring an Expense with a former member is rejected: it would
-// change their Balance, which is zero. To check an edit, use
-// ValidateExpenseUpdate. It does not recompute the OwedShares from the
-// SplitMethod: the client did (ADR 0003).
+// change their Balance, which is zero. Counting e must keep every Balance
+// within MaxBalance. To check an edit, use ValidateExpenseUpdate. It does not
+// recompute the OwedShares from the SplitMethod: the client did (ADR 0003).
 func ValidateExpense(ledger Ledger, e Expense) error {
+	if err := validateExpense(ledger, e); err != nil {
+		return err
+	}
+	moves := make(balanceSums)
+	moves.expense(e, false)
+	return ledger.checkBalances(moves)
+}
+
+// validateExpense checks e's own rules, which do not depend on the other
+// records of ledger.
+func validateExpense(ledger Ledger, e Expense) error {
 	if err := ledger.checkRecord(e.Currency); err != nil {
 		return err
 	}
@@ -105,8 +116,9 @@ func checkSplitValues(method SplitMethod, shares []OwedShare) error {
 }
 
 // MaxAmount is the largest amount of any record, in minor units of its
-// currency: 10^15, so that adding up Balances never overflows an int64
-// (docs/reglas-de-negocio.md).
+// currency: 10^15 (docs/reglas-de-negocio.md). It bounds how far one record
+// moves a Balance, not the Balance: many records add up past it, so
+// MaxBalance bounds the Balances.
 const MaxAmount = 1_000_000_000_000_000
 
 // fullPercentage is 100% in hundredths of a percent.

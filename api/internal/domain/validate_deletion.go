@@ -5,7 +5,8 @@ import "fmt"
 // ValidateExpenseDeletion checks that e can be deleted from ledger. An Expense
 // with a former member cannot: deleting it would change their Balance, which
 // is zero, and nothing could put it right, since restoring the Expense or
-// recording a Settlement takes active Members only.
+// recording a Settlement takes active Members only. Nor can one whose
+// deletion would leave a Balance beyond MaxBalance.
 func ValidateExpenseDeletion(ledger Ledger, e Expense) error {
 	shares := sharesByMember(e)
 	for _, m := range ledger.Members {
@@ -13,16 +14,20 @@ func ValidateExpenseDeletion(ledger Ledger, e Expense) error {
 			return fmt.Errorf("member %q: %w", m.ID, ErrFormerMemberChanged)
 		}
 	}
-	return nil
+	moves := make(balanceSums)
+	moves.expense(e, true)
+	return ledger.checkBalances(moves)
 }
 
 // ValidateSettlementDeletion checks that s can be deleted from ledger, for the
-// same reason as ValidateExpenseDeletion.
+// same reasons as ValidateExpenseDeletion.
 func ValidateSettlementDeletion(ledger Ledger, s Settlement) error {
 	for _, m := range ledger.Members {
 		if (m.ID == s.FromMemberID || m.ID == s.ToMemberID) && m.Status == MemberFormer {
 			return fmt.Errorf("member %q: %w", m.ID, ErrFormerMemberChanged)
 		}
 	}
-	return nil
+	moves := make(balanceSums)
+	moves.settlement(s, true)
+	return ledger.checkBalances(moves)
 }
