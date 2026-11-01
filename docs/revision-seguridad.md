@@ -290,7 +290,7 @@ La regla actual dice que quien vuelve recupera su Antiguo Miembro, lo cual tiene
 
 ### 14. Pedir un código recorre toda la tabla con el bloqueo de escritura
 
-**Baja. Abierto.** Cualquiera con más de mil direcciones, sin cuenta. Apareció al volver a medir el hallazgo 7.
+**Baja. Arreglado en `bf6c2c1`.** Cualquiera con más de mil direcciones, sin cuenta. Apareció al volver a medir el hallazgo 7.
 
 **Archivos:** `api/internal/auth/code.go:94`, `api/internal/store/queries/login_codes.sql` y `api/migrations/00001_initial_schema.sql`.
 
@@ -298,7 +298,14 @@ La regla actual dice que quien vuelve recupera su Antiguo Miembro, lo cual tiene
 
 **Verificado.** Con 36.000 códigos vivos, cada tanda de 90.000 peticiones pasó de 11 a 75 s, y 21 peticiones aceptadas respondieron 500 con `database is locked`. `EXPLAIN QUERY PLAN` muestra `SCAN login_codes`. El efecto sobre otros Usuarios no se midió. Por lectura, `DeleteExpiredSessions` repite el patrón en cada inicio de sesión.
 
-**Arreglo.** Añade una migración con índices sobre `login_codes (expires_at)` y `sessions (last_used_at)`.
+**Arreglo.** La migración 00003 añade índices sobre `login_codes (expires_at)`, `sessions (last_used_at)` y `login_failures (resets_at)`, que `DeleteEndedLoginFailures` también recorría en cada pedido de código. Una prueba comprueba con `EXPLAIN QUERY PLAN` que los tres borrados buscan por su índice.
+
+**Medido después, contra el binario real**, en Linux con 4 vCPU y 36.000 códigos vivos sembrados en la base. «Sin índices» es la misma base con los tres índices quitados. El plan pasa a `SEARCH login_codes USING INDEX login_codes_expires_at`.
+
+| Medida | Sin índices | Con índices |
+| --- | --- | --- |
+| Pedir un código, mediana de 300 seguidos | 16 ms | 1 ms |
+| 3.000 pedidos, 30 a la vez | 54 s, 47 respondieron 500 con `database is locked` | 4 s, ningún 500 |
 
 ## A comprobar al desplegar
 
