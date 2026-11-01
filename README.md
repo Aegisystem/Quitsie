@@ -20,6 +20,15 @@ Para trabajar en la interfaz con recarga en caliente, deja el servidor Go corrie
 
 Pruebas: `cd api && go test ./...`, `cd web && npm test` y `cd web && npm run typecheck`.
 
+Las pruebas de punta a punta (`web/e2e/`) usan Playwright con Chromium contra el binario real, con la PWA embebida. Cada ejecución arranca su propio servidor en un puerto libre de `quitsie-e2e.localhost`, con una base de SQLite temporal, así que no chocan con otro servidor que esté corriendo:
+
+```bash
+cd web && npx playwright install --only-shell chromium   # solo la primera vez
+cd web && npm run e2e                                    # recompila la PWA y el binario, y corre las pruebas
+```
+
+Si ya compilaste el binario, `cd web && npx playwright test` las corre sin recompilar. Cuando una falla, su traza, su captura y el log del servidor quedan en `web/e2e/results/`, y la traza se abre con `npx playwright show-trace`. En la CI ese mismo contenido se guarda como el artefacto `e2e-traces`.
+
 ## Código generado
 
 `openapi.yaml` es el contrato entre cliente y servidor. Después de cambiarlo, o de cambiar las consultas en `api/internal/store/queries/`:
