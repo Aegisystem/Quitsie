@@ -23,8 +23,14 @@ function emptyDatabase() {
     debts: new Map<string, LedgerDebts & { version: number }>(),
     // Ledgers the User lost, and the version at which it happened.
     dropped: new Map<string, DroppedLedger & { version: number; announce: boolean }>(),
+    // The versions each restore skipped, as [restored, jumped]: restore_gaps.
+    gaps: [] as [number, number][],
   }
 }
+
+// What the counter jumps by on a restore. The server jumps further; any
+// number above the versions a test loses will do.
+const restoreJump = 1_000_000
 
 export type Backup = ReturnType<typeof emptyDatabase>
 
@@ -50,8 +56,12 @@ export function fakeServer({ versionsPerPull = Infinity }: { versionsPerPull?: n
 
   const visible = (ledgerId: string) => (db.groups.has(ledgerId) || db.friendships.has(ledgerId)) && !db.dropped.has(ledgerId)
 
+  const gapAround = (cursor: number) => db.gaps.find(([restored, jumped]) => restored < cursor && cursor < jumped)
+
   function pull(since: number): Changes {
-    const cursor = Math.min(db.counter, since + versionsPerPull)
+    const end = Math.min(db.counter, since + versionsPerPull)
+    // No row has a version inside a gap, so the server never ends a page there.
+    const cursor = gapAround(end)?.[1] ?? end
     const inPage = ({ version }: { version: number }) => version > since && version <= cursor
     const newer = <T extends { version: number; ledgerId?: string; id?: string }>(rows: Map<string, T>) =>
       [...rows.values()].filter((row) => inPage(row) && visible(row.ledgerId ?? row.id!))
@@ -147,7 +157,7 @@ export function fakeServer({ versionsPerPull = Infinity }: { versionsPerPull?: n
     if (request.method === 'GET' && url.pathname === '/api/v1/sync') {
       const since = Number(url.searchParams.get('since'))
       pulls.push(since)
-      if (since > db.counter) return problem(410, 'cursor_invalid')
+      if (since > db.counter || gapAround(since)) return problem(410, 'cursor_invalid')
       return json(200, pull(since))
     }
     if (request.method === 'POST' && url.pathname === '/api/v1/records') {
@@ -212,9 +222,14 @@ export function fakeServer({ versionsPerPull = Infinity }: { versionsPerPull?: n
     },
 
     backup: (): Backup => structuredClone(db),
-    // Like `litestream restore`: everything after the backup is lost, the counter included.
+    // Like `litestream restore`: everything after the backup is lost, the
+    // counter included. Then, as the server does on its next start, the counter
+    // jumps and the versions it skipped answer 410 (store.RecordRestore).
     restore(backup: Backup) {
       db = structuredClone(backup)
+      const restored = db.counter
+      db.counter += restoreJump
+      db.gaps.push([restored, db.counter])
     },
 
     addGroup({ name, currency, members: names }: { name: string; currency: string; members: string[] }): FakeGroup {
