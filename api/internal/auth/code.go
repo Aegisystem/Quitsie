@@ -157,8 +157,7 @@ func (s *Service) RequestCode(ctx context.Context, email string, from Browser) (
 	flow := rand.Text()
 
 	now := s.now()
-	var budgetHour time.Time
-	var lastOfBudget bool
+	var budget mailBudget
 	err = s.inTx(ctx, func(q *store.Queries) error {
 		if from.Flow != "" {
 			if err := q.DeleteLoginCodeOfFlow(ctx, ptr(hashToken(from.Flow))); err != nil {
@@ -182,7 +181,7 @@ func (s *Service) RequestCode(ctx context.Context, email string, from Browser) (
 			}
 		}
 		var err error
-		if budgetHour, lastOfBudget, err = s.spendMail(ctx, q); err != nil {
+		if budget, err = s.spendMail(ctx, q, now); err != nil {
 			return err
 		}
 		// Last of the checks, so that a request the others refuse spends none
@@ -214,11 +213,11 @@ func (s *Service) RequestCode(ctx context.Context, email string, from Browser) (
 		// spends the sender's quotas, or an address the email service refuses
 		// could be asked for without end.
 		q, ctx := store.New(s.db), context.WithoutCancel(ctx)
-		cleanup := errors.Join(q.DeleteLoginCodeOfFlow(ctx, ptr(hashToken(flow))), q.UncountMailSend(ctx, budgetHour))
+		cleanup := errors.Join(q.DeleteLoginCodeOfFlow(ctx, ptr(hashToken(flow))), q.UncountMailSend(ctx, budget.hour))
 		return nil, fmt.Errorf("auth: send login code: %w", errors.Join(err, cleanup))
 	}
-	if lastOfBudget {
-		s.reportMailBudgetSpent(ctx)
+	if budget.wait(now) > 0 { // this email spent the last of the hour or the day
+		s.reportMailBudgetSpent(ctx, budget, now)
 	}
 	return codeFlowCookie(flow), nil
 }

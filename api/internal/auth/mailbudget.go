@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/Aegisystem/Quitsie/api/internal/store"
@@ -105,39 +106,42 @@ func (s *Service) checkMailBudget(ctx context.Context) error {
 	return nil
 }
 
-// spendMail counts one email against the budget, or returns a
-// *MailBudgetError if it does not fit. It returns the hour it counted the
-// email in, to give it back if the email cannot be sent, and whether that
-// email spends the last of the hour or the day.
-func (s *Service) spendMail(ctx context.Context, q *store.Queries) (hour time.Time, last bool, err error) {
-	now := s.now()
+// spendMail counts one email against the budget at now, or returns a
+// *MailBudgetError if it does not fit. It returns the budget with that email
+// counted: its hour is where to give the email back if it cannot be sent.
+func (s *Service) spendMail(ctx context.Context, q *store.Queries, now time.Time) (mailBudget, error) {
 	b, err := s.mailBudget(ctx, q, now)
 	if err != nil {
-		return time.Time{}, false, err
+		return mailBudget{}, err
 	}
 	if wait := b.wait(now); wait > 0 {
-		return time.Time{}, false, &MailBudgetError{RetryAfter: wait}
+		return mailBudget{}, &MailBudgetError{RetryAfter: wait}
 	}
 	if err := q.DeleteOldMailSends(ctx, b.hour.Add(-mailBudgetDay)); err != nil {
-		return time.Time{}, false, fmt.Errorf("auth: delete old email counts: %w", err)
+		return mailBudget{}, fmt.Errorf("auth: delete old email counts: %w", err)
 	}
 	if err := q.CountMailSend(ctx, b.hour); err != nil {
-		return time.Time{}, false, fmt.Errorf("auth: count an email: %w", err)
+		return mailBudget{}, fmt.Errorf("auth: count an email: %w", err)
 	}
-	return b.hour, b.sentThisHour()+1 >= b.perHour || b.sentToday()+1 >= b.perDay, nil
+	return b.plusOne(), nil
 }
 
-// reportMailBudgetSpent tells the owner that nobody can get a code. It runs
-// once per hour or day that fills up, after the email that filled it, and not
-// for each request refused afterwards. Everything that needs the owner is
-// logged at ERROR level.
-func (s *Service) reportMailBudgetSpent(ctx context.Context) {
-	now := s.now()
-	b, err := s.mailBudget(ctx, store.New(s.db), now)
-	if err != nil {
-		s.logger.ErrorContext(ctx, "the email budget is spent: no more login codes for now", "err", err)
-		return
+// plusOne is the budget with one more email in its hour.
+func (b mailBudget) plusOne() mailBudget {
+	b.sends = slices.Clone(b.sends)
+	if n := len(b.sends); n > 0 && b.sends[n-1].Hour.Equal(b.hour) {
+		b.sends[n-1].Sent++
+	} else {
+		b.sends = append(b.sends, store.MailSend{Hour: b.hour, Sent: 1})
 	}
+	return b
+}
+
+// reportMailBudgetSpent tells the owner that nobody can get a code, from b, the
+// budget as the email that filled it left it at now. It runs once per hour or
+// day that fills up, and not for each request refused afterwards. Everything
+// that needs the owner is logged at ERROR level.
+func (s *Service) reportMailBudgetSpent(ctx context.Context, b mailBudget, now time.Time) {
 	s.logger.ErrorContext(ctx, "the email budget is spent: no more login codes until resumes_at",
 		"sent_this_hour", b.sentThisHour(), "max_per_hour", b.perHour,
 		"sent_last_24h", b.sentToday(), "max_per_day", b.perDay,
