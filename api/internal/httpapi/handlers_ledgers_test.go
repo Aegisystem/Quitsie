@@ -199,6 +199,27 @@ func TestAStoredEmailThatDoesNotParseStillReachesThePull(t *testing.T) {
 	}
 }
 
+// Only the name stays. The email someone typed for this Member would otherwise
+// come back to the whole Group, now that the Member is pending again.
+func TestADeletedAccountLeavesNoEmailOnItsMembers(t *testing.T) {
+	w := newWorld(t)
+	ana, pepa := w.signIn("Ana"), w.signIn("Pepa")
+	groupID := ana.createGroup(`{"name":"Casa","currency":"COP","pendingMembers":[{"name":"Pepa","email":"` + pepa.email + `"}]}`)
+	memberID := ana.memberID(groupID, "Pepa")
+	if rec := pepa.claim(ana.groupLink(groupID), memberID); rec.Code != http.StatusOK {
+		t.Fatalf("claim: code = %d (body %s)", rec.Code, rec.Body)
+	}
+
+	if rec := pepa.send(http.MethodDelete, "/api/v1/me", ""); rec.Code != http.StatusNoContent {
+		t.Fatalf("delete account: code = %d", rec.Code)
+	}
+
+	m := ana.member(groupID, memberID)
+	if m.UserID != nil || m.Email != nil || m.Name != "Pepa" {
+		t.Errorf("member = %+v, want pending, named Pepa and with no email", m)
+	}
+}
+
 // outbox is a mail.Sender that keeps the emails instead of sending them.
 type outbox struct {
 	mu   sync.Mutex

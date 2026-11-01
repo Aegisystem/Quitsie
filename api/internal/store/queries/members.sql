@@ -19,9 +19,10 @@ RETURNING *;
 
 -- name: UnlinkMembersOfUser :exec
 -- When a User deletes their account, their Members and Friends are pending
--- again, so nobody else's Balance changes.
+-- again, so nobody else's Balance changes. Only the name stays: as pending, the
+-- Member would show again the email it was added with.
 UPDATE members
-SET user_id = NULL, version = sqlc.arg(version)
+SET user_id = NULL, email = NULL, version = sqlc.arg(version)
 WHERE user_id = CAST(sqlc.arg(user_id) AS TEXT);
 
 -- name: ListMembers :many
