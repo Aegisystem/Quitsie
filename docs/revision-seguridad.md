@@ -182,7 +182,7 @@ Las sesiones abiertas y Google no se ven afectados: el daño recae en quien estr
 
 ### 6. El envío de correos no tiene tope global
 
-**Media.** Cualquiera, sin cuenta.
+**Media. Arreglado en `76bb9be`.** Cualquiera, sin cuenta.
 
 **Archivos:** `api/internal/auth/ratelimit.go:14`, `api/internal/auth/code.go:62`.
 
@@ -190,7 +190,23 @@ Las sesiones abiertas y Google no se ven afectados: el daño recae en quien estr
 
 **Verificado.** Treinta envíos aceptados desde una IP a direcciones distintas y `429` en el siguiente. El plus-addressing (`ana+1@…`) cuenta como direcciones distintas. El agotamiento de la cuota real no se probó.
 
-**Arreglo.** Añade un tope global por hora y por día que deje de enviar y avise. Baja `maxSendsPerIP` a 10 y agrupa las IPv6 por /56 para este límite. Si llega el abuso, añade Cloudflare Turnstile, gratuito, delante de pedir código.
+**Arreglo.**
+
+1. El servidor envía como máximo 40 correos con códigos por hora de reloj y 90 en 24 horas, entre todos, por debajo de los 100 diarios gratuitos de Resend. Las cifras son provisionales y se cambian con `QUITSIE_MAIL_MAX_PER_HOUR` y `QUITSIE_MAIL_MAX_PER_DAY`. La cuenta vive en la tabla `mail_sends`, por horas, así que un reinicio no la borra. Un correo que no se pudo enviar no cuenta.
+2. Con el tope alcanzado, pedir un código responde `503 mail_budget_spent` con `Retry-After`, sin gastar los cupos de quien lo pide, y la pantalla de entrada dice que por ahora no se pueden enviar códigos. El correo que agota la hora o el día deja una línea `ERROR` en el log: una por cada hora o día agotado, no una por petición.
+3. Una IP pide 10 códigos por hora en vez de 30, y los límites de envío cuentan las IPv6 por /56. El límite general de peticiones y el de verificaciones siguen contando por /64.
+4. Turnstile queda para cuando llegue el abuso.
+
+**Medido después, contra el binario real.**
+
+- Una IPv4 recibe 204 en 10 pedidos y `429` con `Retry-After: 3600` en el 11.º.
+- Diez /64 de un mismo /56 reciben 204, el siguiente /64 recibe `429` y otro /56 recibe 204.
+- Con un tope de 3 por hora, el cuarto pedido responde `503 mail_budget_spent` con `Retry-After` hasta la hora siguiente, y lo mismo tras reiniciar el binario. El log tiene una sola línea `ERROR`.
+- En Chromium, la PWA muestra «No podemos enviar más códigos por ahora. Vuelve a intentarlo en 5 minutos.»
+
+La cuota real de Resend no se probó.
+
+**Riesgo que queda.** El tope protege la cuenta de Resend, no el servicio: cuatro IP agotan una hora y nueve agotan el día, y entonces nadie entra con código hasta que se libere. Google y las sesiones abiertas siguen funcionando. La línea `ERROR` avisa, y Turnstile es el siguiente paso.
 
 ### 7. El limitador de códigos crece sin tope en memoria
 
