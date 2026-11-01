@@ -19,6 +19,7 @@ import (
 
 	"github.com/Aegisystem/Quitsie/api/internal/auth"
 	"github.com/Aegisystem/Quitsie/api/internal/httpapi"
+	"github.com/Aegisystem/Quitsie/api/internal/invites"
 	"github.com/Aegisystem/Quitsie/api/internal/mail"
 	"github.com/Aegisystem/Quitsie/api/internal/store"
 )
@@ -197,6 +198,48 @@ func TestAStoredEmailThatDoesNotParseStillReachesThePull(t *testing.T) {
 	if len(changes.Members) != 2 {
 		t.Errorf("members = %+v, want Ana and Beto", changes.Members)
 	}
+}
+
+// Only the name stays. The email someone typed for this Member would otherwise
+// come back to the whole Group, now that the Member is pending again.
+func TestADeletedAccountLeavesNoEmailOnItsMembers(t *testing.T) {
+	w := newWorld(t)
+	ana, pepa := w.signIn("Ana"), w.signIn("Pepa")
+	groupID := ana.createGroup(`{"name":"Casa","currency":"COP","pendingMembers":[{"name":"Pepa","email":"` + pepa.email + `"}]}`)
+	memberID := ana.memberID(groupID, "Pepa")
+	if rec := pepa.claim(ana.groupLink(groupID), memberID); rec.Code != http.StatusOK {
+		t.Fatalf("claim: code = %d (body %s)", rec.Code, rec.Body)
+	}
+
+	if rec := pepa.send(http.MethodDelete, "/api/v1/me", ""); rec.Code != http.StatusNoContent {
+		t.Fatalf("delete account: code = %d", rec.Code)
+	}
+
+	m := ana.member(groupID, memberID)
+	if m.UserID != nil || m.Email != nil || m.Name != "Pepa" {
+		t.Errorf("member = %+v, want pending, named Pepa and with no email", m)
+	}
+}
+
+// A forged link is refused by what it costs to check it, whatever the ledger
+// holds: this ledger cannot even be loaded.
+func TestAForgedLinkDoesNotLoadTheLedger(t *testing.T) {
+	w := newWorld(t)
+	ana := w.signIn("Ana")
+	groupID := ana.createGroup(`{"name":"Casa","currency":"COP"}`)
+	me := ana.memberID(groupID, "Ana")
+	ana.expense(groupID, "COP", me, map[string]int64{me: 1000})
+	if _, err := w.db.Exec(`UPDATE expenses SET total = 'not a number'`); err != nil {
+		t.Fatal(err)
+	}
+	forged, err := invites.Token([]byte(strings.Repeat("f", invites.MinSecretLength)), groupID, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rec := w.anonymous().send(http.MethodGet, "/api/v1/invites/"+forged, "")
+
+	decodeProblem(t, rec, http.StatusNotFound, httpapi.ProblemCodeInviteLinkInvalid)
 }
 
 // outbox is a mail.Sender that keeps the emails instead of sending them.

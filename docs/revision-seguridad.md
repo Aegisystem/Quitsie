@@ -1,12 +1,12 @@
 # Revisión de seguridad
 
-Revisión previa a abrir Quitsie al público, hecha el 2026-10-31 sobre el commit `26948a3` de `main`. El vocabulario sigue [CONTEXT.md](../CONTEXT.md). Los hallazgos 1 a 4 se arreglaron después, en esta misma rama, y cada uno dice con qué commits y qué se volvió a medir.
+Revisión previa a abrir Quitsie al público, hecha el 2026-10-31 sobre el commit `26948a3` de `main`. El vocabulario sigue [CONTEXT.md](../CONTEXT.md). Los hallazgos 1 a 4, 7, 10 y 12 se arreglaron después, y cada uno dice con qué commits y qué se volvió a medir.
 
-> **El repositorio es público y este documento explica cómo reproducir ataques.** Los hallazgos 5 a 13 siguen abiertos. Integra este archivo en `main` solo junto con los arreglos de los hallazgos 1 a 4, nunca antes.
+> **El repositorio es público y este documento explica cómo reproducir ataques.** Los hallazgos 5, 6, 8, 9, 11, 13 y 14 siguen abiertos.
 
 ## Resumen
 
-Hay **13 hallazgos verificados: 1 crítico, 2 altos, 7 medios y 3 bajos**. **Los cuatro que bloqueaban abrir al público (1 a 4) están arreglados.** El aislamiento entre libros aguantó todo lo que se le probó: sin un enlace válido, nadie leyó ni cambió un libro ajeno. Los problemas graves son de disponibilidad, y el único camino hacia una cuenta ajena es adivinar su código (hallazgo 4).
+Hay **14 hallazgos verificados: 1 crítico, 2 altos, 7 medios y 4 bajos**. **Los cuatro que bloqueaban abrir al público (1 a 4) están arreglados**, y también el 7, el 10 y el 12. El aislamiento entre libros aguantó todo lo que se le probó: sin un enlace válido, nadie leyó ni cambió un libro ajeno. Los problemas graves son de disponibilidad, y el único camino hacia una cuenta ajena es adivinar su código (hallazgo 4).
 
 | # | Gravedad | Hallazgo | Estado | Quién puede |
 | --- | --- | --- | --- | --- |
@@ -16,15 +16,16 @@ Hay **13 hallazgos verificados: 1 crítico, 2 altos, 7 medios y 3 bajos**. **Los
 | 4 | Media | Los intentos de código no tienen tope por cuenta | **Arreglado** | Cualquiera |
 | 5 | Media | Cualquiera impide entrar a otra persona durante un día | Abierto, empeoró con el arreglo del 4 | Cualquiera |
 | 6 | Media | El envío de correos no tiene tope global | Abierto | Cualquiera |
-| 7 | Media | El limitador de códigos crece sin tope en memoria | Abierto | Cualquiera |
+| 7 | Media | El limitador de códigos crece sin tope en memoria | **Arreglado** | Cualquiera |
 | 8 | Media | Quien fue sacado de un Grupo vuelve con el enlace viejo | Abierto | Antiguo Miembro |
 | 9 | Media | La réplica sigue en el dispositivo tras cerrar la sesión a distancia | Abierto | Quien tenga el dispositivo |
-| 10 | Media | El email sobrevive al borrado de la cuenta y reaparece | Abierto | Miembros del Grupo |
+| 10 | Media | El email sobrevive al borrado de la cuenta y reaparece | **Arreglado** | Miembros del Grupo |
 | 11 | Baja | Quien entra con el enlace ve los emails de los Miembros pendientes | Abierto | Quien tenga el enlace |
-| 12 | Baja | Un enlace falsificado carga el libro entero antes de comprobarse | Abierto | Cualquiera con un id de libro |
+| 12 | Baja | Un enlace falsificado carga el libro entero antes de comprobarse | **Arreglado** | Cualquiera con un id de libro |
 | 13 | Baja | Los Saldos desbordan `int64` e invierten las Deudas | Abierto | Miembro del Grupo |
+| 14 | Baja | Pedir un código recorre toda la tabla con el bloqueo de escritura | Abierto | Cualquiera con más de mil direcciones |
 
-Los hallazgos 7, 10 y 12 son cambios mínimos. Los hallazgos 8 y 11 necesitan una decisión de producto.
+Los hallazgos 8 y 11 necesitan una decisión de producto.
 
 **Gravedad.** Crítica: alguien sin cuenta tumba el servicio o lee datos ajenos. Alta: una cuenta normal deja sin servicio a otras personas. Media: daño acotado a una persona o incumplimiento de una regla de privacidad. Baja: efecto pequeño o limitado al propio libro.
 
@@ -193,7 +194,7 @@ Las sesiones abiertas y Google no se ven afectados: el daño recae en quien estr
 
 ### 7. El limitador de códigos crece sin tope en memoria
 
-**Media.** Cualquiera, sin cuenta.
+**Media. Arreglado en `acd1907`.** Cualquiera, sin cuenta.
 
 **Archivos:** `api/internal/auth/ratelimit.go:46` y `:64`.
 
@@ -201,7 +202,9 @@ Las sesiones abiertas y Google no se ven afectados: el daño recae en quien estr
 
 **Verificado.** 90.000 peticiones con 300 IP subieron la memoria de 18 a 93 MB, unos 830 bytes por clave en el peor caso (emails de casi 254 caracteres). Una IP sostiene 18.300 claves por hora, y cada clave vive hasta dos horas: unos 30 MB. Con unas 35 direcciones se llena 1 GB, y un /56 de IPv6 da 256. El llenado completo de la VM no se probó.
 
-**Arreglo.** No escribas la clave si no hay eventos, comprueba primero la cuota de IP y pon un tope de claves, como ya hace `internal/ratelimit`. El arreglo del hallazgo 4 no lo cubre: el cupo de envíos sigue en memoria.
+**Arreglo.** Una petición rechazada ya no deja clave, y cada limitador guarda 100.000 claves como máximo, como `internal/ratelimit`.
+
+**Medido después, contra el binario real.** Tras cuatro tandas de 90.000 peticiones desde 1.200 IP, la memoria fue 60, 82, 89 y 90 MB: se estabiliza. Con el código anterior, esas 360.000 peticiones habrían dejado unos 300 MB de claves.
 
 ### 8. Quien fue sacado de un Grupo vuelve con el enlace viejo
 
@@ -235,7 +238,7 @@ La regla actual dice que quien vuelve recupera su Antiguo Miembro, lo cual tiene
 
 ### 10. El email sobrevive al borrado de la cuenta y reaparece
 
-**Media.** Lo ven los Miembros del Grupo. Incumple [reglas-de-negocio.md](reglas-de-negocio.md): «De la cuenta se borran el email y el nombre; solo queda el nombre guardado en cada Miembro».
+**Media. Arreglado en `6d602a2`.** Lo veían los Miembros del Grupo. Incumplía [reglas-de-negocio.md](reglas-de-negocio.md): «De la cuenta se borran el email y el nombre; solo queda el nombre guardado en cada Miembro».
 
 **Archivos:** `api/internal/store/queries/members.sql:20` (`UnlinkMembersOfUser`).
 
@@ -243,7 +246,9 @@ La regla actual dice que quien vuelve recupera su Antiguo Miembro, lo cual tiene
 
 **Verificado.** La fila de `users` queda vacía, pero `members.email` conserva la dirección, y como el Miembro vuelve a estar pendiente, `GET /sync` la entrega de nuevo a todo el Grupo y a quien entre después. Además, los respaldos guardan el estado anterior durante 7 días (`deploy/litestream.yml`), lo que conviene decir en la política de privacidad.
 
-**Arreglo.** Añade `email = NULL` a `UnlinkMembersOfUser`, con una prueba. También puede borrarse al Reclamar, ya que a partir de ahí no sirve para nada.
+**Arreglo.** `UnlinkMembersOfUser` pone `email = NULL`, y el pull siguiente quita el email de las réplicas de los demás.
+
+**Medido después, contra el binario real.** Tras borrar la cuenta, `GET /sync` no trae el email y `members.email` queda vacío en la base. Los respaldos lo conservan hasta 7 días.
 
 ### 11. Quien entra con el enlace ve los emails de los Miembros pendientes
 
@@ -259,7 +264,7 @@ La regla actual dice que quien vuelve recupera su Antiguo Miembro, lo cual tiene
 
 ### 12. Un enlace falsificado carga el libro entero antes de comprobarse
 
-**Baja.** Cualquiera con un id de libro, sin cuenta. Los ids viajan dentro de cada enlace, así que los tiene cualquiera que haya visto uno.
+**Baja. Arreglado en `eabfcf3`.** Cualquiera con un id de libro, sin cuenta. Los ids viajan dentro de cada enlace, así que los tiene cualquiera que haya visto uno.
 
 **Archivos:** `api/internal/httpapi/handlers_ledgers.go:649-661` (`openInvite`).
 
@@ -267,7 +272,9 @@ La regla actual dice que quien vuelve recupera su Antiguo Miembro, lo cual tiene
 
 **Verificado.** Con un token inventado y sin sesión, responde 404 en 369 ms sobre un libro de 6.000 Gastos y en 0,3 ms sobre un id inexistente. Sirve para gastar CPU y además revela si un libro existe.
 
-**Arreglo.** Carga solo la fila con `GetLedger`, comprueba `invites.Valid` y llama a `ledgers.Load` únicamente si es válido.
+**Arreglo.** `openInvite` lee solo la fila con `GetLedger`, comprueba `invites.Valid` y llama a `ledgers.Load` únicamente si es válido.
+
+**Medido después, contra el binario real.** Un token inventado tarda 0,2 ms, tanto con un libro de 198.990 filas como con un id inexistente. Un enlace real sobre ese libro tarda 242 ms.
 
 ### 13. Los Saldos desbordan `int64` e invierten las Deudas
 
@@ -280,6 +287,18 @@ La regla actual dice que quien vuelve recupera su Antiguo Miembro, lo cual tiene
 **Verificado.** 9.300 Gastos de 10^15 en 93 peticiones y 3 segundos. Lo real es que la otra persona debe 9.300.000.000.000.000.000; `GET /sync` dice que el pagador debe 9.146.744.073.709.551.616 a esa persona, con el sentido invertido. No hubo pánicos.
 
 **Arreglo.** Rechaza al escribir cualquier registro que deje un Saldo por encima de 2^62, con `invalid_amounts`. El tope de filas del hallazgo 3 no lo impide, porque 9.300 Gastos caben en un libro. Corrige la frase de las reglas.
+
+### 14. Pedir un código recorre toda la tabla con el bloqueo de escritura
+
+**Baja. Abierto.** Cualquiera con más de mil direcciones, sin cuenta. Apareció al volver a medir el hallazgo 7.
+
+**Archivos:** `api/internal/auth/code.go:94`, `api/internal/store/queries/login_codes.sql` y `api/migrations/00001_initial_schema.sql`.
+
+**Ataque.** Cada `POST /auth/login-code` borra los códigos caducados dentro de su escritura, y `login_codes` no tiene índice por `expires_at`. SQLite recorre la tabla entera con el bloqueo tomado, y las demás escrituras esperan. Un código vive 10 minutos y una IP pide 30 por hora, así que 36.000 filas exigen unas 1.200 direcciones en esa ventana. Un IPv6 /53 tiene 2.048 bloques /64.
+
+**Verificado.** Con 36.000 códigos vivos, cada tanda de 90.000 peticiones pasó de 11 a 75 s, y 21 peticiones aceptadas respondieron 500 con `database is locked`. `EXPLAIN QUERY PLAN` muestra `SCAN login_codes`. El efecto sobre otros Usuarios no se midió. Por lectura, `DeleteExpiredSessions` repite el patrón en cada inicio de sesión.
+
+**Arreglo.** Añade una migración con índices sobre `login_codes (expires_at)` y `sessions (last_used_at)`.
 
 ## A comprobar al desplegar
 
