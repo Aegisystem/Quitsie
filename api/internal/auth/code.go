@@ -100,9 +100,7 @@ func codeFlowCookie(flow string) *http.Cookie {
 // ClearCodeFlowCookie returns a cookie that makes the browser delete the flow
 // cookie, once its code signed it in.
 func ClearCodeFlowCookie() *http.Cookie {
-	c := codeFlowCookie("")
-	c.MaxAge = -1
-	return c
+	return clearHostCookie(CodeFlowCookieName)
 }
 
 // RequestCode emails a new 6-digit login code to email and returns the flow

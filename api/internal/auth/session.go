@@ -37,9 +37,7 @@ func SessionCookie(token string) *http.Cookie {
 // ClearSessionCookie returns a cookie that makes the browser delete the
 // session cookie, for signing out.
 func ClearSessionCookie() *http.Cookie {
-	c := SessionCookie("")
-	c.MaxAge = -1
-	return c
+	return clearHostCookie(SessionCookieName)
 }
 
 // identity is what Authenticate puts in the request's context.

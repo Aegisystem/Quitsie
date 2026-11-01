@@ -216,9 +216,7 @@ func (s *Service) FinishGoogle(ctx context.Context, r *http.Request, device stri
 // ClearGoogleCookie returns a cookie that makes the browser delete the flow
 // cookie once FinishGoogle has run.
 func ClearGoogleCookie() *http.Cookie {
-	c := hostCookie(GoogleCookieName, "", googleFlowLifetime)
-	c.MaxAge = -1
-	return c
+	return clearHostCookie(GoogleCookieName)
 }
 
 func splitFlow(value string) (state, nonce, verifier, returnTo string, ok bool) {
