@@ -6,6 +6,7 @@ import (
 	"net/netip"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Aegisystem/Quitsie/api/internal/auth"
@@ -69,6 +70,32 @@ func gate(n int, wait time.Duration, next http.Handler) http.Handler {
 		case <-r.Context().Done():
 		}
 	})
+}
+
+// onePerKey answers 429 to a request whose key already has one running. Requests
+// without a key go through.
+func onePerKey(key func(*http.Request) (string, bool), next http.Handler) http.Handler {
+	var running sync.Map
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		k, ok := key(r)
+		if !ok {
+			next.ServeHTTP(w, r)
+			return
+		}
+		if _, taken := running.LoadOrStore(k, struct{}{}); taken {
+			tooMany(w, time.Second, "One at a time.")
+			return
+		}
+		defer running.Delete(k)
+		next.ServeHTTP(w, r)
+	})
+}
+
+// pullingUser is who a GET /sync belongs to, so that one account never takes more
+// than one of the places of the gate. It needs Authenticate to have run.
+func pullingUser(r *http.Request) (string, bool) {
+	user, signedIn := auth.CurrentUser(r.Context())
+	return user.ID, signedIn && r.Method == http.MethodGet && r.URL.Path == "/api/v1/sync"
 }
 
 // requestLimit returns the middleware that answers 429 to a client over its

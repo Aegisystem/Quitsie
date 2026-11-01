@@ -41,10 +41,10 @@ func NewHandler(s *Server, pwa fs.FS) http.Handler {
 }
 
 // guard refuses API requests that change data from another origin (CSRF),
-// finds the User of the rest from their session cookie, and charges their
-// changes to that User.
+// finds the User of the rest from their session cookie, and holds that User to
+// one pull at a time and to their budget of changes.
 func (s *Server) guard(next http.Handler) http.Handler {
-	next = s.writeBudget(next)
+	next = onePerKey(pullingUser, s.writeBudget(next))
 	if s.deps.Auth != nil {
 		next = s.deps.Auth.Authenticate(handlerError)(next)
 	}

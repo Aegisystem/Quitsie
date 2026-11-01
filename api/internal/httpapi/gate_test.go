@@ -79,3 +79,43 @@ func TestSomeoneWhoGivesUpLeavesTheGate(t *testing.T) {
 		t.Fatal("it is still waiting")
 	}
 }
+
+func TestAKeyGetsOneRequestAtATime(t *testing.T) {
+	inside, letGo := make(chan struct{}), make(chan struct{})
+	h := onePerKey(func(r *http.Request) (string, bool) {
+		key := r.URL.Query().Get("key")
+		return key, key != ""
+	}, http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Has("hold") {
+			close(inside)
+			<-letGo
+		}
+	}))
+	send := func(target string) int {
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, target, nil))
+		return rec.Code
+	}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		send("/?key=a&hold")
+	}()
+	<-inside
+
+	if got := send("/?key=a"); got != http.StatusTooManyRequests {
+		t.Errorf("same key: code = %d, want 429", got)
+	}
+	if got := send("/?key=b"); got != http.StatusOK {
+		t.Errorf("another key: code = %d, want 200", got)
+	}
+	if got := send("/"); got != http.StatusOK {
+		t.Errorf("no key: code = %d, want 200", got)
+	}
+
+	close(letGo)
+	<-done
+	if got := send("/?key=a"); got != http.StatusOK {
+		t.Errorf("same key afterwards: code = %d, want 200", got)
+	}
+}
