@@ -134,6 +134,23 @@ jobs:
           root=$RUNNER_TEMP/root
           mkdir -p "$root/etc/systemd/system" "$root/usr/lib/systemd"
           cp -R /usr/lib/systemd/system "$root/usr/lib/systemd/"
+          # Some of the system's units are symlinks to files elsewhere (dracut's
+          # are, on GitHub's runners), and inside the scratch root they lead
+          # nowhere, which newer systemd reports. Each such link becomes a copy
+          # of what it points to on this machine, or goes if nothing is there.
+          # Masked units point to /dev/null, which systemd reads by name.
+          find "$root/usr/lib/systemd/system" -type l ! -lname /dev/null -print0 |
+            while IFS= read -r -d '' link; do
+              target=$(readlink "$link")
+              case $target in
+                /*) inside=$root$target ;;
+                *) inside=$(dirname "$link")/$target ;;
+              esac
+              [ -e "$inside" ] && continue
+              real=$(readlink -f "${link#"$root"}") || real=
+              rm "$link"
+              if [ -n "$real" ] && [ -e "$real" ]; then cp -R "$real" "$link"; fi
+            done
           sed -n 's/^ExecStart=\([^ ]*\).*/\1/p' deploy/*.service | sort -u | while read -r exe; do
             install -D -m 0755 /dev/null "$root$exe"
           done
