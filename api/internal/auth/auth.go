@@ -46,7 +46,6 @@ type Service struct {
 	mailPerDay      int
 	sends           *limiter
 	verifications   *limiter
-	deviceSweep     *periodic
 	google          *google
 }
 
@@ -73,7 +72,6 @@ func New(cfg Config) (*Service, error) {
 		mailPerDay:      cmp.Or(cfg.MailPerDay, DefaultMailPerDay),
 		sends:           newLimiter(sendWindow),
 		verifications:   newLimiter(sendWindow),
-		deviceSweep:     &periodic{interval: knownDeviceSweepInterval},
 	}
 	if cfg.Google != nil {
 		g, err := newGoogle(*cfg.Google)

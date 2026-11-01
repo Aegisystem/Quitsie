@@ -12,8 +12,7 @@ SET last_used_at = ?
 WHERE token_hash = ?;
 
 -- name: DeleteStaleKnownDevices :exec
--- Every User's, also of those who never sign in again. No index leads with
--- last_used_at, so it reads the whole table.
+-- Every User's, also of those who never sign in again.
 DELETE FROM known_devices
 WHERE last_used_at <= sqlc.arg(used_before);
 

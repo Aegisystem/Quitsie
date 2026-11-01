@@ -47,8 +47,7 @@ DELETE FROM known_devices
 WHERE last_used_at <= ?1
 `
 
-// Every User's, also of those who never sign in again. No index leads with
-// last_used_at, so it reads the whole table.
+// Every User's, also of those who never sign in again.
 func (q *Queries) DeleteStaleKnownDevices(ctx context.Context, usedBefore time.Time) error {
 	_, err := q.db.ExecContext(ctx, deleteStaleKnownDevices, usedBefore)
 	return err

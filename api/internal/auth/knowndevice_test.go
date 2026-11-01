@@ -297,7 +297,7 @@ func TestABrowserIsForgottenAfterAYearWithoutSigningIn(t *testing.T) {
 
 // docs/datos-personales.md keeps a known device a year without use, also
 // when its User never signs in again. Then only the sign-ins of other Users
-// can delete it, and they look for such rows once a day.
+// can delete it.
 func TestTheBrowsersOfAUserWhoNeverComesBackAreDeleted(t *testing.T) {
 	f := newFixture(t)
 	phone := f.newBrowser(anaIP)
@@ -315,10 +315,10 @@ func TestTheBrowsersOfAUserWhoNeverComesBackAreDeleted(t *testing.T) {
 		t.Fatal("Ana's browser was deleted before its year")
 	}
 
-	f.clock.Advance(166 * 24 * time.Hour) // a year and a day after Ana signed in
+	f.clock.Advance(165 * 24 * time.Hour) // a year after Ana signed in
 	f.signedInBrowser(t, "carla@example.com", "192.0.2.1")
 	if strings.Contains(f.dump(t, "known_devices"), ana.User.ID) {
-		t.Error("known_devices still holds Ana's browser a year and a day after she last signed in")
+		t.Error("known_devices still holds Ana's browser a year after she last signed in")
 	}
 }
 

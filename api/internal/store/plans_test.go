@@ -10,8 +10,6 @@ import (
 
 // Sign-in deletes the expired rows of these tables inside its write, with the
 // write lock held. A scan of a large table there makes every other write wait.
-// The stale rows of known_devices have no such index, so sign-in deletes them
-// once a day only (see deleteStaleKnownDevices in package auth).
 func TestTheDeletesOfExpiredRowsUseAnIndex(t *testing.T) {
 	ctx := context.Background()
 	db, err := Open(ctx, filepath.Join(t.TempDir(), "quitsie.db"))
@@ -27,6 +25,7 @@ func TestTheDeletesOfExpiredRowsUseAnIndex(t *testing.T) {
 		deleteExpiredLoginCodes:  "login_codes_expires_at",
 		deleteExpiredSessions:    "sessions_last_used_at",
 		deleteEndedLoginFailures: "login_failures_resets_at",
+		deleteStaleKnownDevices:  "known_devices_last_used_at",
 	} {
 		name := strings.Fields(query)[2]
 		rows, err := db.QueryContext(ctx, "EXPLAIN QUERY PLAN "+query, time.Now())
