@@ -88,6 +88,12 @@ export const expenseRow = (page: Page, description: string): Locator => page.get
 
 export const unsyncedMark = (row: Locator): Locator => row.getByRole('img', { name: 'Sin sincronizar' })
 
+export async function openEditForm(page: Page, description: string) {
+  await expenseRow(page, description).getByRole('button', { expanded: false }).click()
+  await page.getByRole('link', { name: 'Editar gasto' }).click()
+  await expect(page.getByLabel('Descripción')).toHaveValue(description)
+}
+
 // From the ledger: the address of the Group's Invite link.
 export async function inviteLink(page: Page): Promise<string> {
   await page.getByRole('link', { name: 'Invitar' }).click()
