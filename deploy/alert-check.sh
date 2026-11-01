@@ -198,11 +198,15 @@ check_disk() {
 
 # summarize reads log lines and prints their messages, most frequent first.
 # Only the msg of a slog line is kept: its other fields can hold paths,
-# addresses or error texts that have no place in an email.
+# addresses or error texts that have no place in an email. The client
+# address of a panic goes too, so that the same panic counts as one.
+# awk, unlike head, reads all its input: an early exit would kill sort with
+# SIGPIPE, and pipefail would end the whole run when errors pour in.
 summarize() {
-  sed -E 's/^.*[[:space:]]msg=("([^"\\]|\\.)*"|[^[:space:]]*).*$/msg=\1/' \
-    | cut -c 1-160 | sort | uniq -c | sort -rn | head -n 5 \
-    | sed -E 's/^ *([0-9]+) /  \1 × /'
+  sed -E -e 's/^.*[[:space:]]msg=("([^"\\]|\\.)*"|[^[:space:]]*).*$/msg=\1/' \
+    -e 's/(http: panic serving )[^ ]+: /\1/' \
+    | cut -c 1-160 | sort | uniq -c | sort -rn \
+    | awk 'NR <= 5 { sub(/^ *[0-9]+ /, "  " $1 " × "); print }'
 }
 
 check_errors() {

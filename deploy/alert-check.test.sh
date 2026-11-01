@@ -234,7 +234,7 @@ check
 expect_emails 1
 expect_text "quitsie.service: 3 línea(s) de error"
 expect_text '2 × msg="handler failed"'
-expect_text 'msg="http: panic serving 127.0.0.1:5555: boom"'
+expect_text 'msg="http: panic serving boom"'
 expect_text "litestream.service: 1 línea(s) de error"
 expect_no_text "someone@example.org"
 expect_no_text "Google sign-in failed"
@@ -249,6 +249,17 @@ expect_emails 2
 expect_text 'msg="server stopped"'
 advance 5; check
 expect_emails 2
+
+test_case "a flood of different errors still sends one email"
+for i in $(seq 1 3000); do
+  echo "time=2026-11-01T12:00:00Z level=ERROR msg=\"handler failed $i\" err=x"
+  echo "time=2026-11-01T12:00:00Z level=INFO msg=\"http: panic serving 127.0.0.1:$((20000 + i)): boom\""
+done > "$FAKE/journal/quitsie.service.log"
+check
+expect_status 0
+expect_emails 1
+expect_text "quitsie.service: 6000 línea(s) de error"
+expect_text '3000 × msg="http: panic serving boom"'
 
 test_case "the weekly restore test failed, then passed"
 touch "$FAKE/units/quitsie-restore-test.service.failed"
