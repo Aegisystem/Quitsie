@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -103,8 +104,13 @@ func TestTheGoogleFlowCookieIsShortLivedAndHidden(t *testing.T) {
 	if !c.HttpOnly || !c.Secure || c.SameSite != http.SameSiteLaxMode {
 		t.Errorf("HttpOnly=%v Secure=%v SameSite=%v, want HttpOnly, Secure and Lax", c.HttpOnly, c.Secure, c.SameSite)
 	}
-	if c.MaxAge != 10*60 || c.Path != "/api/v1/auth/google/callback" {
-		t.Errorf("MaxAge=%d Path=%q, want 10 minutes on the callback only", c.MaxAge, c.Path)
+	if c.MaxAge != 10*60 {
+		t.Errorf("MaxAge = %d, want 10 minutes", c.MaxAge)
+	}
+	// Another subdomain could otherwise plant its own flow, and with it sign
+	// the browser in to someone else's account.
+	if !strings.HasPrefix(c.Name, "__Host-") || c.Path != "/" || c.Domain != "" {
+		t.Errorf("Name=%q Path=%q Domain=%q, want a __Host- cookie for the whole origin", c.Name, c.Path, c.Domain)
 	}
 }
 

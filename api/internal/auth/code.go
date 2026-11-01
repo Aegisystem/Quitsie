@@ -38,11 +38,7 @@ const (
 
 // CodeFlowCookieName is the cookie that ties a login code to the browser
 // that asked for it, so that only that browser can check it.
-const CodeFlowCookieName = "quitsie_code_flow"
-
-// authPath is where the sign-in operations live, the only ones that read the
-// cookies of the code flow and of known devices.
-const authPath = "/api/v1/auth/"
+const CodeFlowCookieName = "__Host-quitsie_code_flow"
 
 var (
 	// ErrInvalidEmail means the text is not a bare email address.
@@ -98,15 +94,7 @@ func BrowserOf(r *http.Request, ip string) Browser {
 // the code, and it must outlive the page: an installed PWA can be closed
 // while its User reads the email.
 func codeFlowCookie(flow string) *http.Cookie {
-	return &http.Cookie{
-		Name:     CodeFlowCookieName,
-		Value:    flow,
-		Path:     authPath,
-		MaxAge:   int(codeTTL / time.Second),
-		HttpOnly: true,
-		Secure:   true,
-		SameSite: http.SameSiteLaxMode,
-	}
+	return hostCookie(CodeFlowCookieName, flow, codeTTL)
 }
 
 // ClearCodeFlowCookie returns a cookie that makes the browser delete the flow

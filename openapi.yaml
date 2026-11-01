@@ -24,9 +24,11 @@ info:
       next to a `currency`. Never floats.
     * **Errors** are `application/problem+json` (RFC 9457) with a stable
       `code`; clients branch on `code`, never on `title` or `detail`.
-    * **Sessions** travel in an HttpOnly cookie. Requests that change data
-      must carry an `Origin` header of the app's own domain (CSRF);
-      otherwise they get `403 origin_mismatch`.
+    * **Sessions** travel in an HttpOnly cookie. Every cookie the API sets
+      has a name with the `__Host-` prefix, so it is Secure, for `Path=/`
+      and without `Domain`, and no other subdomain can set it. Requests
+      that change data must carry an `Origin` header of the app's own
+      domain (CSRF); otherwise they get `403 origin_mismatch`.
     * A ledger the User cannot see answers `404 not_found`, the same as one
       that does not exist.
     * **Request limit.** Each IP (each /64 in IPv6) gets 300 requests per
@@ -78,6 +80,28 @@ paths:
               schema:
                 $ref: "#/components/schemas/Health"
 
+  /auth/methods:
+    get:
+      operationId: getLoginMethods
+      summary: Says which ways of signing in this server offers.
+      description: >
+        The sign-in screen asks before it shows the Google button: Google
+        needs an OAuth client in the server's configuration, and without one
+        `startGoogleLogin` only ends in `/login?error=google`. A code by email
+        is always offered. The answer only changes when the server restarts
+        with another configuration.
+      tags: [auth]
+      security: []
+      responses:
+        "200":
+          description: The ways of signing in.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginMethods"
+        default:
+          $ref: "#/components/responses/Problem"
+
   /auth/login-code:
     post:
       operationId: requestLoginCode
@@ -105,8 +129,9 @@ paths:
           headers:
             Set-Cookie:
               description: >
-                The flow cookie that ties the code to this browser. HttpOnly,
-                Secure and SameSite=Lax, for the 10 minutes of the code.
+                The flow cookie, `__Host-quitsie_code_flow`, that ties the
+                code to this browser. HttpOnly, Secure and SameSite=Lax, for
+                the 10 minutes of the code.
               schema:
                 type: string
         "400":
@@ -163,10 +188,10 @@ paths:
           headers:
             Set-Cookie:
               description: >
-                The session cookie, and the known-device cookie that tells
-                later sign-ins this browser signed in to the User before
-                (HttpOnly, Secure, for a year; signing out keeps it). It also
-                deletes the flow cookie.
+                The session cookie, and the known-device cookie,
+                `__Host-quitsie_known_device`, that tells later sign-ins this
+                browser signed in to the User before (HttpOnly, Secure, for a
+                year; signing out keeps it). It also deletes the flow cookie.
               schema:
                 type: string
           content:
@@ -222,7 +247,9 @@ paths:
               schema:
                 type: string
             Set-Cookie:
-              description: Cookie with the OAuth state.
+              description: >
+                `__Host-quitsie_google`, with the OAuth state, for the 10
+                minutes of the flow.
               schema:
                 type: string
         default:
@@ -1141,7 +1168,7 @@ components:
     sessionCookie:
       type: apiKey
       in: cookie
-      name: quitsie_session
+      name: __Host-quitsie_session
       description: >
         Opaque session token set by verifyLoginCode or finishGoogleLogin.
         HttpOnly, Secure and SameSite=Lax; it expires after 90 days without
@@ -1375,6 +1402,15 @@ components:
       enum: [equal, exact, percentage, weights, adjustment]
 
     # --- Auth and profile -----------------------------------------------
+
+    LoginMethods:
+      type: object
+      description: The ways of signing in besides the emailed code, which is always there.
+      required: [google]
+      properties:
+        google:
+          type: boolean
+          description: True when the server has an OAuth client of Google, so `startGoogleLogin` can sign in.
 
     LoginCodeRequest:
       type: object

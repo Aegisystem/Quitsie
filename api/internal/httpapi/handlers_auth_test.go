@@ -25,7 +25,7 @@ func TestSigningInWithAnEmailedCode(t *testing.T) {
 	wantStatus(t, resp, http.StatusNoContent)
 	code := api.mail.lastCode(t, "ana@example.com")
 	flow := cookie(resp, auth.CodeFlowCookieName)
-	if !hidden(flow) || flow.Path != "/api/v1/auth/" || flow.MaxAge != 600 || len(flow.Value) < 26 {
+	if !hidden(flow) || flow.MaxAge != 600 || len(flow.Value) < 26 {
 		t.Errorf("flow cookie = %v, want a hidden one of 128 bits or more for the 10 minutes of the code", flow)
 	}
 
@@ -54,6 +54,62 @@ func TestSigningInWithAnEmailedCode(t *testing.T) {
 // hidden reports whether c is out of reach of scripts and of other sites.
 func hidden(c *http.Cookie) bool {
 	return c != nil && c.HttpOnly && c.Secure && c.SameSite == http.SameSiteLaxMode
+}
+
+// hostOnly reports whether a browser takes c: a cookie whose name starts with
+// __Host-, a deletion included, must be Secure, for Path=/ and without Domain.
+func hostOnly(c *http.Cookie) bool {
+	return strings.HasPrefix(c.Name, "__Host-") && c.Secure && c.Path == "/" && c.Domain == ""
+}
+
+// No other subdomain of the app's domain can set or shadow a cookie of
+// sign-in, and a browser ignores a cookie of such a name that breaks the
+// rules of the prefix: a sign-in or a sign-out would silently not happen.
+func TestEveryCookieIsBoundToTheHost(t *testing.T) {
+	var google *authtest.FakeGoogle
+	api := newTestAPI(t, withGoogle(t, &google))
+	browser := api.newClient(t)
+	var responses []*http.Response
+	send := func(method, target, body string) *http.Response {
+		resp := browser.do(method, target, body)
+		responses = append(responses, resp)
+		return resp
+	}
+
+	send(http.MethodPost, "/api/v1/auth/login-code", `{"email":"ana@example.com"}`)
+	send(http.MethodPost, "/api/v1/auth/login-code/verify", `{"email":"ana@example.com","code":"`+api.mail.lastCode(t, "ana@example.com")+`"}`)
+	stolen := browser.sessionCookie()
+	send(http.MethodPost, "/api/v1/auth/logout", "")
+	// A session that ended gets its cookie deleted.
+	responses = append(responses, api.withSessionCookie(t, stolen).do(http.MethodGet, "/api/v1/me", ""))
+	start := send(http.MethodGet, "/api/v1/auth/google", "")
+	send(http.MethodGet, strings.TrimPrefix(google.Consent(t, start.Header.Get("Location"), anaAtGoogle), api.srv.URL), "")
+	send(http.MethodGet, "/api/v1/auth/google/callback?error=server_error", "")
+
+	set, deleted := map[string]bool{}, map[string]bool{}
+	for _, resp := range responses {
+		for _, c := range resp.Cookies() {
+			if !hostOnly(c) {
+				t.Errorf("%s %s set %q, want a __Host- cookie: Secure, Path=/ and no Domain", resp.Request.Method, resp.Request.URL.Path, c.String())
+			}
+			if c.MaxAge < 0 {
+				deleted[c.Name] = true
+			} else {
+				set[c.Name] = true
+			}
+		}
+	}
+	all := []string{auth.SessionCookieName, auth.CodeFlowCookieName, auth.KnownDeviceCookieName, auth.GoogleCookieName}
+	for _, name := range all {
+		if !set[name] {
+			t.Errorf("no response set %s", name)
+		}
+	}
+	for _, name := range []string{auth.SessionCookieName, auth.CodeFlowCookieName, auth.GoogleCookieName} {
+		if !deleted[name] {
+			t.Errorf("no response deleted %s", name)
+		}
+	}
 }
 
 // Finding 5 of docs/revision-seguridad.md, through real cookie jars: knowing
@@ -98,6 +154,7 @@ func TestNobodyCanKeepAKnownDeviceFromSigningIn(t *testing.T) {
 // One request that reaches each operation of the contract.
 var everyOperation = []operationRequest{
 	{"GetHealth", http.MethodGet, "/api/v1/health", ""},
+	{"GetLoginMethods", http.MethodGet, "/api/v1/auth/methods", ""},
 	{"RequestLoginCode", http.MethodPost, "/api/v1/auth/login-code", `{"email":"ana@example.com"}`},
 	{"VerifyLoginCode", http.MethodPost, "/api/v1/auth/login-code/verify", `{"email":"ana@example.com","code":"000000"}`},
 	{"StartGoogleLogin", http.MethodGet, "/api/v1/auth/google?returnTo=/groups", ""},
@@ -136,7 +193,7 @@ var everyOperation = []operationRequest{
 // The operations anyone can call. GetInvite shows an invitation before its
 // guest signs in.
 var publicOperations = []string{
-	"GetHealth", "RequestLoginCode", "VerifyLoginCode", "StartGoogleLogin", "FinishGoogleLogin", "GetInvite",
+	"GetHealth", "GetLoginMethods", "RequestLoginCode", "VerifyLoginCode", "StartGoogleLogin", "FinishGoogleLogin", "GetInvite",
 }
 
 func TestOnlyPublicOperationsAnswerWithoutASession(t *testing.T) {
@@ -423,6 +480,34 @@ func TestDeletingTheAccount(t *testing.T) {
 	again := api.newClient(t).signIn("ana@example.com")
 	if !again.NewUser || again.User.Id == ana.Id {
 		t.Errorf("signing in again = %+v, want a new User, not %s", again, ana.Id)
+	}
+}
+
+// The PWA shows the Google button only when the server says it can sign in
+// with Google: without an OAuth client, the button only leads to an error.
+func TestTheLoginMethodsSayWhetherGoogleCanSignIn(t *testing.T) {
+	var google *authtest.FakeGoogle
+	tests := []struct {
+		name string
+		api  *testAPI
+		want bool
+	}{
+		{"without an OAuth client", newTestAPI(t), false},
+		{"with one", newTestAPI(t, withGoogle(t, &google)), true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Asked before signing in.
+			resp := tt.api.newClient(t).do(http.MethodGet, "/api/v1/auth/methods", "")
+
+			if methods := readJSON[httpapi.LoginMethods](t, resp, http.StatusOK); methods.Google != tt.want {
+				t.Errorf("google = %v, want %v", methods.Google, tt.want)
+			}
+			// A kept answer would outlive a change of configuration.
+			if got := resp.Header.Get("Cache-Control"); got != "no-store" {
+				t.Errorf("Cache-Control = %q, want no-store", got)
+			}
+		})
 	}
 }
 

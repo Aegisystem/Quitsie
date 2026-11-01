@@ -1,4 +1,4 @@
-import type { Session, User } from '../api/client'
+import type { LoginMethods, Session, User } from '../api/client'
 import { ok } from '../domain/result'
 import * as calls from './api'
 import type { ApiClient, CallResult, UserUpdate } from './api'
@@ -141,6 +141,11 @@ export function createSession({ client, storage, notice: firstNotice, device = n
         checking = undefined
       })
       return checking
+    },
+
+    // Which ways of signing in the server offers besides the code.
+    loginMethods(): Promise<CallResult<LoginMethods>> {
+      return calls.getLoginMethods(client)
     },
 
     requestCode(email: string): Promise<CallResult<void>> {

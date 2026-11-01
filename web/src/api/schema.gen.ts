@@ -21,6 +21,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/auth/methods": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Says which ways of signing in this server offers.
+         * @description The sign-in screen asks before it shows the Google button: Google needs an OAuth client in the server's configuration, and without one `startGoogleLogin` only ends in `/login?error=google`. A code by email is always offered. The answer only changes when the server restarts with another configuration.
+         */
+        get: operations["getLoginMethods"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/auth/login-code": {
         parameters: {
             query?: never;
@@ -641,6 +661,11 @@ export interface components {
          * @enum {string}
          */
         SplitMethod: "equal" | "exact" | "percentage" | "weights" | "adjustment";
+        /** @description The ways of signing in besides the emailed code, which is always there. */
+        LoginMethods: {
+            /** @description True when the server has an OAuth client of Google, so `startGoogleLogin` can sign in. */
+            google: boolean;
+        };
         LoginCodeRequest: {
             /** Format: email */
             email: string;
@@ -1169,6 +1194,27 @@ export interface operations {
             };
         };
     };
+    getLoginMethods: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The ways of signing in. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoginMethods"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
     requestLoginCode: {
         parameters: {
             query?: never;
@@ -1185,7 +1231,7 @@ export interface operations {
             /** @description The code was sent, if the email can receive one. */
             204: {
                 headers: {
-                    /** @description The flow cookie that ties the code to this browser. HttpOnly, Secure and SameSite=Lax, for the 10 minutes of the code. */
+                    /** @description The flow cookie, `__Host-quitsie_code_flow`, that ties the code to this browser. HttpOnly, Secure and SameSite=Lax, for the 10 minutes of the code. */
                     "Set-Cookie"?: string;
                     [name: string]: unknown;
                 };
@@ -1233,7 +1279,7 @@ export interface operations {
             /** @description Signed in. */
             200: {
                 headers: {
-                    /** @description The session cookie, and the known-device cookie that tells later sign-ins this browser signed in to the User before (HttpOnly, Secure, for a year; signing out keeps it). It also deletes the flow cookie. */
+                    /** @description The session cookie, and the known-device cookie, `__Host-quitsie_known_device`, that tells later sign-ins this browser signed in to the User before (HttpOnly, Secure, for a year; signing out keeps it). It also deletes the flow cookie. */
                     "Set-Cookie"?: string;
                     [name: string]: unknown;
                 };
@@ -1278,7 +1324,7 @@ export interface operations {
             302: {
                 headers: {
                     Location?: string;
-                    /** @description Cookie with the OAuth state. */
+                    /** @description `__Host-quitsie_google`, with the OAuth state, for the 10 minutes of the flow. */
                     "Set-Cookie"?: string;
                     [name: string]: unknown;
                 };

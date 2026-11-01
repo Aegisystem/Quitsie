@@ -21,7 +21,7 @@ import (
 // KnownDeviceCookieName is the cookie that tells sign-in which Users a
 // browser signed in to before. It holds one token per User, and the database
 // keeps only their hashes.
-const KnownDeviceCookieName = "quitsie_known_device"
+const KnownDeviceCookieName = "__Host-quitsie_known_device"
 
 const (
 	// knownDeviceLifetime is how long a browser stays known without signing
@@ -38,15 +38,7 @@ const (
 // KnownDeviceCookie returns the cookie that carries the value of
 // SignIn.KnownDevices.
 func KnownDeviceCookie(value string) *http.Cookie {
-	return &http.Cookie{
-		Name:     KnownDeviceCookieName,
-		Value:    value,
-		Path:     authPath,
-		MaxAge:   int(knownDeviceLifetime / time.Second),
-		HttpOnly: true,
-		Secure:   true,
-		SameSite: http.SameSiteLaxMode,
-	}
+	return hostCookie(KnownDeviceCookieName, value, knownDeviceLifetime)
 }
 
 // knownDeviceTokens splits the value of the known-device cookie into its

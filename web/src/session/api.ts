@@ -1,5 +1,5 @@
 import type { Client } from 'openapi-fetch'
-import type { CurrencyPrecisionProblem, ProblemCode, Session, User } from '../api/client'
+import type { CurrencyPrecisionProblem, LoginMethods, ProblemCode, Session, User } from '../api/client'
 import type { components, paths } from '../api/schema.gen'
 import { fail, ok, type Result } from '../domain/result'
 
@@ -48,6 +48,10 @@ export async function call<T>(send: () => Promise<Answer<T>>): Promise<CallResul
     retryAfter: Number.isFinite(retryAfter) ? retryAfter : undefined,
     ...(lossy && { lossy: { expenseIds: lossy.expenseIds, settlementIds: lossy.settlementIds } }),
   })
+}
+
+export function getLoginMethods(client: ApiClient): Promise<CallResult<LoginMethods>> {
+  return call(() => client.GET('/auth/methods'))
 }
 
 export function requestLoginCode(client: ApiClient, email: string): Promise<CallResult<void>> {

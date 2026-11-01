@@ -17,8 +17,9 @@ import (
 	"github.com/Aegisystem/Quitsie/api/internal/store"
 )
 
-// SessionCookieName is the cookie that carries the session token.
-const SessionCookieName = "quitsie_session"
+// SessionCookieName is the cookie that carries the session token. Its
+// __Host- prefix keeps other subdomains from setting it (see hostCookie).
+const SessionCookieName = "__Host-quitsie_session"
 
 const (
 	// sessionLifetime is how long a session lasts without being used.
@@ -28,18 +29,9 @@ const (
 	touchInterval = time.Hour
 )
 
-// SessionCookie returns the cookie that carries token. The PWA and the API
-// share an origin, so the cookie needs no Domain and Lax is enough.
+// SessionCookie returns the cookie that carries token.
 func SessionCookie(token string) *http.Cookie {
-	return &http.Cookie{
-		Name:     SessionCookieName,
-		Value:    token,
-		Path:     "/",
-		MaxAge:   int(sessionLifetime / time.Second),
-		HttpOnly: true,
-		Secure:   true,
-		SameSite: http.SameSiteLaxMode,
-	}
+	return hostCookie(SessionCookieName, token, sessionLifetime)
 }
 
 // ClearSessionCookie returns a cookie that makes the browser delete the

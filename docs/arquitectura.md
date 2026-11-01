@@ -49,7 +49,7 @@ flowchart LR
 - **HTTP**: `net/http` estándar. Los tipos y la interfaz de los manejadores se generan desde `openapi.yaml` con `oapi-codegen`.
 - **Datos**: SQLite en modo WAL con `modernc.org/sqlite` (Go puro, sin cgo, fácil de compilar para Linux desde cualquier máquina). Las consultas se escriben en SQL y `sqlc` genera el código Go con tipos. Las migraciones van con `goose` y se aplican al arrancar. El SQL se mantiene portable a PostgreSQL ([ADR 0006](adr/0006-sqlite.md)).
 - **Dominio**: valida Gastos y Liquidaciones (sumas y Participantes) y calcula Saldos y la Simplificación de deudas. No reimplementa los Métodos de reparto.
-- **Autenticación**: código de 6 dígitos por email (enviado con Resend) o Google con OpenID Connect ([ADR 0005](adr/0005-login-con-codigo-no-enlace.md)). La sesión es una cookie HttpOnly con un token opaco; en la base solo se guarda su hash. Caduca a los 90 días sin uso y se puede cerrar por dispositivo.
+- **Autenticación**: código de 6 dígitos por email (enviado con Resend) o Google con OpenID Connect ([ADR 0005](adr/0005-login-con-codigo-no-enlace.md)). Google solo se ofrece si el servidor tiene configurado su cliente OAuth: la PWA lo pregunta con `GET /auth/methods` y, si no, no muestra el botón. La sesión es una cookie HttpOnly con un token opaco; en la base solo se guarda su hash. Caduca a los 90 días sin uso y se puede cerrar por dispositivo.
 
 ## Infraestructura ([ADR 0007](adr/0007-go-nativo-en-vm-gratuita.md))
 
@@ -139,7 +139,7 @@ Los Saldos no se guardan: se calculan sumando, lo cual es rápido a esta escala.
 ## Seguridad
 
 - Toda consulta se limita a los libros en los que el Usuario tiene un Miembro activo.
-- Cookie `HttpOnly`, `Secure` y `SameSite=Lax`. Además, las peticiones que modifican datos deben traer un encabezado `Origin` del propio dominio (protección CSRF).
+- Las cookies son `HttpOnly`, `Secure` y `SameSite=Lax`, y su nombre lleva el prefijo `__Host-`: el navegador solo las acepta de este mismo host, con `Path=/` y sin `Domain`, así que otro subdominio no puede fijarlas ni tapar las verdaderas. Las de flujo y de dispositivo conocido viajan por eso en toda petición, aunque solo las lee el inicio de sesión. Además, las peticiones que modifican datos deben traer un encabezado `Origin` del propio dominio (protección CSRF).
 - Toda respuesta lleva una `Content-Security-Policy` que solo admite los archivos de la propia app, sin scripts ni estilos en línea y sin dejarse enmarcar, además de `X-Content-Type-Options`, `Referrer-Policy: same-origin`, `Cross-Origin-Opener-Policy` y una `Permissions-Policy` que apaga cámara, micrófono, ubicación y pagos. Las de `/api/` llevan también `Cache-Control: no-store`.
 - En producción el servidor exige HTTPS por su cuenta: envía HSTS de un año y redirige a `QUITSIE_PUBLIC_ORIGIN` lo que Cloudflare vio llegar por HTTP. Lo sabe por `CF-Visitor` y `X-Forwarded-Proto`, que solo cree por loopback, como `CF-Connecting-IP`.
 - Los códigos de acceso caducan a los 10 minutos y admiten 5 intentos como máximo. Cada código queda atado al navegador que lo pidió con una cookie de flujo, así que nadie más puede comprobarlo ni gastar sus intentos ([ADR 0011](adr/0011-codigos-atados-al-navegador.md)).

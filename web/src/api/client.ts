@@ -18,6 +18,7 @@ export type SplitMethod = Schemas['SplitMethod']
 
 export type User = Schemas['User']
 export type Session = Schemas['Session']
+export type LoginMethods = Schemas['LoginMethods']
 
 // What GET /sync returns, row by row, for the local replica.
 export type Changes = Schemas['Changes']

@@ -8,12 +8,15 @@ import (
 	"io/fs"
 	"log/slog"
 	"maps"
+	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Aegisystem/Quitsie/api/internal/mail"
 	"github.com/Aegisystem/Quitsie/api/internal/store"
@@ -308,5 +311,59 @@ func TestAStartAfterARestoreJumpsOnceAndRemovesTheMarker(t *testing.T) {
 	}
 	if v := currentVersion(t, db); v != jumped {
 		t.Errorf("version = %d after the next start, want %d: the restore was recorded already", v, jumped)
+	}
+}
+
+// logLines hands over each write of a logger; slog writes a record at once.
+type logLines chan string
+
+func (l logLines) Write(p []byte) (int, error) {
+	l <- string(p)
+	return len(p), nil
+}
+
+// The alerts on the VM read the level=ERROR lines of the journal, so what
+// net/http logs about a broken handler must be one of them, stack included.
+func TestABrokenHandlerIsLoggedAsAnError(t *testing.T) {
+	tests := []struct {
+		name    string
+		handler http.HandlerFunc
+		want    string
+	}{
+		{"panic", func(http.ResponseWriter, *http.Request) { panic("boom") }, "http: panic serving"},
+		{"header written twice", func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			w.WriteHeader(http.StatusInternalServerError)
+		}, "http: superfluous response.WriteHeader call"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			logs := make(logLines, 1)
+			srv := newHTTPServer("", tt.handler, slog.New(slog.NewTextHandler(logs, nil)))
+			ln, err := net.Listen("tcp", "127.0.0.1:0")
+			if err != nil {
+				t.Fatal(err)
+			}
+			go srv.Serve(ln)
+			t.Cleanup(func() { srv.Close() })
+
+			if resp, err := http.Get("http://" + ln.Addr().String()); err == nil {
+				resp.Body.Close()
+			}
+
+			select {
+			case line := <-logs:
+				if !strings.Contains(line, "level=ERROR") || !strings.Contains(line, tt.want) {
+					t.Errorf("logged %q, want a level=ERROR line with %q", line, tt.want)
+				}
+				// journald splits on newlines, and only the first line would
+				// carry the level.
+				if n := strings.Count(line, "\n"); n != 1 {
+					t.Errorf("logged %d lines, want the whole record on one: %q", n, line)
+				}
+			case <-time.After(5 * time.Second):
+				t.Fatal("logged nothing")
+			}
+		})
 	}
 }

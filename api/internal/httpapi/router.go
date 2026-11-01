@@ -58,6 +58,7 @@ func (s *Server) guard(next http.Handler) http.Handler {
 // not have signed in yet.
 var publicOperations = map[string]bool{
 	"GetHealth":         true,
+	"GetLoginMethods":   true,
 	"RequestLoginCode":  true,
 	"VerifyLoginCode":   true,
 	"StartGoogleLogin":  true,

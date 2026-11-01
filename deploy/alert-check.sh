@@ -54,9 +54,10 @@ ONESHOT=(quitsie-restore.service quitsie-restore-test.service)
 # Units whose journal is searched for errors. Both log with Go's slog text
 # handler, so an error line carries level=ERROR. The app logs at ERROR
 # whatever needs the owner, 500s included (handlerError in
-# api/internal/httpapi/problem.go). net/http logs a panic in a handler through
-# the log package, which slog turns into an INFO line, and a crash writes
-# "panic:" or "fatal error:" straight to stderr, so those count too.
+# api/internal/httpapi/problem.go), and so does net/http for a panic in a
+# handler (newHTTPServer in api/cmd/server/main.go). Binaries before that
+# logged the panic at INFO, and a crash writes "panic:" or "fatal error:"
+# straight to stderr, so those count too.
 LOGGED=(quitsie.service litestream.service)
 ERROR_RE='level=ERROR|msg="http: panic serving|^panic: |^fatal error: '
 
