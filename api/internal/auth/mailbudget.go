@@ -90,8 +90,9 @@ func (b mailBudget) wait(now time.Time) time.Duration {
 }
 
 // checkMailBudget returns a *MailBudgetError if no email fits in the budget
-// now. RequestCode asks before the limits of its sender, so that a request
-// nobody could serve does not spend them.
+// now. RequestCode asks before it takes the write lock: while the budget is
+// spent, which is when someone floods the server with requests, each refusal
+// costs only a read. spendMail asks again under the lock.
 func (s *Service) checkMailBudget(ctx context.Context) error {
 	now := s.now()
 	b, err := s.mailBudget(ctx, store.New(s.db), now)

@@ -151,6 +151,35 @@ func TestARequestRefusedForTheBudgetCostsTheSenderNothing(t *testing.T) {
 	}
 }
 
+// Requests at once can all pass the look at the budget and race for its last
+// email. Those that lose it under the write lock cost nothing either.
+func TestRequestsThatLoseTheLastEmailCostTheSenderNothing(t *testing.T) {
+	f := newFixture(t, withMailBudget(1, 10))
+	f.clock.Advance(50 * time.Minute)
+	results := make(chan error, 20)
+	for range 20 {
+		go func() { results <- f.newBrowser(anaIP).requestCode(anaEmail) }()
+	}
+	sent := 0
+	for range 20 {
+		switch err := <-results; {
+		case err == nil:
+			sent++
+		case !errors.Is(err, auth.ErrMailBudgetSpent):
+			t.Errorf("err = %v, want ErrMailBudgetSpent", err)
+		}
+	}
+	if sent != 1 {
+		t.Fatalf("sent %d codes, want the 1 of the budget", sent)
+	}
+
+	f.clock.Advance(10 * time.Minute) // a new hour of the budget
+
+	if err := f.newBrowser(anaIP).requestCode(anaEmail); err != nil {
+		t.Errorf("err = %v, want the second of the 3 codes an hour of the IP for Ana", err)
+	}
+}
+
 func TestTheBudgetIsFortyEmailsAnHourByDefault(t *testing.T) {
 	f := newFixture(t)
 	f.askForCodes(t, 40)
