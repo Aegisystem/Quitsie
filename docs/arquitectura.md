@@ -56,6 +56,7 @@ flowchart LR
 | Pieza | Servicio | Costo |
 | --- | --- | --- |
 | Servidor | Google Cloud `e2-micro` en `us-east1`, la región gratuita más cercana a Latinoamérica | 0 |
+| IP pública de la VM | IPv4 externa de Google Cloud, que la VM necesita para salir a Internet | ~3,65 USD/mes ([decisión 5](pendientes.md#3-decisiones-del-dueño), [opciones](investigacion/ip-publica.md)) |
 | DNS, CDN y TLS | Cloudflare | 0 |
 | Entrada al servidor | Cloudflare Tunnel (`cloudflared`): la VM no abre puertos públicos | 0 |
 | Respaldos | Litestream → Cloudflare R2 | 0 hasta 10 GB |
