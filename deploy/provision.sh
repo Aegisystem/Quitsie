@@ -60,8 +60,8 @@ check_platform() {
     debian|ubuntu) ;;
     *) die "solo se probó en Debian y Ubuntu; esta VM es ${ID:-desconocida}" ;;
   esac
-  for f in "${UNITS[@]}" "${WATCH_UNITS[@]}" litestream.yml quitsie-deploy.sh restore-test.sh alert-check.sh \
-    quitsie.env.example alert.env.example; do
+  for f in "${UNITS[@]}" "${WATCH_UNITS[@]}" litestream.yml quitsie-deploy.sh quitsie-restore.sh restore-test.sh \
+    alert-check.sh quitsie.env.example alert.env.example; do
     [[ -f $DEPLOY_DIR/$f ]] || die "falta $DEPLOY_DIR/$f: ejecútalo desde un checkout completo de deploy/"
   done
 }
@@ -228,6 +228,8 @@ install_files() {
   done
   if install_file "$DEPLOY_DIR/litestream.yml" /etc/litestream.yml 0644; then CHANGED_UNITS=1; fi
   install_file "$DEPLOY_DIR/quitsie-deploy.sh" /usr/local/sbin/quitsie-deploy 0755 || true
+  # quitsie-restore.service runs it; it is in place before anything starts that unit.
+  install_file "$DEPLOY_DIR/quitsie-restore.sh" /usr/local/sbin/quitsie-restore 0755 || true
   install_file "$DEPLOY_DIR/restore-test.sh" /usr/local/sbin/quitsie-restore-test 0755 || true
   install_file "$DEPLOY_DIR/alert-check.sh" /usr/local/sbin/quitsie-alert-check 0755 || true
   systemctl daemon-reload

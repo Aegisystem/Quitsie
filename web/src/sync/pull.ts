@@ -8,8 +8,9 @@ export async function pull(replica: Replica, api: Api): Promise<void> {
   for (;;) {
     const since = (await replica.meta.get('cursor'))?.value ?? 0
     const { data, response } = await api.GET('/sync', { params: { query: { since } } })
-    // 410: the cursor is ahead of the server, which restored an older backup.
-    // The replica may hold rows the server lost, so it starts over from 0.
+    // 410: the server restored a backup older than this cursor, which is now
+    // ahead of the server or among the versions it skipped. The replica may
+    // hold rows the server lost, so it starts over from 0.
     if (response.status === 410 && since > 0) {
       await clearReplica(replica)
       continue

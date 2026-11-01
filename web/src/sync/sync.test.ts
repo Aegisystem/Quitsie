@@ -276,6 +276,49 @@ describe('410', () => {
     const expenses = await firstValue(liveExpenses(replica, trip.id))
     expect(expenses.map((e) => e.description).sort()).toEqual(['Taxi', 'Tren'])
   })
+
+  // Without the jump, the server would hand out the lost versions again, and
+  // the device would skip Tren and keep Cena.
+  test('after a restore the replica is rebuilt however much the server writes before the device syncs', async () => {
+    const server = fakeServer()
+    const trip = server.addGroup({ name: 'Viaje a Cusco', currency: 'PEN', members: ['Ana'] })
+    server.addExpense(trip, { description: 'Taxi', paid: { Ana: 1000 }, owed: { Yo: 500, Ana: 500 } })
+    const backup = server.backup()
+    server.addExpense(trip, { description: 'Cena', paid: { Ana: 1000 }, owed: { Yo: 500, Ana: 500 } })
+    const { replica, engine } = setup(server)
+    await engine.sync()
+    const cursor = server.version()
+
+    server.restore(backup)
+    for (const description of ['Tren', 'Bus', 'Avión']) {
+      server.addExpense(trip, { description, paid: { Ana: 1000 }, owed: { Yo: 500, Ana: 500 } })
+    }
+    await engine.sync()
+
+    expect(server.pulls).toEqual([0, cursor, 0])
+    const expenses = await firstValue(liveExpenses(replica, trip.id))
+    expect(expenses.map((e) => e.description).sort()).toEqual(['Avión', 'Bus', 'Taxi', 'Tren'])
+  })
+
+  test('the rebuild after a restore can come in pages', async () => {
+    const server = fakeServer({ versionsPerPull: 2 })
+    const trip = server.addGroup({ name: 'Viaje a Cusco', currency: 'PEN', members: ['Ana'] })
+    server.addExpense(trip, { description: 'Taxi', paid: { Ana: 1000 }, owed: { Yo: 500, Ana: 500 } })
+    server.addExpense(trip, { description: 'Hotel', paid: { Ana: 1000 }, owed: { Yo: 500, Ana: 500 } })
+    const backup = server.backup()
+    server.addExpense(trip, { description: 'Cena', paid: { Ana: 1000 }, owed: { Yo: 500, Ana: 500 } })
+    const { replica, engine } = setup(server)
+    await engine.sync()
+
+    server.restore(backup)
+    server.addExpense(trip, { description: 'Tren', paid: { Ana: 1000 }, owed: { Yo: 500, Ana: 500 } })
+    await engine.sync()
+
+    expect(server.pulls.filter((since) => since === 0)).toHaveLength(2)
+    expect((await replica.meta.get('cursor'))?.value).toBe(server.version())
+    const expenses = await firstValue(liveExpenses(replica, trip.id))
+    expect(expenses.map((e) => e.description).sort()).toEqual(['Hotel', 'Taxi', 'Tren'])
+  })
 })
 
 describe('queue', () => {

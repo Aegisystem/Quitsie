@@ -127,7 +127,7 @@ journalctl -u quitsie-alert-check -u 'quitsie-alert@*' -n 50 --no-pager
 | Pieza | Unidad o archivo | Notas |
 | --- | --- | --- |
 | Aplicación | `quitsie.service`, `/usr/local/bin/quitsie` | Escucha en `127.0.0.1:8080`; la base está en `/var/lib/quitsie/quitsie.db` (0750, solo `quitsie`). |
-| Restauración al arrancar | `quitsie-restore.service` | Solo actúa si no hay base. Tiene las credenciales de R2; la aplicación no. Si R2 no responde en una VM nueva falla, y la aplicación y Litestream no arrancan: mejor parada que con una base vacía que se aparte del respaldo. |
+| Restauración al arrancar | `quitsie-restore.service`, `/usr/local/sbin/quitsie-restore` | Solo actúa si no hay base. Tiene las credenciales de R2; la aplicación no. Si R2 no responde en una VM nueva falla, y la aplicación y Litestream no arrancan: mejor parada que con una base vacía que se aparte del respaldo. Si trae una base, deja la marca `quitsie.db.restored` para la aplicación ([Qué pasa al restaurar](#qué-pasa-al-restaurar)). |
 | Respaldo | `litestream.service`, `/etc/litestream.yml` | Réplica continua a R2; conserva una semana de puntos de restauración. |
 | Entrada | `cloudflared.service` | Se actualiza con `apt upgrade`. |
 | Despliegue | `/usr/local/sbin/quitsie-deploy` | Lo ejecuta el usuario `deploy`. |
@@ -162,7 +162,7 @@ La VM se vigila a sí misma, sin servicios de pago ni cuentas nuevas. Cada 5 min
 | Disco | El disco de `/var/lib/quitsie` llega al 85 %. |
 | Errores | Llegó al registro de `quitsie` o de `litestream` una línea `level=ERROR`, un `panic` o un `fatal error`. La aplicación registra en ERROR todo lo que necesita al dueño, también cada respuesta 500. |
 
-Además, `quitsie`, `litestream`, `cloudflared` y la prueba semanal de restauración llevan `OnFailure=quitsie-alert@%n.service`: cuando systemd marca una como fallida, el aviso sale en ese momento, sin esperar a la siguiente comprobación.
+Además, `quitsie`, `litestream`, `cloudflared`, `quitsie-restore` y la prueba semanal de restauración llevan `OnFailure=quitsie-alert@%n.service`: cuando systemd marca una como fallida, el aviso sale en ese momento, sin esperar a la siguiente comprobación.
 
 **Prueba semanal de restauración.** `quitsie-restore-test.timer` ejecuta `quitsie-restore-test` cada lunes hacia las 13:00 UTC, con un retraso al azar de hasta una hora, a través de `quitsie-restore-test.service`. Si la VM estaba apagada, lo hace al arrancar. Antes del primer despliegue no hay base y se salta. Si falla, te escribe; cuando lo arregles, `sudo systemctl start quitsie-restore-test` la repite y el siguiente aviso dice que se resolvió. Su salida: `journalctl -u quitsie-restore-test -n 50`.
 
@@ -179,15 +179,24 @@ Además, `quitsie`, `litestream`, `cloudflared` y la prueba semanal de restaurac
 
 Litestream lee el WAL de SQLite y copia los cambios a `s3://quitsie-backups/quitsie.db` en R2 con un retraso de alrededor de un segundo, más una instantánea diaria. Con el intervalo por defecto escribe en R2 una vez por segundo mientras la aplicación escribe; la capa gratuita de R2 incluye 1.000.000 de escrituras al mes (comprueba la cifra vigente en el panel). Con poco tráfico sobra; si algún día se acerca, sube `sync-interval` en `litestream.yml`.
 
+### Qué pasa al restaurar
+
+Un respaldo es una copia vieja de la base. Un dispositivo que sincronizó después del instante restaurado guarda filas que el servidor ya no tiene, y su cursor apunta a versiones que la base restaurada volvería a entregar. Para que no se mezclen, la aplicación, en su primer arranque sobre una base restaurada, hace saltar la versión de sincronización y anota el tramo saltado. Esos dispositivos reciben `410` y rehacen su réplica desde cero, sin perder sus Registros sin sincronizar ([arquitectura.md](arquitectura.md#restaurar-un-respaldo)).
+
+La aplicación lo sabe por la marca `/var/lib/quitsie/quitsie.db.restored`. `quitsie-restore` la deja cuando trae una base de R2, y la aplicación la borra al arrancar, después de saltar y antes de atender a nadie. En `journalctl -u quitsie` queda una línea `the database came from a backup` con `restored_version` y `jumped_version`.
+
+- Si la aplicación se detiene entre el salto y el borrado de la marca, el siguiente arranque salta otra vez. No hace daño, y tampoco lo hace una marca sin restauración.
+- Si falta la marca tras una restauración, no hay salto, y los dispositivos que sincronizaron después del instante restaurado pueden perder filas sin aviso. Ante la duda, crea la marca.
+
 ### Prueba de restauración
 
-Un respaldo que nunca se ha restaurado no es un respaldo. Haz la prueba al terminar la instalación, después de cualquier cambio en R2 o en las credenciales, y una vez al mes. En la VM:
+Un respaldo que nunca se ha restaurado no es un respaldo. La VM hace esta prueba cada semana y avisa si falla ([Alertas](#alertas)). Hazla también a mano al terminar la instalación y después de cualquier cambio en R2 o en las credenciales. En la VM:
 
 ```bash
 sudo quitsie-restore-test
 ```
 
-Restaura el último respaldo en una carpeta temporal con `litestream restore -integrity-check full`, comprueba `PRAGMA integrity_check`, compara la versión de sincronización del respaldo con la de la base viva y termina con `OK` o con error. No toca la base real ni la réplica. Es lo mismo que, a mano:
+Restaura el último respaldo en una carpeta temporal con `litestream restore -integrity-check full`, comprueba `PRAGMA integrity_check`, compara la versión de sincronización del respaldo con la de la base viva, cuenta las restauraciones registradas en el respaldo y termina con `OK` o con error. Después de una restauración, la cuenta debe incluirla. No toca la base real ni la réplica. Es lo mismo que, a mano:
 
 ```bash
 sudo -i
@@ -196,12 +205,32 @@ litestream restore -config /etc/litestream.yml -o /var/tmp/restored.db -integrit
 sqlite3 /var/tmp/restored.db 'PRAGMA integrity_check;'      # ok
 ```
 
-Para volver a un instante anterior (por ejemplo, tras un borrado masivo), añade `-timestamp 2026-10-20T15:00:00Z`; cada restauración necesita su propia ruta de salida. Primero ejecuta con `-dry-run` para ver a qué punto llegaría.
+Para ver un instante anterior, añade `-timestamp 2026-10-20T15:00:00Z`; cada restauración necesita su propia ruta de salida. Primero ejecuta con `-dry-run` para ver a qué punto llegaría.
+
+### Restaurar a mano
+
+Para devolver la base viva a un instante anterior, por ejemplo tras un borrado masivo. Sin `-timestamp` trae el último respaldo. Lo escrito después de ese instante se pierde, incluidas las sesiones abiertas desde entonces: esos Usuarios vuelven a entrar. Mientras dure, no lances despliegues, porque uno arrancaría la aplicación a mitad. En la VM:
+
+```bash
+sudo -i
+systemctl stop quitsie litestream
+set -a; . /etc/quitsie/litestream.env; set +a
+dir=/var/tmp/quitsie-$(date -u +%Y%m%dT%H%M%SZ); mkdir "$dir"
+litestream restore -config /etc/litestream.yml -o "$dir/restored.db" -integrity-check full \
+  -timestamp 2026-10-20T15:00:00Z /var/lib/quitsie/quitsie.db
+mv /var/lib/quitsie/quitsie.db* "$dir"/      # la base reemplazada, con su -wal y su -shm
+install -o quitsie -g quitsie -m 600 "$dir/restored.db" /var/lib/quitsie/quitsie.db
+install -o quitsie -g quitsie -m 600 /dev/null /var/lib/quitsie/quitsie.db.restored
+systemctl start litestream quitsie
+journalctl -u quitsie -n 20 --no-pager | grep jumped_version
+```
+
+La segunda `install` crea la marca, y es obligatoria ([Qué pasa al restaurar](#qué-pasa-al-restaurar)). Si `journalctl` no muestra `jumped_version`, la aplicación arrancó sin la marca: detenla, crea la marca y vuelve a arrancarla cuanto antes, porque cada escritura sin salto puede reutilizar una versión perdida. Guarda la base reemplazada hasta comprobar que la restaurada está bien. Se probó con Litestream 0.5.17 y una réplica en disco: Litestream sigue replicando la base nueva, y una restauración posterior la trae con lo escrito después.
 
 ### Perder la VM
 
 1. **Apaga o borra la VM vieja** si sigue viva: dos máquinas replicando a la misma ruta de R2 estropean el respaldo.
-2. Crea una VM nueva (etapa 5 del asistente) y ejecuta `provision.sh` con las mismas claves de R2 y el token del túnel. Al arrancar Litestream, `quitsie-restore` trae la base de R2 antes de que nada la use.
+2. Crea una VM nueva (etapa 5 del asistente) y ejecuta `provision.sh` con las mismas claves de R2 y el token del túnel. Al arrancar Litestream, `quitsie-restore` trae la base de R2 antes de que nada la use y deja la marca. La aplicación salta las versiones en su primer arranque, con el despliegue del paso 4.
 3. Rellena otra vez `/etc/quitsie/quitsie.env`, que no está en el respaldo, con el mismo `QUITSIE_INVITE_SECRET`: uno nuevo revocaría todos los Enlaces de invitación.
 4. Actualiza la variable `DEPLOY_SSH_HOST_KEY` de GitHub (la VM nueva tiene otra clave de host; `provision.sh` la imprime al final) y lanza el despliegue: `gh workflow run deploy.yml --ref main`.
 
@@ -217,6 +246,7 @@ Con `quitsie.com` como principal, haz que `quitsie.app` redirija a él: añade a
 | Responde 502 | El túnel funciona pero no hay aplicación: aún no hay despliegue, o `quitsie.service` no arrancó (`journalctl -u quitsie`). |
 | El primer despliegue falla con «did not become healthy» y `journalctl -u quitsie` nombra una variable `QUITSIE_…` | `/etc/quitsie/quitsie.env` está incompleto: rellénalo ([Variables de la aplicación](#variables-de-la-aplicación)), reinicia el servicio y vuelve a desplegar. |
 | `quitsie.service` dice «dependency failed» | `quitsie-restore.service` falló: credenciales de R2 incorrectas o R2 inaccesible (`journalctl -u quitsie-restore`). No arranca a propósito. |
+| Tras una restauración, `quitsie.service` no arranca y su log dice «check the clock» | El reloj de la VM va tan adelantado que el salto de versiones pasaría de lo que la PWA lee con exactitud. Corrige la hora (`timedatectl status`) y reinicia el servicio: la marca sigue ahí. |
 | El workflow falla en «Install the binary…» con un error de Access o 255 | Token de servicio caducado o mal copiado, o la aplicación de Access no incluye el token en una política Service Auth. |
 | El workflow falla con «host key verification failed» | La variable `DEPLOY_SSH_HOST_KEY` no es la de la VM actual. |
 | El deploy termina con «rolling back» | El binario nuevo no llegó a estar sano; el anterior sigue sirviendo. El log trae las últimas líneas del servicio. |
@@ -230,6 +260,7 @@ Con `quitsie.com` como principal, haz que `quitsie.app` redirija a él: añade a
 | `first-deploy-wizard.sh` | La guía interactiva del primer despliegue. |
 | `provision.sh` | Prepara la VM (idempotente). |
 | `quitsie-deploy.sh` | Se instala como `/usr/local/sbin/quitsie-deploy`: instala el binario, reinicia y revierte. |
+| `quitsie-restore.sh` | Se instala como `/usr/local/sbin/quitsie-restore`; lo ejecuta `quitsie-restore.service`. |
 | `restore-test.sh` | Se instala como `/usr/local/sbin/quitsie-restore-test`. |
 | `alert-check.sh` | Se instala como `/usr/local/sbin/quitsie-alert-check`: las [alertas](#alertas). |
 | `alert-check.test.sh` | Prueba `alert-check.sh` con sustitutos de `curl`, `systemctl` y `journalctl`; la ejecuta la CI. |

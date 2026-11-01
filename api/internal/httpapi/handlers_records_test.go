@@ -39,8 +39,14 @@ type recordsAPI struct {
 
 func newRecordsAPI(t *testing.T) *recordsAPI {
 	t.Helper()
+	return openRecordsAPI(t, filepath.Join(t.TempDir(), "quitsie.db"))
+}
+
+// openRecordsAPI serves the database at path, as the server does on start.
+func openRecordsAPI(t *testing.T, path string) *recordsAPI {
+	t.Helper()
 	ctx := context.Background()
-	db, err := store.Open(ctx, filepath.Join(t.TempDir(), "quitsie.db"))
+	db, err := store.Open(ctx, path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -638,6 +644,54 @@ func TestPullChangesRefusesACursorAheadOfTheServer(t *testing.T) {
 	cursor := a.pull(t, tr.ana, 0).Cursor
 
 	decodeProblem(t, a.do(tr.ana, http.MethodGet, fmt.Sprintf("/api/v1/sync?since=%d", cursor+1), nil), http.StatusGone, httpapi.ProblemCodeCursorInvalid)
+}
+
+// backup copies the database to a new file, as Litestream keeps it in R2.
+func (a *recordsAPI) backup() string {
+	a.t.Helper()
+	path := filepath.Join(a.t.TempDir(), "backup.db")
+	if _, err := a.db.Exec(`VACUUM INTO ?`, path); err != nil {
+		a.t.Fatal(err)
+	}
+	return path
+}
+
+// restoredRecordsAPI serves a backup as the server does on its first start
+// after a restore: it records the restore before answering anyone.
+func restoredRecordsAPI(t *testing.T, backup string) *recordsAPI {
+	t.Helper()
+	a := openRecordsAPI(t, backup)
+	if _, err := store.RecordRestore(context.Background(), a.db, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	return a
+}
+
+func TestPullChangesRefusesACursorFromTheCopyARestoreReplaced(t *testing.T) {
+	a := newRecordsAPI(t)
+	tr := a.seedTrip()
+	dinner := tr.dinner()
+	a.push(t, tr.ana, expenses(dinner))
+	beforeBackup := a.pull(t, tr.ana, 0).Cursor
+	backup := a.backup()
+	a.push(t, tr.ana, expenses(tr.dinner()))
+	// This device holds an Expense that the restore loses.
+	afterBackup := a.pull(t, tr.ana, beforeBackup).Cursor
+
+	r := restoredRecordsAPI(t, backup)
+	rebuilt := r.pull(t, tr.ana, 0)
+	taxi := tr.dinner()
+	r.push(t, tr.ana, expenses(taxi))
+
+	decodeProblem(t, r.do(tr.ana, http.MethodGet, fmt.Sprintf("/api/v1/sync?since=%d", afterBackup), nil), http.StatusGone, httpapi.ProblemCodeCursorInvalid)
+	if got := rebuilt.Expenses; len(got) != 1 || got[0].Id != dinner.Id {
+		t.Errorf("a pull from 0 brought %+v, want only the dinner", got)
+	}
+	for _, since := range []int64{beforeBackup, rebuilt.Cursor} {
+		if got := r.pull(t, tr.ana, since).Expenses; len(got) != 1 || got[0].Id != taxi.Id {
+			t.Errorf("a pull from %d brought %+v, want only the taxi", since, got)
+		}
+	}
 }
 
 func TestPullChangesRefusesANegativeCursor(t *testing.T) {
