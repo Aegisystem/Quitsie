@@ -33,6 +33,12 @@ export function bandsOf(balances: ReadonlyMap<string, number | bigint>): Band[] 
   return [...balances].map(([currency, amount]) => ({ currency, amount, unit: tallyUnit(Number(amount), currency) }))
 }
 
+// How long the bands that reached zero take to empty: as long as their longest row.
+export function settlingMs(shown: readonly Band[], bands: readonly Band[]): number {
+  const rows = withSettling(shown, bands).settling.map(({ amount, unit }) => tokensOf(Number(amount), unit).length)
+  return emptyingMs(Math.max(0, ...rows))
+}
+
 // The bands to show, given those on screen and those there are now. A currency
 // whose Balance just reached zero keeps its band, in its place, at zero and with
 // the unit its tokens had, until its row empties. New currencies go last.

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { type Band, bandsOf, emptyingMs, tokensOf, withSettling } from './tally'
+import { type Band, bandsOf, emptyingMs, settlingMs, tokensOf, withSettling } from './tally'
 
 describe('a row of tokens', () => {
   it('has a whole token per unit and cuts the last one', () => {
@@ -46,5 +46,10 @@ describe('the bands of Balance', () => {
   it('put a new currency after those already shown', () => {
     const eur = band('EUR', 1000, 100)
     expect(withSettling([usd, mxn], [eur, mxn]).bands).toEqual([band('USD', 0, 1000), mxn, eur])
+  })
+
+  it('wait for the longest row that reached zero to empty, and for nothing when none did', () => {
+    expect(settlingMs([usd, mxn], [band('USD', 2500, 500), mxn])).toBe(0)
+    expect(settlingMs([usd, mxn], [])).toBe(emptyingMs(10))
   })
 })
