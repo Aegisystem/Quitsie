@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Aegisystem/Quitsie/api/internal/store"
@@ -33,6 +34,9 @@ const (
 	// maxKnownDevicesPerBrowser is how many Users one browser stays known to,
 	// such as the people of a household that share a laptop.
 	maxKnownDevicesPerBrowser = 5
+	// knownDeviceSweepInterval is how often sign-in looks for the known
+	// devices of every User that went knownDeviceLifetime unused.
+	knownDeviceSweepInterval = 24 * time.Hour
 )
 
 // KnownDeviceCookie returns the cookie that carries the value of
@@ -130,15 +134,50 @@ func (s *Service) rememberDevice(ctx context.Context, q *store.Queries, userID, 
 			return "", fmt.Errorf("auth: create known device: %w", err)
 		}
 	}
-	err := q.DeleteStaleKnownDevices(ctx, store.DeleteStaleKnownDevicesParams{
-		UserID:     userID,
-		UsedBefore: now.Add(-knownDeviceLifetime),
-		Keep:       maxKnownDevicesPerUser,
-	})
+	err := q.DeleteSurplusKnownDevices(ctx, store.DeleteSurplusKnownDevicesParams{UserID: userID, Keep: maxKnownDevicesPerUser})
 	if err != nil {
-		return "", fmt.Errorf("auth: delete stale known devices: %w", err)
+		return "", fmt.Errorf("auth: delete surplus known devices: %w", err)
+	}
+	if err := s.deleteStaleKnownDevices(ctx, q, now); err != nil {
+		return "", err
 	}
 
 	tokens := append([]string{mine}, others...)
 	return strings.Join(tokens[:min(len(tokens), maxKnownDevicesPerBrowser)], "."), nil
+}
+
+// deleteStaleKnownDevices deletes the known devices of every User that went
+// knownDeviceLifetime unused: those of a User who never signs in again would
+// otherwise stay forever. It reads the whole table, up to 20 rows per User,
+// with the write lock held, so it runs once every knownDeviceSweepInterval and
+// not on every sign-in, which anyone with a Google account can repeat (finding
+// 14 of docs/revision-seguridad.md).
+func (s *Service) deleteStaleKnownDevices(ctx context.Context, q *store.Queries, now time.Time) error {
+	if !s.deviceSweep.due(now) {
+		return nil
+	}
+	if err := q.DeleteStaleKnownDevices(ctx, now.Add(-knownDeviceLifetime)); err != nil {
+		return fmt.Errorf("auth: delete stale known devices: %w", err)
+	}
+	return nil
+}
+
+// periodic tells when a job is due that must not run more than once per
+// interval.
+type periodic struct {
+	interval time.Duration
+	mu       sync.Mutex
+	last     time.Time
+}
+
+// due reports whether interval passed since the job was last due, and if so
+// counts it as due now.
+func (w *periodic) due(now time.Time) bool {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if !w.last.IsZero() && now.Sub(w.last) < w.interval {
+		return false
+	}
+	w.last = now
+	return true
 }

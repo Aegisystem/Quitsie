@@ -18,7 +18,7 @@ No es la política de privacidad. Lo que solo puede decidir o firmar el dueño e
 | Sesiones: hash del token, navegador (el `User-Agent`), alta y último uso | `sessions` | Hasta cerrar la sesión, borrar la cuenta o pasar 90 días sin uso |
 | Códigos de acceso: email, hash del código, hash de la cookie de flujo, intentos | `login_codes` | 10 minutos. La fila caducada se borra con la siguiente petición de código de cualquiera |
 | Códigos equivocados: hash del email o del dispositivo, cuántos y hasta cuándo | `login_failures` | 24 horas, y se borra con la siguiente petición de código |
-| Dispositivos conocidos: hash del token, Usuario, alta y último uso | `known_devices` | Un año sin entrar desde ese navegador. Como mucho 20 por Usuario. Se borran con la cuenta |
+| Dispositivos conocidos: hash del token, Usuario, alta y último uso | `known_devices` | Un año sin entrar desde ese navegador. Una vez al día, el primer inicio de sesión de cualquiera borra los que pasaron ese año. Como mucho 20 por Usuario. Se borran con la cuenta |
 | Nombre y email de cada Miembro o Amigo; nombre de cada Grupo | `members`, `ledgers` | Lo que dure el libro. Al borrar una cuenta, sus Miembros vuelven a ser pendientes, conservan el nombre y pierden el email |
 | Gastos (descripción, fecha, importes, Categoría, autor), Liquidaciones y Actividades | `expenses`, `paid_shares`, `owed_shares`, `settlements`, `activities` | Lo que dure el libro. Un Gasto borrado se puede restaurar sin límite de tiempo, así que no desaparece |
 | Correos enviados por hora, sin direcciones | `mail_sends` | 24 horas |
