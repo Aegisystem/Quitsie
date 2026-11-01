@@ -157,23 +157,30 @@ func (s *Server) clock() func() time.Time {
 	return time.Now
 }
 
-// clientIP is who a request counts as for the limits per IP.
+// throughTunnel reports whether a request came through cloudflared, and so
+// whether the headers Cloudflare writes about the visitor can be believed.
 //
-// Whether a request came through the tunnel is decided by the peer of its
-// connection, which a client cannot forge. cloudflared runs on this machine
-// and connects over loopback, so that peer means "behind the tunnel", where
-// every visitor shares 127.0.0.1 and Cloudflare writes the real address in
-// CF-Connecting-IP. Any other peer reached this port directly, which only
-// happens if QUITSIE_ADDR leaves loopback: nothing stopped it from writing that
-// header, so only its own address counts. On the VM the port is not public,
-// and cloudflared must stay the only process that forwards traffic to it.
+// It is decided by the peer of the connection, which a client cannot forge.
+// cloudflared runs on this machine and connects over loopback, so that peer
+// means "behind the tunnel". Any other peer reached this port directly, which
+// only happens if QUITSIE_ADDR leaves loopback: nothing stopped it from
+// writing those headers itself. On the VM the port is not public, and
+// cloudflared must stay the only process that forwards traffic to it.
+func throughTunnel(r *http.Request) bool {
+	peer, err := netip.ParseAddrPort(r.RemoteAddr)
+	return err == nil && peer.Addr().Unmap().IsLoopback()
+}
+
+// clientIP is who a request counts as for the limits per IP. Behind the
+// tunnel every visitor shares 127.0.0.1 and Cloudflare writes the real
+// address in CF-Connecting-IP; any other peer only counts as itself.
 func clientIP(r *http.Request) string {
 	peer, err := netip.ParseAddrPort(r.RemoteAddr)
 	if err != nil {
 		return r.RemoteAddr
 	}
 	ip := peer.Addr().Unmap()
-	if ip.IsLoopback() {
+	if throughTunnel(r) {
 		if visitor, err := netip.ParseAddr(r.Header.Get("CF-Connecting-IP")); err == nil {
 			ip = visitor.Unmap()
 		}

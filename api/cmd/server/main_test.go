@@ -59,6 +59,31 @@ func TestAProductionEnvironment(t *testing.T) {
 	}
 }
 
+// HSTS and the redirect to HTTPS would lock a developer's localhost out of
+// plain HTTP, so only production turns them on, whatever the origin.
+func TestOnlyProductionEnforcesHTTPS(t *testing.T) {
+	tests := []struct {
+		name   string
+		getenv func(string) string
+		want   string
+	}{
+		{"production by default", env(production, nil), "https://quitsie.app"},
+		{"production by name", env(production, map[string]string{"QUITSIE_ENV": "production"}), "https://quitsie.app"},
+		{"development", env(development, map[string]string{"QUITSIE_PUBLIC_ORIGIN": "https://quitsie.localhost"}), ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg, err := loadConfig(tt.getenv)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if cfg.httpsOrigin != tt.want {
+				t.Errorf("httpsOrigin = %q, want %q", cfg.httpsOrigin, tt.want)
+			}
+		})
+	}
+}
+
 func TestTheDefaultCurrencyIsDollars(t *testing.T) {
 	cfg, err := loadConfig(env(production, nil))
 	if err != nil {

@@ -38,7 +38,7 @@ func NewHandler(s *Server, pwa fs.FS) http.Handler {
 	// cannot, and whatever watches it must never be limited.
 	mux.Handle("GET /api/v1/health", api)
 	mux.Handle("/", limit(pwaHandler(pwa)))
-	return securityHeaders(mux)
+	return securityHeaders(s.deps.HTTPSOrigin, mux)
 }
 
 // guard refuses API requests that change data from another origin (CSRF),

@@ -6,7 +6,8 @@
 //
 //	QUITSIE_ADDR                  address to listen on (default 127.0.0.1:8080; cloudflared connects to it)
 //	QUITSIE_DB_PATH               SQLite file (default quitsie.db)
-//	QUITSIE_ENV                   production (default) or development
+//	QUITSIE_ENV                   production (default) or development; production also sends HSTS and
+//	                              redirects visitors Cloudflare saw on plain HTTP to QUITSIE_PUBLIC_ORIGIN
 //	QUITSIE_PUBLIC_ORIGIN         required: the app's base URL, such as https://quitsie.app (development defaults to http://localhost:8080)
 //	QUITSIE_MAIL                  resend (default), or log to write emails to the log, login codes included; development only
 //	QUITSIE_RESEND_API_KEY        required with resend: the key of the Resend account
@@ -107,6 +108,7 @@ func run(logger *slog.Logger) error {
 		Auth:         authService,
 		Origins:      cfg.origins,
 		InviteSecret: cfg.inviteSecret,
+		HTTPSOrigin:  cfg.httpsOrigin,
 	})
 	srv := &http.Server{
 		Addr:              cfg.addr,
@@ -143,6 +145,9 @@ type config struct {
 	// origins are the app's own origins; requests that change data must
 	// come from one of them.
 	origins []string
+	// httpsOrigin is the public origin in production, where the server
+	// enforces HTTPS; empty in development.
+	httpsOrigin string
 	// logMail writes emails to the log instead of sending them with resend.
 	logMail         bool
 	resend          mail.ResendConfig
@@ -199,6 +204,9 @@ func loadConfig(getenv func(string) string) (config, error) {
 	cfg.origins = []string{origin}
 	if development && origin != viteOrigin {
 		cfg.origins = append(cfg.origins, viteOrigin)
+	}
+	if !development {
+		cfg.httpsOrigin = origin
 	}
 
 	if _, ok := domain.Currency(cfg.defaultCurrency).Decimals(); !ok {
