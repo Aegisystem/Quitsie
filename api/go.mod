@@ -1,6 +1,6 @@
 module github.com/Aegisystem/Quitsie/api
 
-go 1.26.1
+go 1.26.10
 
 require (
 	github.com/coreos/go-oidc/v3 v3.21.0

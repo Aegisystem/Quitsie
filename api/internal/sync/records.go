@@ -33,6 +33,9 @@ func UpdateExpense(ctx context.Context, db *sql.DB, userID string, e store.Expen
 		if stored.Version != expectedVersion || stored.DeletedAt != nil {
 			return store.ErrVersionConflict
 		}
+		if err := checkRoom(ctx, q, stored.LedgerID); err != nil {
+			return err
+		}
 		if err := checkExpense(e); err != nil {
 			return &Rejection{ReasonInvalidRecord, err}
 		}
@@ -55,6 +58,19 @@ func UpdateExpense(ctx context.Context, db *sql.DB, userID string, e store.Expen
 		return store.ExpenseWithShares{}, err
 	}
 	return updated, nil
+}
+
+// checkRoom refuses a change that grows a full ledger. Deleting is not one of
+// them: it can only be repeated after restoring, which is.
+func checkRoom(ctx context.Context, q *store.Queries, ledgerID string) error {
+	full, err := ledgers.Full(ctx, q, ledgerID)
+	if err != nil {
+		return err
+	}
+	if full {
+		return &Rejection{ReasonLimitReached, errLedgerFull}
+	}
+	return nil
 }
 
 // errUnchanged rolls back the write of an operation that finds its work
@@ -106,6 +122,9 @@ func RestoreExpense(ctx context.Context, db *sql.DB, userID, id string) (store.E
 		restored = stored
 		if stored.DeletedAt == nil {
 			return errUnchanged
+		}
+		if err := checkRoom(ctx, q, stored.LedgerID); err != nil {
+			return err
 		}
 		if err := domain.ValidateExpense(ledger.Domain(), ledgers.Expense(stored)); err != nil {
 			return rejection(err)
@@ -178,6 +197,9 @@ func RestoreSettlement(ctx context.Context, db *sql.DB, userID, id string) (stor
 		restored = stored
 		if stored.DeletedAt == nil {
 			return errUnchanged
+		}
+		if err := checkRoom(ctx, q, stored.LedgerID); err != nil {
+			return err
 		}
 		if err := domain.ValidateSettlement(ledger.Domain(), ledgers.Settlement(stored)); err != nil {
 			return rejection(err)

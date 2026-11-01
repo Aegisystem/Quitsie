@@ -100,6 +100,93 @@ func TestABodyJustUnderTheLimitIsRead(t *testing.T) {
 	decodeProblem(t, rec, http.StatusBadRequest, httpapi.ProblemCodeValidationFailed)
 }
 
+// Whoever signs in has not shown who they are yet, and all they send is an
+// email and a code. A long crafted address once cost a minute of CPU.
+func TestSigningInOnlyTakesASmallBody(t *testing.T) {
+	a := newTestAPI(t)
+	c := a.newClient(t)
+	tooLarge := `{"email":"` + strings.Repeat("(a", 4<<10) + `@example.com","code":"123456"}`
+
+	for _, path := range []string{"/api/v1/auth/login-code", "/api/v1/auth/login-code/verify"} {
+		wantProblem(t, c.do(http.MethodPost, path, tooLarge), http.StatusRequestEntityTooLarge, httpapi.ProblemCodeBodyTooLarge)
+	}
+
+	longest := strings.Repeat("a", 240) + "@example.com"
+	wantStatus(t, c.do(http.MethodPost, "/api/v1/auth/login-code", `{"email":"`+longest+`"}`), http.StatusNoContent)
+}
+
+// The limit per IP counts requests, and each can weigh 2 MiB.
+func TestAUserCanOnlySendSoMuchPerHour(t *testing.T) {
+	w := newWorld(t)
+	ana, beto := w.signIn("Ana"), w.signIn("Beto")
+	// Its name is too long, so each one costs its size and stores nothing.
+	mebibyte := `{"name":"` + strings.Repeat("x", 1<<20-100) + `","currency":"COP"}`
+	for i := range 5 {
+		if rec := ana.send(http.MethodPost, "/api/v1/groups", mebibyte); rec.Code != http.StatusBadRequest {
+			t.Fatalf("request %d: code = %d, want 400", i+1, rec.Code)
+		}
+	}
+
+	rec := ana.send(http.MethodPost, "/api/v1/groups", mebibyte)
+
+	if got := rec.Header().Get("Retry-After"); got == "" {
+		t.Error("Retry-After is missing")
+	}
+	decodeProblem(t, rec, http.StatusTooManyRequests, httpapi.ProblemCodeRateLimited)
+	if rec := ana.send(http.MethodGet, "/api/v1/me", ""); rec.Code != http.StatusOK {
+		t.Errorf("reading: code = %d, want 200", rec.Code)
+	}
+	if rec := beto.send(http.MethodPost, "/api/v1/groups", `{"name":"Casa","currency":"COP"}`); rec.Code != http.StatusCreated {
+		t.Errorf("another User: code = %d, want 201", rec.Code)
+	}
+	// Whatever else happens, nobody is kept from signing out.
+	if rec := ana.send(http.MethodPost, "/api/v1/auth/logout", ""); rec.Code != http.StatusNoContent {
+		t.Errorf("signing out: code = %d, want 204", rec.Code)
+	}
+}
+
+func TestALongHistoryArrivesInPages(t *testing.T) {
+	w := newWorld(t)
+	ana := w.signIn("Ana")
+	groupID := ana.createGroup(`{"name":"Casa","currency":"COP"}`)
+	const history = 25_000
+	_, err := w.db.Exec(`
+		WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < ?)
+		INSERT INTO activities (id, ledger_id, user_id, kind, details, version, created_at)
+		SELECT printf('00000000-0000-7000-8000-%012d', i), ?, ?, 'group_renamed', '{}', 1000 + i, '2026-10-31 00:00:00+00:00' FROM n`,
+		history, groupID, ana.id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := w.db.Exec(`UPDATE version_counter SET value = ?`, 1000+history); err != nil {
+		t.Fatal(err)
+	}
+
+	seen := map[string]bool{}
+	since, pages := int64(0), 0
+	for {
+		changes := decode[httpapi.Changes](t, ana.send(http.MethodGet, fmt.Sprintf("/api/v1/sync?since=%d", since), ""), http.StatusOK)
+		pages++
+		if len(changes.Activities) > 20_100 {
+			t.Fatalf("page %d has %d Activities, want it cut around 20,000 rows", pages, len(changes.Activities))
+		}
+		for _, a := range changes.Activities {
+			seen[a.Id.String()] = true
+		}
+		since = changes.Cursor
+		if !changes.HasMore {
+			break
+		}
+	}
+
+	if pages != 2 {
+		t.Errorf("pages = %d, want 2", pages)
+	}
+	if want := history + 1; len(seen) != want { // and the one of creating the Group
+		t.Errorf("got %d Activities, want %d", len(seen), want)
+	}
+}
+
 // limited is a server with a clock the test moves.
 func limited(t *testing.T) (http.Handler, *clock) {
 	t.Helper()

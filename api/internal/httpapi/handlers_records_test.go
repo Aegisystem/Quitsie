@@ -73,7 +73,7 @@ func (a *recordsAPI) signIn(email string) signedIn {
 	if err := a.auth.RequestCode(ctx, email, "203.0.113.7"); err != nil {
 		a.t.Fatal(err)
 	}
-	in, err := a.auth.VerifyCode(ctx, email, a.codeBox.lastCode(a.t, email), "test")
+	in, err := a.auth.VerifyCode(ctx, email, a.codeBox.lastCode(a.t, email), "test", email)
 	if err != nil {
 		a.t.Fatal(err)
 	}

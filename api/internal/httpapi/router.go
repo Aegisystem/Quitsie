@@ -28,9 +28,11 @@ func NewHandler(s *Server, pwa fs.FS) http.Handler {
 		writeProblem(w, http.StatusNotFound, ProblemCodeNotFound, "There is no such API endpoint.", "")
 	})
 
-	limit := s.requestLimit()
+	limit, guarded := s.requestLimit(), s.guard(api)
 	mux := http.NewServeMux()
-	mux.Handle("/api/", limit(limitBody(s.guard(api))))
+	mux.Handle("/api/", limit(limitBody(maxBodyBytes, guarded)))
+	mux.Handle("POST /api/v1/auth/", limit(limitBody(maxAuthBodyBytes, guarded)))
+	mux.Handle("GET /api/v1/sync", limit(gate(maxPullsAtOnce, pullWait, guarded)))
 	// Health needs no User, it must keep working when the session lookup
 	// cannot, and whatever watches it must never be limited.
 	mux.Handle("GET /api/v1/health", api)
@@ -39,8 +41,10 @@ func NewHandler(s *Server, pwa fs.FS) http.Handler {
 }
 
 // guard refuses API requests that change data from another origin (CSRF),
-// and then finds the User of the rest from their session cookie.
+// finds the User of the rest from their session cookie, and holds that User to
+// one pull at a time and to their budget of changes.
 func (s *Server) guard(next http.Handler) http.Handler {
+	next = onePerKey(pullingUser, s.writeBudget(next))
 	if s.deps.Auth != nil {
 		next = s.deps.Auth.Authenticate(handlerError)(next)
 	}

@@ -54,6 +54,12 @@ type LoginCode struct {
 	CreatedAt time.Time
 }
 
+type LoginFailure struct {
+	EmailHash string
+	Failures  int64
+	ResetsAt  time.Time
+}
+
 type Member struct {
 	ID        string
 	LedgerID  string

@@ -44,7 +44,7 @@ func Push(ctx context.Context, db *sql.DB, userID string, batch Batch) ([]Result
 	now := time.Now().UTC()
 	var results []Result
 	_, err := store.Write(ctx, db, func(q *store.Queries, version int64) error {
-		p := pusher{q: q, userID: userID, version: version, now: now, ledgers: make(map[string]*ledgers.Snapshot)}
+		p := pusher{q: q, userID: userID, version: version, now: now, ledgers: make(map[string]*ledgers.Snapshot), rows: make(map[string]int64)}
 		for _, e := range batch.Expenses {
 			r, err := p.expense(ctx, e)
 			if err != nil {
@@ -76,6 +76,26 @@ type pusher struct {
 	// ledgers caches each ledger of the Batch the User can use; nil for one
 	// they cannot.
 	ledgers map[string]*ledgers.Snapshot
+	// rows counts the rows of each ledger of the Batch, as the records of the
+	// Batch add to them.
+	rows map[string]int64
+}
+
+// makeRoom reserves rows more rows in ledgerID, or reports that they do not fit.
+func (p pusher) makeRoom(ctx context.Context, ledgerID string, rows int64) (bool, error) {
+	used, known := p.rows[ledgerID]
+	if !known {
+		var err error
+		if used, err = p.q.CountLedgerRows(ctx, ledgerID); err != nil {
+			return false, fmt.Errorf("count rows of %s: %w", ledgerID, err)
+		}
+	}
+	if used+rows > ledgers.MaxRows {
+		p.rows[ledgerID] = used
+		return false, nil
+	}
+	p.rows[ledgerID] = used + rows
+	return true, nil
 }
 
 // ledger loads the ledger id, or returns nil if it does not exist, was
@@ -124,6 +144,15 @@ func (p pusher) expense(ctx context.Context, e store.ExpenseWithShares) (Result,
 		r.Rejection = rejection(err)
 		return r, nil
 	}
+	// The Expense, its shares and its Activity.
+	fits, err := p.makeRoom(ctx, e.LedgerID, int64(2+len(e.PaidShares)+len(e.OwedShares)))
+	if err != nil {
+		return r, err
+	}
+	if !fits {
+		r.Rejection = &Rejection{ReasonLimitReached, errLedgerFull}
+		return r, nil
+	}
 
 	e.CreatedBy, e.Version, e.CreatedAt = p.userID, p.version, p.now
 	if _, _, err := p.q.CreateExpense(ctx, e); err != nil {
@@ -161,6 +190,15 @@ func (p pusher) settlement(ctx context.Context, s store.Settlement) (Result, err
 	}
 	if err := domain.ValidateSettlement(ledger.Domain(), ledgers.Settlement(s)); err != nil {
 		r.Rejection = rejection(err)
+		return r, nil
+	}
+	// The Settlement and its Activity.
+	fits, err := p.makeRoom(ctx, s.LedgerID, 2)
+	if err != nil {
+		return r, err
+	}
+	if !fits {
+		r.Rejection = &Rejection{ReasonLimitReached, errLedgerFull}
 		return r, nil
 	}
 

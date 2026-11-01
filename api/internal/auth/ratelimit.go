@@ -12,6 +12,9 @@ const (
 	sendWindow      = time.Hour
 	maxSendsPerMail = 5
 	maxSendsPerIP   = 30
+	// maxVerificationsPerIP stops one sender from spreading guesses over many
+	// emails. It allows two tries per code of maxSendsPerIP.
+	maxVerificationsPerIP = 60
 )
 
 // limiter counts events per key over a sliding window. It lives in memory,

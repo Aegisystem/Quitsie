@@ -12,7 +12,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/google/uuid"
-	openapi_types "github.com/oapi-codegen/runtime/types"
 
 	"github.com/Aegisystem/Quitsie/api/internal/auth"
 	"github.com/Aegisystem/Quitsie/api/internal/domain"
@@ -58,9 +57,28 @@ func invalid(format string, args ...any) *failure {
 
 const (
 	maxGroupOrMemberName = 80
-	maxEmailLength       = 254
 	maxNewMembers        = 50
+	// maxMembersPerGroup counts former members too, who stay on past Expenses.
+	maxMembersPerGroup = 200
+	// maxLedgersPerUser counts the Groups and Friendships a User has an active
+	// Member in. Someone else can still add them to a Friendship past it: that
+	// is not a choice of theirs to refuse.
+	maxLedgersPerUser = 200
 )
+
+var errLimitReached = &failure{status: http.StatusConflict, code: ProblemCodeLimitReached, title: "This has reached its limit."}
+
+// checkRoomForLedger refuses what would give the User one ledger too many.
+func checkRoomForLedger(ctx context.Context, q *store.Queries, userID string) error {
+	held, err := q.ListLedgersOfUser(ctx, userID)
+	if err != nil {
+		return fmt.Errorf("list ledgers of user: %w", err)
+	}
+	if len(held) >= maxLedgersPerUser {
+		return errLimitReached
+	}
+	return nil
+}
 
 // cleanName trims a Group's or a Member's name and checks its length.
 func cleanName(name string) (string, error) {
@@ -92,9 +110,11 @@ func cleanPendingMember(m NewPendingMember) (pendingMember, error) {
 	}
 	p := pendingMember{name: name}
 	if m.Email != nil {
-		email := string(*m.Email)
-		if len(email) > maxEmailLength {
-			return pendingMember{}, invalid("an email must have at most %d characters", maxEmailLength)
+		// The same rule as signing in, which also keeps out what the decoder
+		// lets through but no response could write back: "a b"@example.com.
+		email, err := auth.NormalizeEmail(string(*m.Email))
+		if err != nil {
+			return pendingMember{}, invalid("the email must be a plain address of at most 254 characters")
 		}
 		p.email = &email
 	}
@@ -178,8 +198,23 @@ func newID() string {
 	return uuid.Must(uuid.NewV7()).String()
 }
 
-// activity records who changed what in a ledger; details depend on kind.
+// waysOut are the changes a full ledger still takes, so that nobody is stuck in
+// one that any Member could have filled. Going back in after any of them is a
+// change it refuses, so they cannot be repeated to keep growing it.
+var waysOut = map[string]bool{"member_left": true, "member_removed": true, "claim_undone": true, "group_deleted": true}
+
+// activity records who changed what in a ledger; details depend on kind. Every
+// change leaves one, so this is where a full ledger refuses them.
 func activity(ctx context.Context, q *store.Queries, ledgerID, userID, kind string, details map[string]any, version int64) error {
+	if !waysOut[kind] {
+		full, err := ledgers.Full(ctx, q, ledgerID)
+		if err != nil {
+			return err
+		}
+		if full {
+			return errLimitReached
+		}
+	}
 	if details == nil {
 		details = map[string]any{}
 	}
@@ -261,6 +296,9 @@ func (s *Server) CreateGroup(ctx context.Context, req CreateGroupRequestObject) 
 		CreatedAt:     now,
 	}
 	ledger.Version, err = store.Write(ctx, s.deps.DB, func(q *store.Queries, version int64) error {
+		if err := checkRoomForLedger(ctx, q, user.ID); err != nil {
+			return err
+		}
 		err := q.CreateLedger(ctx, store.CreateLedgerParams{
 			ID:            ledger.ID,
 			Kind:          ledger.Kind,
@@ -465,9 +503,8 @@ func memberResponse(m store.Member) Member {
 		r.UserId = &id
 	}
 	// Only a pending Member's email is shown: a linked one's belongs to the User.
-	if m.Email != nil && m.UserID == nil {
-		email := openapi_types.Email(*m.Email)
-		r.Email = &email
+	if m.UserID == nil {
+		r.Email = m.Email
 	}
 	return r
 }
@@ -489,6 +526,9 @@ func (s *Server) AddPendingMember(ctx context.Context, req AddPendingMemberReque
 		snap, _, err := open(ctx, q, req.GroupId.String(), "group", user.ID)
 		if err != nil {
 			return err
+		}
+		if len(snap.Members) >= maxMembersPerGroup {
+			return errLimitReached
 		}
 		member = store.Member{
 			ID:        newID(),
@@ -840,6 +880,9 @@ func (s *Server) JoinGroup(ctx context.Context, req JoinGroupRequestObject) (Joi
 			if held.Status == "active" {
 				return errAlreadyMember
 			}
+			if err := checkRoomForLedger(ctx, q, user.ID); err != nil {
+				return err
+			}
 			// Whoever comes back recovers their former member and its history.
 			if member, err = q.ReactivateMember(ctx, store.ReactivateMemberParams{ID: held.ID, Version: version}); err != nil {
 				return fmt.Errorf("reactivate member: %w", err)
@@ -847,6 +890,12 @@ func (s *Server) JoinGroup(ctx context.Context, req JoinGroupRequestObject) (Joi
 			details["rejoined"] = true
 		} else {
 			if err := requireName(user); err != nil {
+				return err
+			}
+			if len(snap.Members) >= maxMembersPerGroup {
+				return errLimitReached
+			}
+			if err := checkRoomForLedger(ctx, q, user.ID); err != nil {
 				return err
 			}
 			member = store.Member{ID: newID(), LedgerID: snap.Ledger.ID, UserID: &user.ID, Name: user.Name}
@@ -900,6 +949,9 @@ func (s *Server) ClaimMember(ctx context.Context, req ClaimMemberRequestObject) 
 		// comes back through JoinGroup.
 		if _, held := heldBy(snap, user.ID); held {
 			return errAlreadyMember
+		}
+		if err := checkRoomForLedger(ctx, q, user.ID); err != nil {
+			return err
 		}
 		if kind == "friendship" {
 			inviter, ok := linkedMember(snap)
@@ -987,6 +1039,9 @@ func (s *Server) CreateFriendship(ctx context.Context, req CreateFriendshipReque
 	now := time.Now().UTC()
 	ledgerID := newID()
 	version, err := store.Write(ctx, s.deps.DB, func(q *store.Queries, version int64) error {
+		if err := checkRoomForLedger(ctx, q, user.ID); err != nil {
+			return err
+		}
 		// An email never links anyone, so only an explicit userId gives a linked Friend.
 		if withUser {
 			other, err := userToBefriend(ctx, q, user.ID, body.UserId.String())

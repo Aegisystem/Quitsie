@@ -48,7 +48,7 @@ func (s *Server) VerifyLoginCode(ctx context.Context, req VerifyLoginCodeRequest
 			authProblem(http.StatusBadRequest, ProblemCodeValidationFailed, "A login code is 6 digits.")), nil
 	}
 	r := requestFrom(ctx)
-	signIn, err := s.deps.Auth.VerifyCode(ctx, string(req.Body.Email), req.Body.Code, device(r))
+	signIn, err := s.deps.Auth.VerifyCode(ctx, string(req.Body.Email), req.Body.Code, device(r), clientIP(r))
 	switch {
 	case err == nil:
 	case errors.Is(err, auth.ErrInvalidEmail):
@@ -63,6 +63,9 @@ func (s *Server) VerifyLoginCode(ctx context.Context, req VerifyLoginCodeRequest
 	case errors.Is(err, auth.ErrTooManyAttempts):
 		return VerifyLoginCode429ApplicationProblemPlusJSONResponse(
 			authProblem(http.StatusTooManyRequests, ProblemCodeTooManyAttempts, "The login code was guessed wrong too many times; request another.")), nil
+	case errors.Is(err, auth.ErrRateLimited):
+		return VerifyLoginCode429ApplicationProblemPlusJSONResponse(
+			authProblem(http.StatusTooManyRequests, ProblemCodeRateLimited, "Too many login codes tried.")), nil
 	default:
 		return nil, err
 	}

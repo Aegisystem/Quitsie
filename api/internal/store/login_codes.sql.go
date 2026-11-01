@@ -45,6 +45,16 @@ func (q *Queries) CreateLoginCode(ctx context.Context, arg CreateLoginCodeParams
 	return err
 }
 
+const deleteEndedLoginFailures = `-- name: DeleteEndedLoginFailures :exec
+DELETE FROM login_failures
+WHERE resets_at <= ?
+`
+
+func (q *Queries) DeleteEndedLoginFailures(ctx context.Context, resetsAt time.Time) error {
+	_, err := q.db.ExecContext(ctx, deleteEndedLoginFailures, resetsAt)
+	return err
+}
+
 const deleteExpiredLoginCodes = `-- name: DeleteExpiredLoginCodes :exec
 DELETE FROM login_codes
 WHERE expires_at <= ?
@@ -84,4 +94,34 @@ func (q *Queries) GetLatestLoginCode(ctx context.Context, email string) (LoginCo
 		&i.CreatedAt,
 	)
 	return i, err
+}
+
+const getLoginFailures = `-- name: GetLoginFailures :one
+SELECT email_hash, failures, resets_at FROM login_failures
+WHERE email_hash = ?
+`
+
+func (q *Queries) GetLoginFailures(ctx context.Context, emailHash string) (LoginFailure, error) {
+	row := q.db.QueryRowContext(ctx, getLoginFailures, emailHash)
+	var i LoginFailure
+	err := row.Scan(&i.EmailHash, &i.Failures, &i.ResetsAt)
+	return i, err
+}
+
+const setLoginFailures = `-- name: SetLoginFailures :exec
+INSERT INTO login_failures (email_hash, failures, resets_at)
+VALUES (?, ?, ?)
+ON CONFLICT (email_hash) DO UPDATE
+SET failures = excluded.failures, resets_at = excluded.resets_at
+`
+
+type SetLoginFailuresParams struct {
+	EmailHash string
+	Failures  int64
+	ResetsAt  time.Time
+}
+
+func (q *Queries) SetLoginFailures(ctx context.Context, arg SetLoginFailuresParams) error {
+	_, err := q.db.ExecContext(ctx, setLoginFailures, arg.EmailHash, arg.Failures, arg.ResetsAt)
+	return err
 }

@@ -1,6 +1,6 @@
-// Package ratelimit counts events per key in memory, for the limit of requests
-// per IP. A restart forgets the counts, which is acceptable for a single
-// binary with Cloudflare's own limit in front.
+// Package ratelimit counts events per key in memory, for the limits of requests
+// per IP and of bytes per User. A restart forgets the counts, which is
+// acceptable for a single binary.
 package ratelimit
 
 import (
@@ -8,17 +8,14 @@ import (
 	"time"
 )
 
-// window is how long a key that uses its whole allowance takes to get it back.
-const window = time.Minute
-
-// Limiter gives each key a bucket of perMinute events that refills evenly
-// over a minute, so a key can spend a whole minute's worth at once and then
-// one event at a time.
+// Limiter gives each key a bucket of events that refills evenly over a window,
+// so a key can spend a whole window's worth at once and then one at a time.
 //
 // Its memory has a ceiling: each key costs one timestamp, a key whose bucket
 // is full again is forgotten, and there are never more than maxKeys.
 type Limiter struct {
 	mu       sync.Mutex
+	window   time.Duration
 	interval time.Duration
 	maxKeys  int
 	now      func() time.Time
@@ -29,11 +26,12 @@ type Limiter struct {
 	nextSweep time.Time
 }
 
-// New returns a Limiter of perMinute events per key that remembers at most
+// New returns a Limiter of events per key per window that remembers at most
 // maxKeys keys and reads the time from now.
-func New(perMinute, maxKeys int, now func() time.Time) *Limiter {
+func New(events int, window time.Duration, maxKeys int, now func() time.Time) *Limiter {
 	return &Limiter{
-		interval: window / time.Duration(perMinute),
+		window:   window,
+		interval: window / time.Duration(events),
 		maxKeys:  maxKeys,
 		now:      now,
 		fullAt:   make(map[string]time.Time),
@@ -43,6 +41,11 @@ func New(perMinute, maxKeys int, now func() time.Time) *Limiter {
 // Allow spends one event of key. If its bucket is empty it spends nothing and
 // reports how long until there is an event to spend.
 func (l *Limiter) Allow(key string) (ok bool, retryAfter time.Duration) {
+	return l.AllowN(key, 1)
+}
+
+// AllowN spends n events of key at once, or none of them, like Allow.
+func (l *Limiter) AllowN(key string, n int) (ok bool, retryAfter time.Duration) {
 	now := l.now()
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -52,8 +55,8 @@ func (l *Limiter) Allow(key string) (ok bool, retryAfter time.Duration) {
 	if !known || full.Before(now) {
 		full = now
 	}
-	full = full.Add(l.interval)
-	if wait := full.Sub(now) - window; wait > 0 {
+	full = full.Add(time.Duration(n) * l.interval)
+	if wait := full.Sub(now) - l.window; wait > 0 {
 		return false, wait
 	}
 	if !known {
@@ -81,7 +84,7 @@ func (l *Limiter) sweep(now time.Time) {
 			delete(l.fullAt, key)
 		}
 	}
-	l.nextSweep = now.Add(window)
+	l.nextSweep = now.Add(l.window)
 }
 
 // makeRoom forgets one key if there are maxKeys already. That takes that many
