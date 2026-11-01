@@ -622,6 +622,21 @@ h3 {
   }
 }
 
+/* A row that empties: the tokens left over leave the way they came in, the
+   last one first, and give back their place so nothing after them jumps. */
+.token-out {
+  animation: token-out 0.5s var(--ease-out) both;
+  animation-delay: calc(var(--o, 0) * 40ms);
+}
+
+@keyframes token-out {
+  to {
+    margin-inline-end: calc(-1 * var(--token) * var(--f, 1) - 4px);
+    transform: scale(0.3);
+    opacity: 0;
+  }
+}
+
 .tally-legend {
   font-size: 0.8125rem;
   color: var(--ink-2);
@@ -2332,6 +2347,10 @@ select.input,
   .token-part,
   .toast {
     animation: none;
+  }
+
+  .token-out {
+    display: none;
   }
 
   .switch::after,

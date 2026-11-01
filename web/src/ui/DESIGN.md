@@ -373,7 +373,7 @@ Filas de participante con casilla de tinta, figura, valor y Cuota tabular. Mient
 Celda fija de 10px al final de la fila: punto rule-strong si está sincronizado, anillo ocre si no, círculo tachado en tinta si fue rechazado.
 
 ### Movimiento
-Una sola curva de salida, `cubic-bezier(0.16, 1, 0.3, 1)`. Las fichas entran escalando de 0.3 a 1 en 0.5s con 40ms de escalonado; el toast sube 12px en 0.45s; el interruptor se desliza en 0.3s; los botones cambian de fondo en 0.15s. Con `prefers-reduced-motion` se apagan las animaciones de fichas y toast y las transiciones del interruptor y del reparto.
+Una sola curva de salida, `cubic-bezier(0.16, 1, 0.3, 1)`. Las fichas entran escalando de 0.3 a 1 en 0.5s con 40ms de escalonado. Cuando un Saldo baja, las que sobran salen al revés, la última primero, y cierran su hueco; una banda que llega a cero se queda, a cero, hasta que su fila se vacía. El toast sube 12px en 0.45s; el interruptor se desliza en 0.3s; los botones cambian de fondo en 0.15s. Con `prefers-reduced-motion` se apagan las animaciones de fichas y toast y las transiciones del interruptor y del reparto.
 
 ### Voz
 Español neutro, tuteo, frases cortas. Vocabulario fijo: «Saldo», nunca «balance»; «Liquidación», nunca «pago» ni «reembolso». Un guiño ligero en estados vacíos y en el a mano («Así da gusto.», «Cuentas claras, amistades largas.»); precisión seca en errores y dinero.
