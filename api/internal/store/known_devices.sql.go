@@ -44,24 +44,33 @@ func (q *Queries) DeleteKnownDevicesOfUser(ctx context.Context, userID string) e
 
 const deleteStaleKnownDevices = `-- name: DeleteStaleKnownDevices :exec
 DELETE FROM known_devices
-WHERE known_devices.user_id = ?1
-  AND (known_devices.last_used_at <= ?2
-       OR known_devices.token_hash NOT IN (
-           SELECT kept.token_hash FROM known_devices AS kept
-           WHERE kept.user_id = ?1
-           ORDER BY kept.last_used_at DESC, kept.token_hash
-           LIMIT ?3))
+WHERE last_used_at <= ?1
 `
 
-type DeleteStaleKnownDevicesParams struct {
-	UserID     string
-	UsedBefore time.Time
-	Keep       int64
+// Every User's, also of those who never sign in again.
+func (q *Queries) DeleteStaleKnownDevices(ctx context.Context, usedBefore time.Time) error {
+	_, err := q.db.ExecContext(ctx, deleteStaleKnownDevices, usedBefore)
+	return err
 }
 
-// Keeps the User's most recently used devices that are still alive.
-func (q *Queries) DeleteStaleKnownDevices(ctx context.Context, arg DeleteStaleKnownDevicesParams) error {
-	_, err := q.db.ExecContext(ctx, deleteStaleKnownDevices, arg.UserID, arg.UsedBefore, arg.Keep)
+const deleteSurplusKnownDevices = `-- name: DeleteSurplusKnownDevices :exec
+DELETE FROM known_devices
+WHERE known_devices.user_id = ?1
+  AND known_devices.token_hash NOT IN (
+      SELECT kept.token_hash FROM known_devices AS kept
+      WHERE kept.user_id = ?1
+      ORDER BY kept.last_used_at DESC, kept.token_hash
+      LIMIT ?2)
+`
+
+type DeleteSurplusKnownDevicesParams struct {
+	UserID string
+	Keep   int64
+}
+
+// Keeps the User's most recently used devices.
+func (q *Queries) DeleteSurplusKnownDevices(ctx context.Context, arg DeleteSurplusKnownDevicesParams) error {
+	_, err := q.db.ExecContext(ctx, deleteSurplusKnownDevices, arg.UserID, arg.Keep)
 	return err
 }
 

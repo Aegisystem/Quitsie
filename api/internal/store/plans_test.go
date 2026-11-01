@@ -25,6 +25,7 @@ func TestTheDeletesOfExpiredRowsUseAnIndex(t *testing.T) {
 		deleteExpiredLoginCodes:  "login_codes_expires_at",
 		deleteExpiredSessions:    "sessions_last_used_at",
 		deleteEndedLoginFailures: "login_failures_resets_at",
+		deleteStaleKnownDevices:  "known_devices_last_used_at",
 	} {
 		name := strings.Fields(query)[2]
 		rows, err := db.QueryContext(ctx, "EXPLAIN QUERY PLAN "+query, time.Now())

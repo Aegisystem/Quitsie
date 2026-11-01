@@ -67,3 +67,59 @@ func TestAnIPGetsAtMostTenCodesPerHour(t *testing.T) {
 		t.Errorf("the same email from another IP: %v", err)
 	}
 }
+
+// Requests of one sender at once still get no more than its quota.
+func TestRequestsAtOnceGetNoMoreThanTheQuota(t *testing.T) {
+	f := newFixture(t)
+	results := make(chan error, 20)
+	for i := range 20 {
+		go func() { results <- f.newBrowser(anaIP).requestCode(fmt.Sprintf("user%d@example.com", i)) }()
+	}
+
+	sent := 0
+	for range 20 {
+		switch err := <-results; {
+		case err == nil:
+			sent++
+		case !errors.Is(err, auth.ErrRateLimited):
+			t.Errorf("err = %v, want ErrRateLimited", err)
+		}
+	}
+	if sent != 10 {
+		t.Errorf("sent %d codes, want the 10 of an IP", sent)
+	}
+}
+
+// After a restart, which forgets the quotas, the live codes of an email cap
+// its codes. A request refused there sends nothing, so it must not spend its
+// sender's quotas either.
+func TestARequestRefusedForTheLiveCodesCostsTheSenderNothing(t *testing.T) {
+	f := newFixture(t)
+	for i := range 5 {
+		if err := f.newBrowser(fmt.Sprintf("198.51.100.%d", i)).requestCode(anaEmail); err != nil {
+			t.Fatal(err)
+		}
+	}
+	restarted, err := auth.New(auth.Config{DB: f.db, Mail: f.mail, DefaultCurrency: "USD", Now: f.clock.Now})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range 10 {
+		if err := f.newBrowser(anaIP).requestCodeFrom(restarted, anaEmail); !errors.Is(err, auth.ErrRateLimited) {
+			t.Fatalf("err = %v, want ErrRateLimited", err)
+		}
+	}
+
+	f.clock.Advance(codeLifetime)
+
+	// All 10 of the IP, the first one for Ana under the quota of the pair.
+	for i := range 10 {
+		email := fmt.Sprintf("user%d@example.com", i)
+		if i == 0 {
+			email = anaEmail
+		}
+		if err := f.newBrowser(anaIP).requestCodeFrom(restarted, email); err != nil {
+			t.Fatalf("code %d once Ana's codes expired: %v", i+1, err)
+		}
+	}
+}

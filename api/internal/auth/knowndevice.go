@@ -130,12 +130,13 @@ func (s *Service) rememberDevice(ctx context.Context, q *store.Queries, userID, 
 			return "", fmt.Errorf("auth: create known device: %w", err)
 		}
 	}
-	err := q.DeleteStaleKnownDevices(ctx, store.DeleteStaleKnownDevicesParams{
-		UserID:     userID,
-		UsedBefore: now.Add(-knownDeviceLifetime),
-		Keep:       maxKnownDevicesPerUser,
-	})
+	err := q.DeleteSurplusKnownDevices(ctx, store.DeleteSurplusKnownDevicesParams{UserID: userID, Keep: maxKnownDevicesPerUser})
 	if err != nil {
+		return "", fmt.Errorf("auth: delete surplus known devices: %w", err)
+	}
+	// Every User's, not only this one's: the devices of a User who never
+	// signs in again would otherwise stay forever.
+	if err := q.DeleteStaleKnownDevices(ctx, now.Add(-knownDeviceLifetime)); err != nil {
 		return "", fmt.Errorf("auth: delete stale known devices: %w", err)
 	}
 

@@ -47,6 +47,15 @@ func withLog(l *logBuffer) func(*auth.Config) {
 	return func(cfg *auth.Config) { cfg.Logger = slog.New(slog.NewTextHandler(l, nil)) }
 }
 
+func containsAll(s string, parts []string) bool {
+	for _, part := range parts {
+		if !strings.Contains(s, part) {
+			return false
+		}
+	}
+	return true
+}
+
 // askForCodes asks for a code for n new emails, each from its own IP.
 func (f *fixture) askForCodes(t *testing.T, n int) {
 	t.Helper()
@@ -83,8 +92,9 @@ func TestTheServerStopsSendingAtItsBudgetForTheHour(t *testing.T) {
 	if len(f.mail.sent) != sent {
 		t.Errorf("sent %d emails over the budget", len(f.mail.sent)-sent)
 	}
-	if lines := log.errors(); len(lines) != 1 || !strings.Contains(lines[0], "email budget is spent") {
-		t.Errorf("errors logged = %q, want one line that says the budget is spent", lines)
+	want := []string{"email budget is spent", "sent_this_hour=3 max_per_hour=3", "sent_last_24h=3 max_per_day=10", "resumes_at=2026-10-26T13:00:00Z"}
+	if lines := log.errors(); len(lines) != 1 || !containsAll(lines[0], want) {
+		t.Errorf("errors logged = %q, want one line that says the budget is spent with %q", lines, want)
 	}
 
 	f.clock.Advance(40 * time.Minute)
@@ -100,8 +110,9 @@ func TestTheServerStopsSendingAtItsBudgetForTheDay(t *testing.T) {
 
 	// The three emails of 12:00 leave the day at 12:00 tomorrow.
 	f.wantBudgetSpent(t, 19*time.Hour)
-	if lines := log.errors(); len(lines) != 2 {
-		t.Errorf("errors logged = %q, want one for the hour and one for the day", lines)
+	want := []string{"sent_this_hour=2 max_per_hour=3", "sent_last_24h=5 max_per_day=5", "resumes_at=2026-10-27T12:00:00Z"}
+	if lines := log.errors(); len(lines) != 2 || !containsAll(lines[1], want) {
+		t.Errorf("errors logged = %q, want one for the hour and one for the day with %q", lines, want)
 	}
 
 	f.clock.Advance(19 * time.Hour)
@@ -148,6 +159,35 @@ func TestARequestRefusedForTheBudgetCostsTheSenderNothing(t *testing.T) {
 
 	if err := f.at(anaIP).requestCode(anaEmail); err != nil {
 		t.Errorf("an hour later: %v", err)
+	}
+}
+
+// Requests at once can all pass the look at the budget and race for its last
+// email. Those that lose it under the write lock cost nothing either.
+func TestRequestsThatLoseTheLastEmailCostTheSenderNothing(t *testing.T) {
+	f := newFixture(t, withMailBudget(1, 10))
+	f.clock.Advance(50 * time.Minute)
+	results := make(chan error, 20)
+	for range 20 {
+		go func() { results <- f.newBrowser(anaIP).requestCode(anaEmail) }()
+	}
+	sent := 0
+	for range 20 {
+		switch err := <-results; {
+		case err == nil:
+			sent++
+		case !errors.Is(err, auth.ErrMailBudgetSpent):
+			t.Errorf("err = %v, want ErrMailBudgetSpent", err)
+		}
+	}
+	if sent != 1 {
+		t.Fatalf("sent %d codes, want the 1 of the budget", sent)
+	}
+
+	f.clock.Advance(10 * time.Minute) // a new hour of the budget
+
+	if err := f.newBrowser(anaIP).requestCode(anaEmail); err != nil {
+		t.Errorf("err = %v, want the second of the 3 codes an hour of the IP for Ana", err)
 	}
 }
 

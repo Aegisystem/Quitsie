@@ -53,18 +53,10 @@ type quota struct {
 func (l *limiter) allow(now time.Time, quotas ...quota) (ok bool, retryAfter time.Duration) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	l.sweep(now)
-
-	since := now.Add(-l.window)
-	for _, q := range quotas {
-		if hits := recent(l.hits[q.key], since); len(hits) >= q.max {
-			// The key has room once the event that filled it leaves the window.
-			retryAfter = max(retryAfter, hits[len(hits)-q.max].Add(l.window).Sub(now))
-		}
-	}
-	if retryAfter > 0 {
+	if retryAfter := l.untilRoom(now, quotas); retryAfter > 0 {
 		return false, retryAfter
 	}
+	since := now.Add(-l.window)
 	for _, q := range quotas {
 		hits, known := l.hits[q.key]
 		if !known {
@@ -73,6 +65,27 @@ func (l *limiter) allow(now time.Time, quotas ...quota) (ok bool, retryAfter tim
 		l.hits[q.key] = append(recent(hits, since), now)
 	}
 	return true, 0
+}
+
+// wait reports how long until every quota's key has room for one more event,
+// zero if they have room now, as allow would. It records nothing, so a caller
+// can refuse early and still call allow once nothing else can refuse.
+func (l *limiter) wait(now time.Time, quotas ...quota) time.Duration {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.untilRoom(now, quotas)
+}
+
+func (l *limiter) untilRoom(now time.Time, quotas []quota) (retryAfter time.Duration) {
+	l.sweep(now)
+	since := now.Add(-l.window)
+	for _, q := range quotas {
+		if hits := recent(l.hits[q.key], since); len(hits) >= q.max {
+			// The key has room once the event that filled it leaves the window.
+			retryAfter = max(retryAfter, hits[len(hits)-q.max].Add(l.window).Sub(now))
+		}
+	}
+	return retryAfter
 }
 
 // makeRoom forgets one key if there are maxKeys already, which means an attack

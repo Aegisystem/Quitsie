@@ -80,14 +80,11 @@ type Browser struct {
 // BrowserOf reads the cookies of sign-in that r carries. ip is the address
 // the limits count it under.
 func BrowserOf(r *http.Request, ip string) Browser {
-	b := Browser{IP: ip}
-	if c, err := r.Cookie(CodeFlowCookieName); err == nil {
-		b.Flow = c.Value
+	return Browser{
+		IP:           ip,
+		Flow:         cookieValue(r, CodeFlowCookieName),
+		KnownDevices: cookieValue(r, KnownDeviceCookieName),
 	}
-	if c, err := r.Cookie(KnownDeviceCookieName); err == nil {
-		b.KnownDevices = c.Value
-	}
-	return b
 }
 
 // codeFlowCookie returns the cookie that carries flow. It lasts as long as
@@ -100,9 +97,7 @@ func codeFlowCookie(flow string) *http.Cookie {
 // ClearCodeFlowCookie returns a cookie that makes the browser delete the flow
 // cookie, once its code signed it in.
 func ClearCodeFlowCookie() *http.Cookie {
-	c := codeFlowCookie("")
-	c.MaxAge = -1
-	return c
+	return clearHostCookie(CodeFlowCookieName)
 }
 
 // RequestCode emails a new 6-digit login code to email and returns the flow
@@ -141,8 +136,9 @@ func (s *Service) RequestCode(ctx context.Context, email string, from Browser) (
 	} else {
 		quotas = append(quotas, quota{"email:" + email, maxSendsPerMail}, quota{"pair:" + from.IP + " " + email, maxSendsPerPair})
 	}
-	if ok, retryAfter := s.sends.allow(s.now(), quotas...); !ok {
-		return nil, &RateLimitError{RetryAfter: retryAfter}
+	// Only a look: the quotas count the request once nothing else refuses it.
+	if wait := s.sends.wait(s.now(), quotas...); wait > 0 {
+		return nil, &RateLimitError{RetryAfter: wait}
 	}
 	code, err := newCode()
 	if err != nil {
@@ -156,8 +152,7 @@ func (s *Service) RequestCode(ctx context.Context, email string, from Browser) (
 	flow := rand.Text()
 
 	now := s.now()
-	var budgetHour time.Time
-	var lastOfBudget bool
+	var budget mailBudget
 	err = s.inTx(ctx, func(q *store.Queries) error {
 		if from.Flow != "" {
 			if err := q.DeleteLoginCodeOfFlow(ctx, ptr(hashToken(from.Flow))); err != nil {
@@ -181,8 +176,14 @@ func (s *Service) RequestCode(ctx context.Context, email string, from Browser) (
 			}
 		}
 		var err error
-		if budgetHour, lastOfBudget, err = s.spendMail(ctx, q); err != nil {
+		if budget, err = s.spendMail(ctx, q, now); err != nil {
 			return err
+		}
+		// Last of the checks, so that a request the others refuse spends none
+		// of the sender's quotas. It looks again: another request of the same
+		// sender may have got in since the look above.
+		if ok, retryAfter := s.sends.allow(now, quotas...); !ok {
+			return &RateLimitError{RetryAfter: retryAfter}
 		}
 		err = q.CreateLoginCode(ctx, store.CreateLoginCodeParams{
 			ID:        id.String(),
@@ -203,13 +204,15 @@ func (s *Service) RequestCode(ctx context.Context, email string, from Browser) (
 
 	if err := s.mail.Send(ctx, codeMessage(email, code)); err != nil {
 		// Nobody got this code, so it could only ever be guessed, and its
-		// owner would never hear of it. Nor did it cost an email.
+		// owner would never hear of it. Nor did it cost an email. It still
+		// spends the sender's quotas, or an address the email service refuses
+		// could be asked for without end.
 		q, ctx := store.New(s.db), context.WithoutCancel(ctx)
-		cleanup := errors.Join(q.DeleteLoginCodeOfFlow(ctx, ptr(hashToken(flow))), q.UncountMailSend(ctx, budgetHour))
+		cleanup := errors.Join(q.DeleteLoginCodeOfFlow(ctx, ptr(hashToken(flow))), q.UncountMailSend(ctx, budget.hour))
 		return nil, fmt.Errorf("auth: send login code: %w", errors.Join(err, cleanup))
 	}
-	if lastOfBudget {
-		s.reportMailBudgetSpent(ctx)
+	if budget.wait(now) > 0 { // this email spent the last of the hour or the day
+		s.reportMailBudgetSpent(ctx, budget, now)
 	}
 	return codeFlowCookie(flow), nil
 }

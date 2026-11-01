@@ -5,9 +5,8 @@ import (
 	"time"
 )
 
-// hostCookie returns a cookie of sign-in that lasts maxAge. To delete one,
-// set MaxAge to -1 on it: the browser takes the deletion only with the same
-// attributes.
+// hostCookie returns a cookie of sign-in that lasts maxAge. clearHostCookie
+// deletes it.
 //
 // Every cookie of sign-in has a name with the __Host- prefix, so the browser
 // only takes it from this host over HTTPS, with Path=/ and without Domain.
@@ -34,4 +33,23 @@ func hostCookie(name, value string, maxAge time.Duration) *http.Cookie {
 		// sends them on the top-level redirect back from Google.
 		SameSite: http.SameSiteLaxMode,
 	}
+}
+
+// clearHostCookie returns a cookie that makes the browser delete the cookie of
+// sign-in with this name. It has the attributes of hostCookie's, because the
+// browser takes the deletion only with the same ones.
+func clearHostCookie(name string) *http.Cookie {
+	c := hostCookie(name, "", 0)
+	c.MaxAge = -1
+	return c
+}
+
+// cookieValue returns the value of r's cookie with this name, empty without
+// one.
+func cookieValue(r *http.Request, name string) string {
+	c, err := r.Cookie(name)
+	if err != nil {
+		return ""
+	}
+	return c.Value
 }

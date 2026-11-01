@@ -186,10 +186,7 @@ func (s *Service) FinishGoogle(ctx context.Context, r *http.Request, device stri
 		return SignIn{}, fmt.Errorf("%w: %v", ErrGoogleFailed, err)
 	}
 
-	var knownDevices string
-	if c, err := r.Cookie(KnownDeviceCookieName); err == nil {
-		knownDevices = c.Value
-	}
+	knownDevices := cookieValue(r, KnownDeviceCookieName)
 	var signIn SignIn
 	err = s.inTx(ctx, func(q *store.Queries) error {
 		user, created, err := s.userByGoogle(ctx, q, idToken.Subject, email, claims.Name)
@@ -216,9 +213,7 @@ func (s *Service) FinishGoogle(ctx context.Context, r *http.Request, device stri
 // ClearGoogleCookie returns a cookie that makes the browser delete the flow
 // cookie once FinishGoogle has run.
 func ClearGoogleCookie() *http.Cookie {
-	c := hostCookie(GoogleCookieName, "", googleFlowLifetime)
-	c.MaxAge = -1
-	return c
+	return clearHostCookie(GoogleCookieName)
 }
 
 func splitFlow(value string) (state, nonce, verifier, returnTo string, ok bool) {
