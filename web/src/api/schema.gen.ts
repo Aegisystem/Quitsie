@@ -21,6 +21,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/auth/methods": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Says which ways of signing in this server offers.
+         * @description The sign-in screen asks before it shows the Google button: Google needs an OAuth client in the server's configuration, and without one `startGoogleLogin` only ends in `/login?error=google`. A code by email is always offered. The answer only changes when the server restarts with another configuration.
+         */
+        get: operations["getLoginMethods"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/auth/login-code": {
         parameters: {
             query?: never;
@@ -641,6 +661,11 @@ export interface components {
          * @enum {string}
          */
         SplitMethod: "equal" | "exact" | "percentage" | "weights" | "adjustment";
+        /** @description The ways of signing in besides the emailed code, which is always there. */
+        LoginMethods: {
+            /** @description True when the server has an OAuth client of Google, so `startGoogleLogin` can sign in. */
+            google: boolean;
+        };
         LoginCodeRequest: {
             /** Format: email */
             email: string;
@@ -1158,6 +1183,27 @@ export interface operations {
                     "application/json": components["schemas"]["Health"];
                 };
             };
+        };
+    };
+    getLoginMethods: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The ways of signing in. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoginMethods"];
+                };
+            };
+            default: components["responses"]["Problem"];
         };
     };
     requestLoginCode: {

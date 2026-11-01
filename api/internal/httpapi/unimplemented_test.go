@@ -39,7 +39,7 @@ var unimplementedRecords = []operationRequest{}
 // The operations that have a real handler, per area.
 var (
 	implementedBase    = []string{"GetHealth"}
-	implementedAuth    = []string{"RequestLoginCode", "VerifyLoginCode", "GetMe", "Logout", "ListSessions", "RevokeSession", "UpdateMe", "DeleteMe", "StartGoogleLogin", "FinishGoogleLogin"}
+	implementedAuth    = []string{"GetLoginMethods", "RequestLoginCode", "VerifyLoginCode", "GetMe", "Logout", "ListSessions", "RevokeSession", "UpdateMe", "DeleteMe", "StartGoogleLogin", "FinishGoogleLogin"}
 	implementedLedgers = []string{"CreateGroup", "UpdateGroup", "DeleteGroup", "AddPendingMember", "UpdatePendingMember", "RemoveMember", "LeaveGroup",
 		"GetGroupInviteLink", "RegenerateGroupInviteLink", "GetInvite",
 		"JoinGroup", "ClaimMember", "UndoClaim",

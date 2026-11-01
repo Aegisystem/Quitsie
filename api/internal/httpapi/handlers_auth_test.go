@@ -98,6 +98,7 @@ func TestNobodyCanKeepAKnownDeviceFromSigningIn(t *testing.T) {
 // One request that reaches each operation of the contract.
 var everyOperation = []operationRequest{
 	{"GetHealth", http.MethodGet, "/api/v1/health", ""},
+	{"GetLoginMethods", http.MethodGet, "/api/v1/auth/methods", ""},
 	{"RequestLoginCode", http.MethodPost, "/api/v1/auth/login-code", `{"email":"ana@example.com"}`},
 	{"VerifyLoginCode", http.MethodPost, "/api/v1/auth/login-code/verify", `{"email":"ana@example.com","code":"000000"}`},
 	{"StartGoogleLogin", http.MethodGet, "/api/v1/auth/google?returnTo=/groups", ""},
@@ -136,7 +137,7 @@ var everyOperation = []operationRequest{
 // The operations anyone can call. GetInvite shows an invitation before its
 // guest signs in.
 var publicOperations = []string{
-	"GetHealth", "RequestLoginCode", "VerifyLoginCode", "StartGoogleLogin", "FinishGoogleLogin", "GetInvite",
+	"GetHealth", "GetLoginMethods", "RequestLoginCode", "VerifyLoginCode", "StartGoogleLogin", "FinishGoogleLogin", "GetInvite",
 }
 
 func TestOnlyPublicOperationsAnswerWithoutASession(t *testing.T) {
@@ -423,6 +424,34 @@ func TestDeletingTheAccount(t *testing.T) {
 	again := api.newClient(t).signIn("ana@example.com")
 	if !again.NewUser || again.User.Id == ana.Id {
 		t.Errorf("signing in again = %+v, want a new User, not %s", again, ana.Id)
+	}
+}
+
+// The PWA shows the Google button only when the server says it can sign in
+// with Google: without an OAuth client, the button only leads to an error.
+func TestTheLoginMethodsSayWhetherGoogleCanSignIn(t *testing.T) {
+	var google *authtest.FakeGoogle
+	tests := []struct {
+		name string
+		api  *testAPI
+		want bool
+	}{
+		{"without an OAuth client", newTestAPI(t), false},
+		{"with one", newTestAPI(t, withGoogle(t, &google)), true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Asked before signing in.
+			resp := tt.api.newClient(t).do(http.MethodGet, "/api/v1/auth/methods", "")
+
+			if methods := readJSON[httpapi.LoginMethods](t, resp, http.StatusOK); methods.Google != tt.want {
+				t.Errorf("google = %v, want %v", methods.Google, tt.want)
+			}
+			// A kept answer would outlive a change of configuration.
+			if got := resp.Header.Get("Cache-Control"); got != "no-store" {
+				t.Errorf("Cache-Control = %q, want no-store", got)
+			}
+		})
 	}
 }
 

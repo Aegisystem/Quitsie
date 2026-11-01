@@ -22,6 +22,12 @@ import (
 
 // Sign-in, sessions and the profile, on top of package auth.
 
+// GetLoginMethods lets the PWA show the Google button only when it can work:
+// the owner may run the server without an OAuth client of Google.
+func (s *Server) GetLoginMethods(context.Context, GetLoginMethodsRequestObject) (GetLoginMethodsResponseObject, error) {
+	return GetLoginMethods200JSONResponse{Google: s.deps.Auth.GoogleEnabled()}, nil
+}
+
 func (s *Server) RequestLoginCode(ctx context.Context, req RequestLoginCodeRequestObject) (RequestLoginCodeResponseObject, error) {
 	r := requestFrom(ctx)
 	flow, err := s.deps.Auth.RequestCode(ctx, string(req.Body.Email), auth.BrowserOf(r, senderIP(r)))

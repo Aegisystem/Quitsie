@@ -762,6 +762,12 @@ type LoginCodeVerification struct {
 	Email openapi_types.Email `json:"email"`
 }
 
+// LoginMethods The ways of signing in besides the emailed code, which is always there.
+type LoginMethods struct {
+	// Google True when the server has an OAuth client of Google, so `startGoogleLogin` can sign in.
+	Google bool `json:"google"`
+}
+
 // LoginResult defines model for LoginResult.
 type LoginResult struct {
 	// NewUser True when this sign-in created the account.
@@ -1153,6 +1159,9 @@ type ServerInterface interface {
 	// Logout Closes the current session.
 	// (POST /auth/logout)
 	Logout(w http.ResponseWriter, r *http.Request)
+	// GetLoginMethods Says which ways of signing in this server offers.
+	// (GET /auth/methods)
+	GetLoginMethods(w http.ResponseWriter, r *http.Request)
 	// ListSessions Lists the User's open sessions, one per device.
 	// (GET /auth/sessions)
 	ListSessions(w http.ResponseWriter, r *http.Request)
@@ -1376,6 +1385,20 @@ func (siw *ServerInterfaceWrapper) Logout(w http.ResponseWriter, r *http.Request
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.Logout(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetLoginMethods operation middleware
+func (siw *ServerInterfaceWrapper) GetLoginMethods(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetLoginMethods(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -2198,6 +2221,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	}
 
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/health", wrapper.GetHealth)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/auth/methods", wrapper.GetLoginMethods)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/auth/login-code", wrapper.RequestLoginCode)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/auth/login-code/verify", wrapper.VerifyLoginCode)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/auth/google", wrapper.StartGoogleLogin)
@@ -2560,6 +2584,44 @@ type LogoutdefaultApplicationProblemPlusJSONResponse struct {
 }
 
 func (response LogoutdefaultApplicationProblemPlusJSONResponse) VisitLogoutResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetLoginMethodsRequestObject struct {
+}
+
+type GetLoginMethodsResponseObject interface {
+	VisitGetLoginMethodsResponse(w http.ResponseWriter) error
+}
+
+type GetLoginMethods200JSONResponse LoginMethods
+
+func (response GetLoginMethods200JSONResponse) VisitGetLoginMethodsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetLoginMethodsdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response GetLoginMethodsdefaultApplicationProblemPlusJSONResponse) VisitGetLoginMethodsResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -4866,6 +4928,9 @@ type StrictServerInterface interface {
 	// Logout Closes the current session.
 	// (POST /auth/logout)
 	Logout(ctx context.Context, request LogoutRequestObject) (LogoutResponseObject, error)
+	// GetLoginMethods Says which ways of signing in this server offers.
+	// (GET /auth/methods)
+	GetLoginMethods(ctx context.Context, request GetLoginMethodsRequestObject) (GetLoginMethodsResponseObject, error)
 	// ListSessions Lists the User's open sessions, one per device.
 	// (GET /auth/sessions)
 	ListSessions(ctx context.Context, request ListSessionsRequestObject) (ListSessionsResponseObject, error)
@@ -5125,6 +5190,30 @@ func (sh *strictHandler) Logout(w http.ResponseWriter, r *http.Request) {
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(LogoutResponseObject); ok {
 		if err := validResponse.VisitLogoutResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetLoginMethods operation middleware
+func (sh *strictHandler) GetLoginMethods(w http.ResponseWriter, r *http.Request) {
+	var request GetLoginMethodsRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetLoginMethods(ctx, request.(GetLoginMethodsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetLoginMethods")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetLoginMethodsResponseObject); ok {
+		if err := validResponse.VisitGetLoginMethodsResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

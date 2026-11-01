@@ -78,6 +78,28 @@ paths:
               schema:
                 $ref: "#/components/schemas/Health"
 
+  /auth/methods:
+    get:
+      operationId: getLoginMethods
+      summary: Says which ways of signing in this server offers.
+      description: >
+        The sign-in screen asks before it shows the Google button: Google
+        needs an OAuth client in the server's configuration, and without one
+        `startGoogleLogin` only ends in `/login?error=google`. A code by email
+        is always offered. The answer only changes when the server restarts
+        with another configuration.
+      tags: [auth]
+      security: []
+      responses:
+        "200":
+          description: The ways of signing in.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginMethods"
+        default:
+          $ref: "#/components/responses/Problem"
+
   /auth/login-code:
     post:
       operationId: requestLoginCode
@@ -1344,6 +1366,15 @@ components:
       enum: [equal, exact, percentage, weights, adjustment]
 
     # --- Auth and profile -----------------------------------------------
+
+    LoginMethods:
+      type: object
+      description: The ways of signing in besides the emailed code, which is always there.
+      required: [google]
+      properties:
+        google:
+          type: boolean
+          description: True when the server has an OAuth client of Google, so `startGoogleLogin` can sign in.
 
     LoginCodeRequest:
       type: object

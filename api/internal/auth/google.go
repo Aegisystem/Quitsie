@@ -44,6 +44,12 @@ var (
 	ErrGoogleFailed = errors.New("auth: Google sign-in failed")
 )
 
+// GoogleEnabled reports whether the Service has a GoogleConfig, without
+// which BeginGoogle and FinishGoogle return ErrGoogleDisabled.
+func (s *Service) GoogleEnabled() bool {
+	return s.google != nil
+}
+
 const (
 	// GoogleCookieName is the cookie that keeps state, nonce and PKCE
 	// verifier while the browser is away at Google.
