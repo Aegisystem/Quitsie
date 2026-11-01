@@ -60,6 +60,7 @@ flowchart LR
 | Entrada al servidor | Cloudflare Tunnel (`cloudflared`): la VM no abre puertos públicos | 0 |
 | Respaldos | Litestream → Cloudflare R2 | 0 hasta 10 GB |
 | Emails | Resend | 0 hasta 3.000 al mes |
+| Alertas | Un temporizador en la VM que escribe al dueño por Resend | 0 |
 | Código y CI | GitHub + Actions | 0 |
 | Dominio | Registrador a elegir | ~10–15 USD/año |
 
@@ -181,10 +182,11 @@ Los Saldos no se guardan: se calculan sumando, lo cual es rápido a esta escala.
 
 ## Despliegue y operación
 
-- En cada push, GitHub Actions ejecuta las pruebas de Go y de TypeScript, compila la PWA y la embebe en el binario Go (`linux/amd64`).
+- En cada push, GitHub Actions ejecuta las pruebas de Go y de TypeScript, compila la PWA y la embebe en el binario Go (`linux/amd64`). También revisa los scripts, los workflows y las unidades de `deploy/` con `shellcheck`, `actionlint` y `systemd-analyze`.
 - En cada push a `main`, copia el binario a la VM por SSH a través del túnel y reinicia el servicio. El reinicio dura alrededor de un segundo, aceptable en la v1.
 - La VM tiene tres servicios systemd: la aplicación, Litestream y `cloudflared`.
-- La restauración del respaldo (`litestream restore`) se prueba periódicamente.
+- Un temporizador prueba cada semana la restauración del respaldo (`litestream restore`).
+- Otro revisa la VM cada 5 minutos (salud de la aplicación, servicios, disco y errores en el registro) y avisa al dueño por email con Resend ([despliegue.md](despliegue.md#alertas)). Una VM caída del todo no puede avisar de sí misma; para eso hay un monitor externo opcional.
 
 ## Límites conocidos y cuándo crecer
 

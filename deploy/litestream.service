@@ -7,6 +7,8 @@ Description=Litestream: replicates the Quitsie database to Cloudflare R2
 Requires=quitsie-restore.service
 After=network-online.target quitsie-restore.service
 Wants=network-online.target
+# Emails the owner when systemd marks it as failed (deploy/alert-check.sh).
+OnFailure=quitsie-alert@%n.service
 
 [Service]
 Type=simple

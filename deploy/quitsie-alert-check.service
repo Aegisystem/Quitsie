@@ -1,0 +1,36 @@
+# Install as /etc/systemd/system/quitsie-alert-check.service on the VM (provision.sh does it).
+#
+# Started every 5 minutes by quitsie-alert-check.timer. It checks the app, the
+# units, the disk and the journal, and emails the owner (see
+# deploy/alert-check.sh). Root, because it reads the Resend key in
+# /etc/quitsie/quitsie.env and the journal of other units.
+[Unit]
+Description=Quitsie: check the VM and email the owner when something fails
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/quitsie-alert-check
+# Where it remembers what it already emailed (/var/lib/quitsie-alert).
+StateDirectory=quitsie-alert
+StateDirectoryMode=0700
+UMask=0077
+# It waits up to 2 minutes for a run that is still going.
+TimeoutStartSec=5min
+
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+CapabilityBoundingSet=
+SystemCallArchitectures=native

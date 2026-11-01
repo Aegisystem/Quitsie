@@ -8,7 +8,8 @@
 #
 # It restores into a temporary directory and checks the result; the live
 # database and the replica are never written. It exits non-zero if anything
-# fails, so it can also run from a timer.
+# fails: quitsie-restore-test.timer runs it every week, and a failure emails
+# the owner (deploy/alert-check.sh).
 set -euo pipefail
 
 CONFIG=/etc/litestream.yml
