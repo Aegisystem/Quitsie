@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { readValue, valueError } from './values'
+import { problemPointer, readValue, valueError } from './values'
 
 // The tests run in Node, whose region is en-US: "." separates the decimals.
 const t = ((key: string, values?: Record<string, unknown>) => (values ? `${key} ${JSON.stringify(values)}` : key)) as Parameters<typeof valueError>[3]
@@ -62,5 +62,17 @@ describe('what a person’s field says when it cannot be read', () => {
     expect(valueError('invalid', 'weights', 'USD', t)).toBe('expenseForm.weightInvalid')
     expect(valueError('not-whole', 'weights', 'USD', t)).toBe('expenseForm.weightWhole {"example":"1.5"}')
     expect(valueError('too-large', 'weights', 'USD', t)).toBe('expenseForm.weightTooLarge')
+  })
+})
+
+describe('the line away from a field that cannot be read', () => {
+  it('only names whose field to look at', () => {
+    expect(problemPointer('value', 'Ana', t)).toBe('expenseForm.valueProblem {"name":"Ana"}')
+    expect(problemPointer('paid', 'Ana', t)).toBe('expenseForm.paidProblem {"name":"Ana"}')
+  })
+
+  it('speaks to the User about their own field', () => {
+    expect(problemPointer('value', undefined, t)).toBe('expenseForm.valueProblemYours')
+    expect(problemPointer('paid', undefined, t)).toBe('expenseForm.paidProblemYours')
   })
 })

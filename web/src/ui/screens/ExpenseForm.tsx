@@ -21,7 +21,7 @@ import {
 } from '../forms/expense'
 import { activeMembers, isActive } from '../forms/people'
 import { afterEdit, updateExpense, type UpdateOutcome } from '../forms/updateExpense'
-import { readValue, valueError } from '../forms/values'
+import { problemPointer, readValue, valueError } from '../forms/values'
 import { categories } from '../types'
 import { previewOwedShares, type SplitParticipant } from '../split'
 import { formatDay, todayISO } from '../dates'
@@ -226,14 +226,12 @@ function ExpenseForm({ summary, user, me, purpose }: { summary: LedgerSummary; u
     : [{ memberId: payer, amount: total }]
   const paidLeft = total - paidShares.reduce((sum, p) => sum + p.amount, 0)
 
-  // The first field that cannot be read, named, for the lines that are not next
-  // to it: the status of the split or of the payers, and the dock.
+  // The lines away from the fields (the status of the split or of the payers,
+  // and the dock) point at the first one that cannot be read, by name.
   const problemOf = (problems: ReadonlyMap<string, string>, field: 'value' | 'paid') => {
-    const [id, problem] = [...problems][0] ?? []
-    if (!id || !problem) return undefined
-    if (id === me.id) return field === 'value' ? t('expenseForm.valueProblemYours', { problem }) : t('expenseForm.paidProblemYours', { problem })
-    const name = nameOf(id)
-    return field === 'value' ? t('expenseForm.valueProblem', { name, problem }) : t('expenseForm.paidProblem', { name, problem })
+    const [id] = [...problems.keys()]
+    if (id === undefined) return undefined
+    return problemPointer(field, id === me.id ? undefined : nameOf(id), t)
   }
   const valueProblem = problemOf(valueProblems, 'value')
   const paidProblem = problemOf(paidProblems, 'paid')

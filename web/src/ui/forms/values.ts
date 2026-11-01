@@ -66,3 +66,11 @@ export function valueError(error: ValueError, field: ValueField, currency: strin
       return amountError({ ok: false, error: error === 'not-whole' ? 'invalid' : error }, currency, t) ?? ''
   }
 }
+
+// The short line for the split status, the payers status and the dock. It only
+// says where to look: the field itself explains what is wrong once it is marked.
+// `name` is missing when the field is the User's own.
+export function problemPointer(field: 'value' | 'paid', name: string | undefined, t: TFunction): string {
+  if (field === 'value') return name === undefined ? t('expenseForm.valueProblemYours') : t('expenseForm.valueProblem', { name })
+  return name === undefined ? t('expenseForm.paidProblemYours') : t('expenseForm.paidProblem', { name })
+}
