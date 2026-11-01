@@ -309,6 +309,7 @@ export const es = {
   },
   settlement: {
     title: 'Registrar liquidación',
+    fixTitle: 'Corregir liquidación rechazada',
     from: 'Quién devuelve',
     to: 'A quién',
     amount: 'Importe',
@@ -323,6 +324,9 @@ export const es = {
     samePerson: 'Elige dos personas distintas.',
     onlyActive: 'Una liquidación solo puede ser entre miembros activos.',
     currency: 'Moneda',
+    rejectedCurrency: 'El servidor rechazó esta liquidación: la moneda del grupo cambió de {{from}} a {{to}}. Revisa el importe y guárdala de nuevo.',
+    rejectedParticipants: 'El servidor rechazó esta liquidación: alguien ya no está en el grupo. Revisa quién devuelve y a quién, y guárdala de nuevo.',
+    rejectedOther: 'El servidor rechazó esta liquidación. Revísala y guárdala de nuevo.',
   },
   invite: {
     title: 'Invitación',
