@@ -23,6 +23,7 @@ package main
 import (
 	"context"
 	"crypto/rand"
+	"database/sql"
 	"embed"
 	"errors"
 	"fmt"
@@ -87,6 +88,9 @@ func run(logger *slog.Logger) error {
 	if err := store.Migrate(ctx, db); err != nil {
 		return err
 	}
+	if err := recordRestore(ctx, logger, db, restoredMarker(cfg.dbPath)); err != nil {
+		return err
+	}
 
 	authService, err := auth.New(auth.Config{
 		DB:              db,
@@ -132,6 +136,33 @@ func run(logger *slog.Logger) error {
 	defer cancel()
 	if err := srv.Shutdown(shutdownCtx); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return err
+	}
+	return nil
+}
+
+// restoredMarker is the file that says the database came back from a backup
+// and the server has not recorded it yet. deploy/quitsie-restore.sh leaves it
+// next to the database when `litestream restore` brings one back, and the
+// operator does the same after a restore by hand (docs/despliegue.md).
+func restoredMarker(dbPath string) string { return dbPath + ".restored" }
+
+// recordRestore records the restore that marker announces, before the server
+// hands out any version, and then removes the marker. If the server stops in
+// between, the next start records the restore again, which is harmless.
+func recordRestore(ctx context.Context, logger *slog.Logger, db *sql.DB, marker string) error {
+	if _, err := os.Stat(marker); errors.Is(err, fs.ErrNotExist) {
+		return nil
+	} else if err != nil {
+		return fmt.Errorf("restore marker: %w", err)
+	}
+	gap, err := store.RecordRestore(ctx, db, time.Now())
+	if err != nil {
+		return err
+	}
+	logger.Warn("the database came from a backup: sync versions jumped, and devices that synced after the backup will rebuild their replicas",
+		"restored_version", gap.RestoredVersion, "jumped_version", gap.JumpedVersion)
+	if err := os.Remove(marker); err != nil {
+		return fmt.Errorf("the restore is recorded, but the next start would record it again: %w", err)
 	}
 	return nil
 }
