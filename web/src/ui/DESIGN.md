@@ -361,7 +361,7 @@ Firmes y planos; la acción se distingue por el relleno de tinta, no por color.
 - **Pestañas del Grupo:** texto ink-2 500; activa en tinta con subrayado de 3px.
 
 ### Banda de Saldo (componente de firma)
-Un campo de color pleno por moneda: «Te deben» o «Debes» (1.0625rem, blanco al 88 %), el importe en Display y la fila de fichas blancas con su leyenda. Varias monedas apiladas con 3px de papel y tipografía compacta; en escritorio, en una fila. A mano: banda verde con dos figuras y un «=» entre ellas. En el Grupo lleva al pie el enlace «De dónde sale».
+Un campo de color pleno por moneda: «Te deben» o «Debes» (1.0625rem, blanco al 88 %), el importe en Display y la fila de fichas blancas con su leyenda. Varias monedas apiladas con 3px de papel y tipografía compacta; en escritorio, en una fila. A mano: banda verde con dos figuras y un «=» entre ellas. En el Grupo lleva al pie el enlace «De dónde sale». Mientras cuenta Registros sin sincronizar, debajo y sobre el papel va «Saldo provisional: incluye registros sin sincronizar.», en ocre de texto y con el anillo de esos registros.
 
 ### Gráfico de Saldos
 Leyenda arriba («A la izquierda, lo que se debe; a la derecha, lo que se le debe a cada uno» y «cada ● = importe»). Por Miembro: figura, nombre, etiqueta y cifra; debajo, un eje vertical de tinta de 2px con fichas rojas hacia la izquierda (alineadas al eje, la fracción cortada por su lado exterior) o azules hacia la derecha, y un anillo verde sobre el eje si está a mano. Cada cifra despliega su prueba: la lista de Gastos y Liquidaciones que la forman.

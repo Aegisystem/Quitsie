@@ -7,9 +7,11 @@ test('an Expense saved offline counts in the Saldo and reaches the server on rec
   const page = await newDevice()
   await signUp(page, 'Ana')
   await createGroup(page, 'Viaje a la costa', { pending: ['Beto'] })
+  const provisional = page.getByText('Saldo provisional: incluye registros sin sincronizar.')
 
   await setOffline(page, true)
   await expect(page.getByText('Sin conexión.')).toBeVisible()
+  await expect(provisional).toBeHidden()
 
   await addExpense(page, { description: 'Cena', amount: '120' })
   await expect(page.getByText('Guardado sin conexión.')).toBeVisible()
@@ -17,11 +19,18 @@ test('an Expense saved offline counts in the Saldo and reaches the server on rec
   await expect(recordsTray(page)).toHaveAccessibleName('Registros: 1 registro sin sincronizar')
   await expect(balance(page)).toContainText('Te deben')
   await expect(balance(page)).toContainText('$60')
+  await expect(provisional).toBeVisible()
   expect((await deviceRows(page)).queue).toBe(1)
   expect((await serverChanges(page)).expenses).toEqual([])
 
+  await page.getByRole('link', { name: 'Volver' }).click()
+  await expect(balance(page)).toContainText('$60')
+  await expect(provisional).toBeVisible()
+  await page.getByRole('link', { name: /Viaje a la costa/ }).click()
+
   await setOffline(page, false)
   await expect(recordsTray(page)).toHaveAccessibleName('Registros')
+  await expect(provisional).toBeHidden()
   await expect(unsyncedMark(expenseRow(page, 'Cena'))).toBeHidden()
   await expect(balance(page)).toContainText('$60')
   expect((await deviceRows(page)).queue).toBe(0)

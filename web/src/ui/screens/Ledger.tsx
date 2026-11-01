@@ -21,6 +21,7 @@ export function Ledger({ ledgerId, tab, user }: { ledgerId: string; tab?: string
   const online = useOnline()
   const [summary, loaded] = useLive(`ledger:${ledgerId}`, () => liveLedger(replica, ledgerId))
   const [debts = []] = useLive(`debts:${ledgerId}`, () => liveDebts(replica, ledgerId))
+  const [records] = useLive('records', () => liveRecords(replica))
   const filled = useReplicaFilled()
   const me = summary && myMember(summary.members, user.id)
 
@@ -79,6 +80,7 @@ export function Ledger({ ledgerId, tab, user }: { ledgerId: string; tab?: string
         <BalanceBands
           balances={mine}
           settledBody={t('ledger.noDebtsWink')}
+          provisional={records?.unsynced.some((record) => record.ledgerId === ledger.id)}
           footer={
             ledger.kind === 'group' && (
               <a className="band-link" href={href({ name: 'ledger', ledgerId: ledger.id, tab: 'balances' })}>
