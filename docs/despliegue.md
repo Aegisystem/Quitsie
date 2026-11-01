@@ -38,7 +38,7 @@ Requisitos en tu ordenador: `gh` con sesión iniciada (`gh auth login`) y `gclou
 | 11 | Creas la aplicación de Access para `ssh.<dominio>` y después publicas esa ruta en el túnel. |
 | 12 | Creas la clave de Resend y rellenas `/etc/quitsie/quitsie.env`, que es obligatorio; el asistente comprueba que no falte ninguna variable. |
 | 13 | Configura las variables de GitHub y lanza el primer despliegue. |
-| 14 | Ejecuta la prueba de restauración y envía un correo de prueba de las [alertas](#alertas). |
+| 14 | Ejecuta la prueba de restauración, que después la VM repite cada semana, y envía un correo de prueba de las [alertas](#alertas). |
 
 Al terminar, `https://<dominio>/` muestra la página de estado de la PWA y `https://<dominio>/api/v1/health` responde `{"status":"ok","database":"ok","version":"<commit>"}`.
 
@@ -124,6 +124,7 @@ journalctl -u quitsie-alert-check -u 'quitsie-alert@*' -n 50 --no-pager
 | Entrada | `cloudflared.service` | Se actualiza con `apt upgrade`. |
 | Despliegue | `/usr/local/sbin/quitsie-deploy` | Lo ejecuta el usuario `deploy`. |
 | Alertas | `quitsie-alert-check.timer`, `quitsie-alert@.service`, `/usr/local/sbin/quitsie-alert-check` | Revisa la VM cada 5 minutos y te escribe ([Alertas](#alertas)). Guarda lo ya avisado en `/var/lib/quitsie-alert`. |
+| Prueba de restauración | `quitsie-restore-test.timer`, `/usr/local/sbin/quitsie-restore-test` | Cada semana; si falla, avisa. |
 
 **Aplicar cambios de `deploy/`** (unidades, `litestream.yml`, versión de Litestream): conecta por IAP, actualiza el checkout y ejecuta otra vez `sudo bash deploy/provision.sh`. Es idempotente y no vuelve a pedir lo que ya tiene. Para subir Litestream, cambia `LITESTREAM_VERSION` y `LITESTREAM_SHA256` en `provision.sh` (el digest sale de `gh api repos/benbjohnson/litestream/releases/tags/v<versión>`).
 
@@ -149,11 +150,13 @@ La VM se vigila a sí misma, sin servicios de pago ni cuentas nuevas. Cada 5 min
 | Comprobación | Avisa cuando |
 | --- | --- |
 | Aplicación | `GET /api/v1/health` en `127.0.0.1:8080` no devuelve 200 tres veces seguidas. No se mira antes del primer despliegue ni mientras `quitsie-deploy` trabaja. |
-| Servicios | `quitsie`, `litestream` o `cloudflared` no están activos, o systemd los volvió a arrancar solo desde la comprobación anterior. `quitsie-restore` falló. |
+| Servicios | `quitsie`, `litestream` o `cloudflared` no están activos, o systemd los volvió a arrancar solo desde la comprobación anterior. `quitsie-restore` o la prueba semanal de restauración fallaron. |
 | Disco | El disco de `/var/lib/quitsie` llega al 85 %. |
 | Errores | Llegó al registro de `quitsie` o de `litestream` una línea `level=ERROR`, un `panic` o un `fatal error`. La aplicación registra en ERROR todo lo que necesita al dueño, también cada respuesta 500. |
 
-Además, `quitsie`, `litestream` y `cloudflared` llevan `OnFailure=quitsie-alert@%n.service`: cuando systemd marca una como fallida, el aviso sale en ese momento, sin esperar a la siguiente comprobación.
+Además, `quitsie`, `litestream`, `cloudflared` y la prueba semanal de restauración llevan `OnFailure=quitsie-alert@%n.service`: cuando systemd marca una como fallida, el aviso sale en ese momento, sin esperar a la siguiente comprobación.
+
+**Prueba semanal de restauración.** `quitsie-restore-test.timer` ejecuta `quitsie-restore-test` cada lunes hacia las 13:00 UTC, con un retraso al azar de hasta una hora, a través de `quitsie-restore-test.service`. Si la VM estaba apagada, lo hace al arrancar. Antes del primer despliegue no hay base y se salta. Si falla, te escribe; cuando lo arregles, `sudo systemctl start quitsie-restore-test` la repite y el siguiente aviso dice que se resolvió. Su salida: `journalctl -u quitsie-restore-test -n 50`.
 
 - **Un correo por problema, no uno cada 5 minutos.** Todo lo que encuentra una comprobación va en un solo correo. Si sigue fallando, se repite como mucho cada 4 horas, y cuando vuelve a funcionar llega «todo vuelve a funcionar». Los errores no tienen arreglo que detectar: se acumulan y salen juntos, como mucho cada 4 horas.
 - **Como mucho 10 correos de alerta al día.** Comparten la cuenta de Resend con los códigos de acceso, y el plan gratuito envía 100 al día.
@@ -224,5 +227,6 @@ Con `quitsie.com` como principal, haz que `quitsie.app` redirija a él: añade a
 | `alert-check.test.sh` | Prueba `alert-check.sh` con sustitutos de `curl`, `systemctl` y `journalctl`; la ejecuta la CI. |
 | `quitsie.service`, `quitsie-restore.service`, `litestream.service`, `cloudflared.service` | Unidades systemd. |
 | `quitsie-alert-check.service`, `quitsie-alert-check.timer`, `quitsie-alert@.service` | Unidades de las alertas. |
+| `quitsie-restore-test.service`, `quitsie-restore-test.timer` | La prueba de restauración de cada semana. |
 | `litestream.yml` | Configuración de Litestream (sin secretos). |
 | `*.env.example` | Nombres de las variables de `/etc/quitsie/*.env`. |

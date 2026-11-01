@@ -34,8 +34,9 @@ DEPLOY_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 ETC_DIR=/etc/quitsie
 UNITS=(quitsie.service quitsie-restore.service litestream.service cloudflared.service)
 # Units that only watch the others: changing them restarts nothing else.
-WATCH_UNITS=(quitsie-alert-check.service quitsie-alert-check.timer quitsie-alert@.service)
-TIMERS=(quitsie-alert-check.timer)
+WATCH_UNITS=(quitsie-alert-check.service quitsie-alert-check.timer quitsie-alert@.service
+             quitsie-restore-test.service quitsie-restore-test.timer)
+TIMERS=(quitsie-alert-check.timer quitsie-restore-test.timer)
 # Plain addresses only: the wizard passes QUITSIE_ALERT_EMAIL inside a remote
 # command, so no quote or space may get through.
 EMAIL_RE='^[A-Za-z0-9._%+-]+@([A-Za-z0-9-]+\.)+[A-Za-z]{2,}$'

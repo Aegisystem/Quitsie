@@ -592,7 +592,7 @@ pause
 # ── 14 ────────────────────────────────────────────────────────────────────
 stage "Prueba de restauración y de las alertas"
 say "Restauro el último respaldo de R2 en una carpeta temporal de la VM y compruebo su integridad."
-say "La base real no se toca. Hazlo ahora y repítelo cada mes (docs/despliegue.md)."
+say "La base real no se toca. Después, la VM la repite sola cada semana y te avisa si falla."
 note "Litestream sube los cambios casi al instante, pero la base no existe hasta el primer arranque del binario."
 if confirm "¿Ejecutar quitsie-restore-test en la VM?"; then
   sleep 5
@@ -611,6 +611,6 @@ finish
 say "Pendiente (no urgente):"
 note "- Opcional: un monitor externo gratuito (por ejemplo UptimeRobot) sobre https://$QUITSIE_DOMAIN/api/v1/health cada 5 minutos. Si la VM entera cae, no puede avisar de sí misma (docs/despliegue.md, «Alertas»)."
 note "- quitsie.app: haz que redirija a $QUITSIE_DOMAIN con una Redirect Rule (docs/despliegue.md)."
-note "- Apunta en tu calendario la caducidad del token de servicio y la prueba de restauración mensual."
+note "- Apunta en tu calendario la caducidad del token de servicio."
 note "- Acceso de emergencia a la VM: gcloud compute ssh $VM_NAME --zone $GCP_ZONE --tunnel-through-iap"
 printf '\n'
