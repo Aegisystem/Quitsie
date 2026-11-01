@@ -131,6 +131,8 @@ Los Saldos no se guardan: se calculan sumando, lo cual es rápido a esta escala.
 
 - Toda consulta se limita a los libros en los que el Usuario tiene un Miembro activo.
 - Cookie `HttpOnly`, `Secure` y `SameSite=Lax`. Además, las peticiones que modifican datos deben traer un encabezado `Origin` del propio dominio (protección CSRF).
+- Toda respuesta lleva una `Content-Security-Policy` que solo admite los archivos de la propia app, sin scripts ni estilos en línea y sin dejarse enmarcar, además de `X-Content-Type-Options`, `Referrer-Policy: same-origin`, `Cross-Origin-Opener-Policy` y una `Permissions-Policy` que apaga cámara, micrófono, ubicación y pagos. Las de `/api/` llevan también `Cache-Control: no-store`.
+- En producción el servidor exige HTTPS por su cuenta: envía HSTS de un año y redirige a `QUITSIE_PUBLIC_ORIGIN` lo que Cloudflare vio llegar por HTTP. Lo sabe por `CF-Visitor` y `X-Forwarded-Proto`, que solo cree por loopback, como `CF-Connecting-IP`.
 - Los códigos de acceso caducan a los 10 minutos y admiten 5 intentos como máximo. También se limitan los envíos por email y por IP.
 - Un email admite 10 códigos equivocados al día, sumando todos sus códigos. Esa cuenta vive en la base, así que un código nuevo o un reinicio no dan más intentos. Una IP admite 60 verificaciones por hora.
 - Los tokens de sesión son aleatorios y en la base solo se guarda su hash. Los Enlaces de invitación se derivan con un HMAC de una clave del servidor, así que no se guardan ([ADR 0010](adr/0010-enlaces-de-invitacion-derivados.md)).

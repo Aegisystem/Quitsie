@@ -68,6 +68,14 @@ Nada secreto está en el repositorio ni pasa por un chat. Las plantillas `deploy
 | Token de servicio de Access | secretos `CF_ACCESS_CLIENT_ID` y `CF_ACCESS_CLIENT_SECRET` de GitHub | el asistente, con entrada oculta |
 | Dominio, clave pública de la VM | variables `QUITSIE_URL`, `DEPLOY_SSH_HOST` y `DEPLOY_SSH_HOST_KEY` de GitHub (públicas) | el asistente |
 
+### HTTPS
+
+El servidor exige HTTPS por su cuenta en producción. Toda respuesta lleva `Strict-Transport-Security: max-age=31536000`, y una visita que Cloudflare vio llegar por `http://` se redirige a `QUITSIE_PUBLIC_ORIGIN` con la misma ruta: 301 en `GET` y `HEAD`, 308 en lo demás. El servidor lo sabe por los encabezados `CF-Visitor` y `X-Forwarded-Proto`, que Cloudflare escribe y `cloudflared` reenvía, y solo los cree si la conexión llega por loopback. Una petición sin ellos, como la comprobación de salud del despliegue en `127.0.0.1`, nunca se redirige.
+
+Aun así conviene activar en Cloudflare **SSL/TLS → Edge Certificates → Always Use HTTPS**, para que la redirección ocurra en el borde sin llegar a la VM. Si activas también HSTS allí, usa la misma duración. `includeSubDomains` y `preload` quedan fuera a propósito: el primero alcanza a todos los subdominios, `ssh.<dominio>` incluido, y entrar en la lista de precarga de los navegadores es difícil de deshacer. Solo la precarga protege la primera visita por `http://` en una red hostil, así que activarlos es una decisión del dueño.
+
+Para comprobarlo tras el despliegue: `curl -sI http://<dominio>/` responde 301 hacia `https://` (de Cloudflare si «Always Use HTTPS» está activo, del servidor si no), y `curl -sI https://<dominio>/` trae `strict-transport-security`.
+
 ## Despliegue continuo
 
 [`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml) arranca cuando la CI termina en verde sobre un push a `main`:
