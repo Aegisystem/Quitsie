@@ -145,7 +145,7 @@ const googleFailedPath = "/login?error=google"
 
 func (s *Server) FinishGoogleLogin(ctx context.Context, _ FinishGoogleLoginRequestObject) (FinishGoogleLoginResponseObject, error) {
 	r := requestFrom(ctx)
-	clearFlow := s.deps.Auth.ClearGoogleCookie()
+	clearFlow := auth.ClearGoogleCookie()
 	signIn, err := s.deps.Auth.FinishGoogle(ctx, r, device(r))
 	switch {
 	case err == nil:

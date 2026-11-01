@@ -1222,7 +1222,7 @@ export interface operations {
             /** @description The code was sent, if the email can receive one. */
             204: {
                 headers: {
-                    /** @description The flow cookie that ties the code to this browser. HttpOnly, Secure and SameSite=Lax, for the 10 minutes of the code. */
+                    /** @description The flow cookie, `__Host-quitsie_code_flow`, that ties the code to this browser. HttpOnly, Secure and SameSite=Lax, for the 10 minutes of the code. */
                     "Set-Cookie"?: string;
                     [name: string]: unknown;
                 };
@@ -1270,7 +1270,7 @@ export interface operations {
             /** @description Signed in. */
             200: {
                 headers: {
-                    /** @description The session cookie, and the known-device cookie that tells later sign-ins this browser signed in to the User before (HttpOnly, Secure, for a year; signing out keeps it). It also deletes the flow cookie. */
+                    /** @description The session cookie, and the known-device cookie, `__Host-quitsie_known_device`, that tells later sign-ins this browser signed in to the User before (HttpOnly, Secure, for a year; signing out keeps it). It also deletes the flow cookie. */
                     "Set-Cookie"?: string;
                     [name: string]: unknown;
                 };
@@ -1315,7 +1315,7 @@ export interface operations {
             302: {
                 headers: {
                     Location?: string;
-                    /** @description Cookie with the OAuth state. */
+                    /** @description `__Host-quitsie_google`, with the OAuth state, for the 10 minutes of the flow. */
                     "Set-Cookie"?: string;
                     [name: string]: unknown;
                 };

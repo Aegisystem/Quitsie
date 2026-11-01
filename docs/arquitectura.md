@@ -133,7 +133,7 @@ Los Saldos no se guardan: se calculan sumando, lo cual es rápido a esta escala.
 ## Seguridad
 
 - Toda consulta se limita a los libros en los que el Usuario tiene un Miembro activo.
-- Cookie `HttpOnly`, `Secure` y `SameSite=Lax`. Además, las peticiones que modifican datos deben traer un encabezado `Origin` del propio dominio (protección CSRF).
+- Las cookies son `HttpOnly`, `Secure` y `SameSite=Lax`, y su nombre lleva el prefijo `__Host-`: el navegador solo las acepta de este mismo host, con `Path=/` y sin `Domain`, así que otro subdominio no puede fijarlas ni tapar las verdaderas. Las de flujo y de dispositivo conocido viajan por eso en toda petición, aunque solo las lee el inicio de sesión. Además, las peticiones que modifican datos deben traer un encabezado `Origin` del propio dominio (protección CSRF).
 - Toda respuesta lleva una `Content-Security-Policy` que solo admite los archivos de la propia app, sin scripts ni estilos en línea y sin dejarse enmarcar, además de `X-Content-Type-Options`, `Referrer-Policy: same-origin`, `Cross-Origin-Opener-Policy` y una `Permissions-Policy` que apaga cámara, micrófono, ubicación y pagos. Las de `/api/` llevan también `Cache-Control: no-store`.
 - En producción el servidor exige HTTPS por su cuenta: envía HSTS de un año y redirige a `QUITSIE_PUBLIC_ORIGIN` lo que Cloudflare vio llegar por HTTP. Lo sabe por `CF-Visitor` y `X-Forwarded-Proto`, que solo cree por loopback, como `CF-Connecting-IP`.
 - Los códigos de acceso caducan a los 10 minutos y admiten 5 intentos como máximo. Cada código queda atado al navegador que lo pidió con una cookie de flujo, así que nadie más puede comprobarlo ni gastar sus intentos ([ADR 0011](adr/0011-codigos-atados-al-navegador.md)).
