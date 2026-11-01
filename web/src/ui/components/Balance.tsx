@@ -1,8 +1,9 @@
-import { type CSSProperties, type ReactNode, useEffect, useState } from 'react'
+import type { CSSProperties, ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { formatMoney } from '../money'
 import { Figure } from './icons'
-import { bandsOf, emptyingMs, tokensOf, withSettling } from './tally'
+import { type Band, bandsOf, emptyingMs, settlingMs, tokensOf, withSettling } from './tally'
+import { useSettled } from './useSettled'
 
 export type Tone = 'favor' | 'against' | 'even'
 
@@ -20,10 +21,7 @@ export function useBalanceLabel() {
   return (amount: number | bigint) => (amount > 0 ? t('balance.owedToYou') : amount < 0 ? t('balance.youOwe') : t('balance.settled'))
 }
 
-// Without motion, what leaves goes at once, as everything else does.
-function reducedMotion(): boolean {
-  return typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
-}
+const rowKey = (row: readonly number[]) => row.join(' ')
 
 // Isotype counting: every token stands for the same amount, so a Balance is read
 // by counting, and a part of a token is cut, never scaled. When the Balance goes
@@ -31,22 +29,7 @@ function reducedMotion(): boolean {
 // row is seen emptying (DESIGN.md).
 export function Tally({ amount, unit, align = 'start' }: { amount: number; unit: number; align?: 'start' | 'end' }) {
   const tokens = tokensOf(amount, unit)
-  // The row as it was last left on screen.
-  const [shown, setShown] = useState(tokens)
-  const leaving = reducedMotion() ? [] : shown.slice(tokens.length)
-  const tokensKey = tokens.join(' ')
-  const shownKey = shown.join(' ')
-  useEffect(() => {
-    const settle = () => setShown(tokens)
-    if (leaving.length === 0) {
-      if (tokensKey !== shownKey) settle()
-      return
-    }
-    const timer = window.setTimeout(settle, emptyingMs(leaving.length))
-    return () => window.clearTimeout(timer)
-    // The keys stand for the rows themselves.
-  }, [tokensKey, shownKey])
-
+  const leaving = useSettled(tokens, rowKey, (shown, now) => emptyingMs(shown.length - now.length)).slice(tokens.length)
   const row = [...tokens, ...leaving]
   return (
     <span className={`tally tally-${align}`} aria-hidden="true">
@@ -78,27 +61,13 @@ export function TallyLegend({ unit, currency }: { unit: number; currency: string
   )
 }
 
+const bandsKey = (bands: readonly Band[]) => bands.map(({ currency, amount }) => `${currency} ${amount}`).join(' ')
+
 // The bands to show. Being even is seeing the row empty (DESIGN.md), so a
 // currency whose Balance just reached zero keeps its band until it has.
 function useBands(balances: ReadonlyMap<string, number | bigint>) {
   const now = bandsOf(balances)
-  // The bands as they were last left on screen.
-  const [shown, setShown] = useState(now)
-  const { bands, settling } = reducedMotion() ? { bands: now, settling: [] } : withSettling(shown, now)
-  const nowKey = now.map(({ currency, amount }) => `${currency} ${amount}`).join(' ')
-  const shownKey = shown.map(({ currency, amount }) => `${currency} ${amount}`).join(' ')
-  useEffect(() => {
-    const settle = () => setShown(now)
-    if (settling.length === 0) {
-      if (nowKey !== shownKey) settle()
-      return
-    }
-    const longest = Math.max(...settling.map(({ amount, unit }) => tokensOf(Number(amount), unit).length))
-    const timer = window.setTimeout(settle, emptyingMs(longest))
-    return () => window.clearTimeout(timer)
-    // The keys stand for the bands themselves.
-  }, [nowKey, shownKey])
-  return bands
+  return withSettling(useSettled(now, bandsKey, settlingMs), now).bands
 }
 
 // Full-strength color fields, one per currency: blue when owed, red when owing.

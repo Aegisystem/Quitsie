@@ -60,6 +60,7 @@ async function applyChanges(replica: Replica, changes: Changes): Promise<void> {
       if (!visible.has(ledgerId)) await dropLedger(replica, ledgerId)
     }
     await leaveQueueOnceInReplica(replica)
+    if (!changes.hasMore) await sendAgainIfMissing(replica)
     await replica.meta.put({ key: 'cursor', value: changes.cursor })
   })
 }
@@ -72,6 +73,22 @@ async function leaveQueueOnceInReplica(replica: Replica): Promise<void> {
     const row = await (record.kind === 'expense' ? replica.expenses : replica.settlements).get(record.id)
     if (row?.ledgerId === record.ledgerId) await replica.queue.delete(record.id)
   }
+}
+
+// After the last page the replica has every row the server had, when the pull
+// read it, in the ledgers the User can see. So a record still accepted was lost
+// in a restore that left the cursor outside the versions it skipped, and no 410
+// rebuilt the replica; or another tab sent it after the pull read. It goes back
+// to the queue: the server accepts a record it already has without storing it
+// twice, so the second case costs one push. One whose ledger is gone leaves the
+// queue instead, as in dropLedger.
+async function sendAgainIfMissing(replica: Replica): Promise<void> {
+  const ledgers = new Set(await replica.ledgers.toCollection().primaryKeys())
+  await replica.queue
+    .where({ status: 'accepted' })
+    .filter(({ ledgerId }) => !ledgers.has(ledgerId))
+    .delete()
+  await replica.queue.where({ status: 'accepted' }).modify({ status: 'unsynced' })
 }
 
 // Deletes a ledger the User can no longer see, with everything in it. Accepted

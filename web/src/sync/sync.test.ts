@@ -70,7 +70,7 @@ function setup(server: FakeServer) {
     return ms
   }
 
-  return { replica, engine, device, retry }
+  return { replica, api, engine, device, retry }
 }
 
 // What the expense form would queue: `paid` and `owed` by Member name.
@@ -671,6 +671,92 @@ describe('the queue through a rebuild or a lost ledger', () => {
 
     await engine.sync()
     expect(server.expensesIn(trip).map((expense) => expense.id)).toContain(id)
+  })
+
+  // Litestream had not shipped the write yet, and the device's cursor is the
+  // backup's version, outside the versions the restore skipped: no 410.
+  test('a record the server lost in a restore that did not rebuild the replica goes back to the queue', async () => {
+    const server = fakeServer()
+    const trip = server.addGroup({ name: 'Viaje a Cusco', currency: 'PEN', members: ['Ana'] })
+    const { replica, engine, device, retry } = setup(server)
+    await engine.sync()
+    const backup = server.backup()
+    const cursor = server.version()
+
+    device.goOffline()
+    const id = await engine.addExpense(taxi(trip))
+    device.goOnline()
+    server.failWith(503, 'GET')
+    await engine.sync()
+    expect(await firstValue(liveRecords(replica))).toEqual({ rejected: [], unsynced: [] })
+
+    server.restore(backup)
+    server.failWith(undefined)
+    await retry()
+
+    expect(server.pulls.at(-1)).toBe(cursor)
+    expect((await firstValue(liveRecords(replica))).unsynced.map((record) => record.id)).toEqual([id])
+
+    await engine.sync()
+    expect(server.expensesIn(trip).map((expense) => expense.id)).toEqual([id])
+    expect(await firstValue(liveExpenses(replica, trip.id))).toEqual([expect.objectContaining({ id, sync: 'synced', createdBy: me })])
+    expect(await firstValue(liveRecords(replica))).toEqual({ rejected: [], unsynced: [] })
+  })
+
+  // Two tabs share the replica, each with its engine. The worst case is one
+  // push more, which the server answers without storing anything twice.
+  test('a record accepted while another tab’s pull was on its way is neither lost nor doubled', async () => {
+    const server = fakeServer()
+    const trip = server.addGroup({ name: 'Viaje a Cusco', currency: 'PEN', members: ['Ana'] })
+    const { replica, api, engine, device } = setup(server)
+    const otherTab = createSyncEngine({ replica, api, environment: device.environment })
+    await engine.sync()
+
+    const release = server.holdNextPull()
+    const stale = engine.sync()
+    await vi.waitFor(() => expect(server.pulls).toHaveLength(2))
+    server.failWith(503, 'GET')
+    const id = await otherTab.addExpense(taxi(trip))
+    await vi.waitFor(() => expect(otherTab.getStatus()).toBe('retrying'))
+    server.failWith(undefined)
+    release()
+    await stale
+
+    expect((await firstValue(liveRecords(replica))).unsynced.map((record) => record.id)).toEqual([id])
+
+    await engine.sync()
+    expect(server.pushes.filter(({ expenses }) => expenses.some((expense) => expense.id === id))).toHaveLength(2)
+    expect(server.expensesIn(trip).map((expense) => expense.id)).toEqual([id])
+    expect(await firstValue(liveExpenses(replica, trip.id))).toEqual([expect.objectContaining({ id, sync: 'synced' })])
+    expect(await firstValue(liveRecords(replica))).toEqual({ rejected: [], unsynced: [] })
+  })
+
+  // Otherwise it would go back to the queue after every pull, and the server
+  // would accept it again at every push.
+  test('a record accepted again in a ledger already dropped leaves the queue', async () => {
+    const server = fakeServer()
+    const trip = server.addGroup({ name: 'Viaje a Cusco', currency: 'PEN', members: ['Ana'] })
+    const { replica, engine, device, retry } = setup(server)
+    await engine.sync()
+
+    device.goOffline()
+    const id = await engine.addExpense(taxi(trip))
+    device.goOnline()
+    server.dropConnectionAfterNextPush()
+    await engine.sync()
+
+    server.removeMe(trip, { reason: 'removed' })
+    server.setReachable(true)
+    server.failWith(503, 'POST')
+    await retry()
+    expect((await firstValue(liveRecords(replica))).unsynced.map((record) => record.id)).toEqual([id])
+
+    server.failWith(undefined)
+    await engine.sync()
+    await engine.sync()
+
+    expect(server.pushes).toHaveLength(2)
+    expect(await replica.queue.count()).toBe(0)
   })
 
   test('removed from the Group offline: the record is rejected and stays, though the ledger goes', async () => {

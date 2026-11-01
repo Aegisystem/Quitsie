@@ -1,7 +1,7 @@
 import { useId, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { Member, User } from '../../api/client'
-import { liveLedger, liveRecords, type LedgerSummary } from '../../local'
+import { liveLedger, liveRecords, type LedgerSummary, settlementRecord } from '../../local'
 import { Figure, figureState, Icon } from '../components/icons'
 import { Screen, toast, useOnline } from '../components/Shell'
 import { amountError, balanceError } from '../forms/amountError'
@@ -83,7 +83,7 @@ function SettlementFields({
   const value = read.ok ? read.value : 0
   const sameSuggestedPair = from === fromId && to === toId && suggested !== undefined && (groupCurrency !== undefined || currency === suggestedCurrency)
   const people = fromId === toId ? t('settlement.samePerson') : !activeId(fromId) || !activeId(toId) ? t('settlement.onlyActive') : undefined
-  const settlement = { id: '', from: fromId, to: toId, amount: value, currency }
+  const settlement = settlementRecord({ fromMemberId: fromId, toMemberId: toId, amount: value, currency })
   const errors = {
     people,
     amount:

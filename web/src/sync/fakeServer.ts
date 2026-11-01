@@ -43,6 +43,7 @@ export function fakeServer({ versionsPerPull = Infinity }: { versionsPerPull?: n
   let maxBatch = Infinity
   let failure: { status: 401 | 503; method?: 'GET' | 'POST' } | undefined
   let afterNextPush: 'drop the connection' | 'lose the answer' | undefined
+  let heldPull: Promise<void> | undefined
   let active = 0
   let busiest = 0
 
@@ -158,7 +159,11 @@ export function fakeServer({ versionsPerPull = Infinity }: { versionsPerPull?: n
       const since = Number(url.searchParams.get('since'))
       pulls.push(since)
       if (since > db.counter || gapAround(since)) return problem(410, 'cursor_invalid')
-      return json(200, pull(since))
+      const changes = pull(since)
+      const held = heldPull
+      heldPull = undefined
+      await held
+      return json(200, changes)
     }
     if (request.method === 'POST' && url.pathname === '/api/v1/records') {
       const batch = (await request.json()) as RecordBatch
@@ -204,6 +209,16 @@ export function fakeServer({ versionsPerPull = Infinity }: { versionsPerPull?: n
     // The same, and the network stays down until setReachable(true).
     dropConnectionAfterNextPush() {
       afterNextPush = 'drop the connection'
+    },
+    // The next GET /sync reads the database at once but answers only when the
+    // function returned is called, as a pull still on its way while other
+    // requests go through.
+    holdNextPull(): () => void {
+      let release = () => {}
+      heldPull = new Promise((resolve) => {
+        release = resolve
+      })
+      return release
     },
     expensesIn: (group: FakeGroup) => [...db.expenses.values()].filter(({ ledgerId }) => ledgerId === group.id),
 
