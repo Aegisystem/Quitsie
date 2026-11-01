@@ -1,6 +1,7 @@
 package httpapi_test
 
 import (
+	"context"
 	"net/http"
 	"testing"
 
@@ -8,6 +9,7 @@ import (
 
 	"github.com/Aegisystem/Quitsie/api/internal/domain"
 	"github.com/Aegisystem/Quitsie/api/internal/httpapi"
+	"github.com/Aegisystem/Quitsie/api/internal/store"
 )
 
 // The attack of finding 13 in docs/revision-seguridad.md: thousands of
@@ -170,5 +172,36 @@ func TestUpdateGroupRefusesACurrencyThatTakesABalancePastTheLimit(t *testing.T) 
 	decodeProblem(t, rec, http.StatusBadRequest, httpapi.ProblemCodeInvalidAmounts)
 	if got := a.pull(t, tr.ana, 0).Groups[0].Currency; got != "USD" {
 		t.Errorf("currency = %s, want USD", got)
+	}
+}
+
+func TestPullChangesSimplifiesDebtsByPairThatWouldGoPastTheLimit(t *testing.T) {
+	a := newRecordsAPI(t)
+	tr := a.seedTrip()
+	a.write(func(q *store.Queries, version int64) error {
+		_, err := q.UpdateLedger(context.Background(), store.UpdateLedgerParams{ID: tr.id, Name: "Viaje", SimplifyDebts: false, Version: version})
+		return err
+	})
+	// Ten rounds of Ana paying 10^15 for Beto, Beto for Carla and Carla for
+	// Ana leave every Balance at zero, but each pair owes 10^16.
+	var circle []httpapi.NewExpense
+	for range 10 {
+		circle = append(circle,
+			tr.expenseBy(tr.anaM, tr.betoM, domain.MaxAmount),
+			tr.expenseBy(tr.betoM, tr.carlaM, domain.MaxAmount),
+			tr.expenseBy(tr.carlaM, tr.anaM, domain.MaxAmount))
+	}
+	circle = append(circle, tr.expenseBy(tr.anaM, tr.betoM, 1000))
+	for _, r := range a.push(t, tr.ana, expenses(circle...)) {
+		if r.Status != httpapi.Accepted {
+			t.Fatalf("push = %+v, want accepted", r)
+		}
+	}
+
+	got := debtsOf(t, a.pull(t, tr.ana, 0), tr.id)
+
+	want := []httpapi.Debt{{FromMemberId: id(tr.betoM), ToMemberId: id(tr.anaM), Amount: 1000, Currency: "USD"}}
+	if len(got) != 1 || got[0] != want[0] {
+		t.Errorf("debts = %+v, want the simplified %+v", got, want)
 	}
 }
