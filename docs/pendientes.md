@@ -33,7 +33,7 @@ Borra cada punto de aquí cuando quede terminado. Antes de actuar sobre un punto
 - «Continuar con Google» solo cuando el servidor lo tiene configurado, cookies con prefijo `__Host-` y los fallos de los manejadores en el log como `ERROR`.
 - Notas para el dueño: [opciones para la IP pública](investigacion/ip-publica.md) y el [inventario de datos personales](datos-personales.md).
 
-Dos cambios afectan a quien ya probó la app: las migraciones `00003` a `00005` se aplican al arrancar, y un código de acceso solo vale en el navegador que lo pidió.
+Dos cambios afectan a quien ya probó la app: las migraciones `00003` a `00006` se aplican al arrancar, y un código de acceso solo vale en el navegador que lo pidió.
 
 ## 1. Rama sin integrar
 
