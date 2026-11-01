@@ -94,6 +94,36 @@ func TestAGoogleAccountStaysLinkedWhenItsEmailChanges(t *testing.T) {
 	}
 }
 
+// A shared laptop where Beto signed in with a code and then Ana with Google:
+// it stays known to both, and keeps Ana's token the next time.
+func TestGoogleKeepsTheBrowserKnownToWhoeverSignedInThere(t *testing.T) {
+	f, g := newGoogleFixture(t)
+	ctx := context.Background()
+	betos := f.signedInBrowser(t, "beto@example.com", anaIP).KnownDevices
+	withCookie := func(known string) *http.Request {
+		req := f.googleCallback(t, g, anaAtGoogle)
+		req.AddCookie(auth.KnownDeviceCookie(known))
+		return req
+	}
+
+	first, err := f.svc.FinishGoogle(ctx, withCookie(betos), device)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tokens := strings.Split(first.KnownDevices, ".")
+	if len(tokens) != 2 || tokens[1] != betos {
+		t.Fatalf("cookie = %q, want a token for Ana and then Beto's %q", first.KnownDevices, betos)
+	}
+
+	again, err := f.svc.FinishGoogle(ctx, withCookie(first.KnownDevices), device)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again.KnownDevices != first.KnownDevices {
+		t.Errorf("cookie = %q, want the same %q", again.KnownDevices, first.KnownDevices)
+	}
+}
+
 func TestTheGoogleFlowCookieIsShortLivedAndHidden(t *testing.T) {
 	f, _ := newGoogleFixture(t)
 

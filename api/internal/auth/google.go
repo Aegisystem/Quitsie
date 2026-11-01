@@ -186,10 +186,7 @@ func (s *Service) FinishGoogle(ctx context.Context, r *http.Request, device stri
 		return SignIn{}, fmt.Errorf("%w: %v", ErrGoogleFailed, err)
 	}
 
-	var knownDevices string
-	if c, err := r.Cookie(KnownDeviceCookieName); err == nil {
-		knownDevices = c.Value
-	}
+	knownDevices := cookieValue(r, KnownDeviceCookieName)
 	var signIn SignIn
 	err = s.inTx(ctx, func(q *store.Queries) error {
 		user, created, err := s.userByGoogle(ctx, q, idToken.Subject, email, claims.Name)

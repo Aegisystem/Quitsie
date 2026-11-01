@@ -43,3 +43,13 @@ func clearHostCookie(name string) *http.Cookie {
 	c.MaxAge = -1
 	return c
 }
+
+// cookieValue returns the value of r's cookie with this name, empty without
+// one.
+func cookieValue(r *http.Request, name string) string {
+	c, err := r.Cookie(name)
+	if err != nil {
+		return ""
+	}
+	return c.Value
+}

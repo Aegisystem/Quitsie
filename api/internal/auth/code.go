@@ -80,14 +80,11 @@ type Browser struct {
 // BrowserOf reads the cookies of sign-in that r carries. ip is the address
 // the limits count it under.
 func BrowserOf(r *http.Request, ip string) Browser {
-	b := Browser{IP: ip}
-	if c, err := r.Cookie(CodeFlowCookieName); err == nil {
-		b.Flow = c.Value
+	return Browser{
+		IP:           ip,
+		Flow:         cookieValue(r, CodeFlowCookieName),
+		KnownDevices: cookieValue(r, KnownDeviceCookieName),
 	}
-	if c, err := r.Cookie(KnownDeviceCookieName); err == nil {
-		b.KnownDevices = c.Value
-	}
-	return b
 }
 
 // codeFlowCookie returns the cookie that carries flow. It lasts as long as
