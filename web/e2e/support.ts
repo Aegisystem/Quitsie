@@ -128,9 +128,13 @@ interface ServerExpense {
 // What the server holds for this device's User, whether the device is online or not.
 export async function serverChanges(page: Page): Promise<{ expenses: ServerExpense[]; members: { name: string; userId?: string }[] }> {
   const cookies = await page.context().cookies()
-  const response = await fetch(`${server}/api/v1/sync?since=0`, {
-    headers: { cookie: cookies.map(({ name, value }) => `${name}=${value}`).join('; ') },
-  })
+  const pull = () =>
+    fetch(`${server}/api/v1/sync?since=0`, {
+      headers: { cookie: cookies.map(({ name, value }) => `${name}=${value}`).join('; ') },
+    })
+  // A User gets one pull at a time, and the device may be running its own.
+  let response = await pull()
+  while (response.status === 429) response = await pull()
   expect(response.status).toBe(200)
   return (await response.json()) as { expenses: ServerExpense[]; members: { name: string; userId?: string }[] }
 }
