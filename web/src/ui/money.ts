@@ -17,7 +17,7 @@ export function regionLocale(): string {
 
 // Listings hide the decimals when they are zero ('45 €'); forms pass
 // `trim: false` to always show them ('45,00 €').
-export function formatMoney(minor: number, currency: string, opts: { signed?: boolean; trim?: boolean } = {}): string {
+export function formatMoney(minor: number | bigint, currency: string, opts: { signed?: boolean; trim?: boolean } = {}): string {
   return formatAmount(minor, currency, regionLocale(), { signed: opts.signed, hideZeroDecimals: opts.trim ?? true })
 }
 

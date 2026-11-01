@@ -5,18 +5,18 @@ import { Figure } from './icons'
 
 export type Tone = 'favor' | 'against' | 'even'
 
-export function toneOf(amount: number): Tone {
+export function toneOf(amount: number | bigint): Tone {
   return amount > 0 ? 'favor' : amount < 0 ? 'against' : 'even'
 }
 
-export function Amount({ minor, currency, signed, tone }: { minor: number; currency: string; signed?: boolean; tone?: Tone }) {
+export function Amount({ minor, currency, signed, tone }: { minor: number | bigint; currency: string; signed?: boolean; tone?: Tone }) {
   return <span className={`amount${tone ? ` amount-${tone}` : ''}`}>{formatMoney(minor, currency, { signed })}</span>
 }
 
 // The User's own Balance in words: "Te deben", "Debes", "Estás a mano".
 export function useBalanceLabel() {
   const { t } = useTranslation()
-  return (amount: number) => (amount > 0 ? t('balance.owedToYou') : amount < 0 ? t('balance.youOwe') : t('balance.settled'))
+  return (amount: number | bigint) => (amount > 0 ? t('balance.owedToYou') : amount < 0 ? t('balance.youOwe') : t('balance.settled'))
 }
 
 // Isotype counting: every token stands for the same amount, so a Balance is read
@@ -55,14 +55,15 @@ export function TallyLegend({ unit, currency }: { unit: number; currency: string
 }
 
 // Full-strength color fields, one per currency: blue when owed, red when owing.
-// Balances in different currencies are never added together.
+// Balances in different currencies are never added together. A total across
+// ledgers comes as a bigint, since it can go past the safe integers.
 export function BalanceBands({
   balances,
   footer,
   settledTitle,
   settledBody,
 }: {
-  balances: ReadonlyMap<string, number>
+  balances: ReadonlyMap<string, number | bigint>
   footer?: ReactNode
   settledTitle?: string
   settledBody?: string
@@ -96,14 +97,17 @@ export function BalanceBands({
   return (
     <div className="bands">
       {entries.map(([currency, amount], i) => {
-        const unit = tallyUnit(amount, currency)
+        // Tokens only show the size, which a number is close enough for even
+        // past the safe integers.
+        const size = Number(amount)
+        const unit = tallyUnit(size, currency)
         return (
           <div key={currency} className={`band band-${toneOf(amount)}`}>
             <div className="band-inner">
               <p className="band-label">{label(amount)}</p>
-              <p className={`band-amount${compact ? ' band-amount-compact' : ''}`}>{formatMoney(Math.abs(amount), currency)}</p>
+              <p className={`band-amount${compact ? ' band-amount-compact' : ''}`}>{formatMoney(amount < 0 ? -amount : amount, currency)}</p>
               <div className="band-tally">
-                <Tally amount={amount} unit={unit} />
+                <Tally amount={size} unit={unit} />
                 <TallyLegend unit={unit} currency={currency} />
               </div>
             </div>

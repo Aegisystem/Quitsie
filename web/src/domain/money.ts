@@ -3,8 +3,9 @@ import { fail, ok, type Result } from './result'
 
 // Amounts are integers in the currency's minor unit (docs/arquitectura.md):
 // 1050 is 10.50 USD and 1050 JPY. They never go through floating point.
-// No amount goes over 10^15 minor units, so that adding up Balances never
-// leaves the safe integers (docs/reglas-de-negocio.md).
+// No record's amount goes over 10^15 minor units. That bounds one record, not
+// a Balance, which adds up many: the Balances have their own limit, maxBalance
+// in balances.ts (docs/reglas-de-negocio.md).
 const maxAmount = 10 ** 15
 
 export function assertAmount(amount: number): void {
@@ -13,10 +14,20 @@ export function assertAmount(amount: number): void {
   }
 }
 
+// The amount to format, as a bigint. A number must be an integer. Past the
+// safe integers it is already rounded, and it is shown as it is rather than
+// failing the screen: a provisional Balance can go past maxBalance until the
+// server refuses the record, and a form adds up whatever was typed.
+function unitsOf(amount: number | bigint): bigint {
+  if (typeof amount === 'bigint') return amount
+  if (!Number.isInteger(amount)) throw new Error(`${amount} is not an integer amount in minor units`)
+  return BigInt(amount)
+}
+
 // '10.50' for 1050 with 2 decimals: the exact decimal, without going through a float.
-function toDecimalString(amount: number, digits: number): string {
-  const sign = amount < 0 ? '-' : ''
-  const units = String(Math.abs(amount)).padStart(digits + 1, '0')
+function toDecimalString(amount: bigint, digits: number): string {
+  const sign = amount < 0n ? '-' : ''
+  const units = String(amount < 0n ? -amount : amount).padStart(digits + 1, '0')
   if (digits === 0) return sign + units
   return `${sign}${units.slice(0, -digits)}.${units.slice(-digits)}`
 }
@@ -48,16 +59,19 @@ export interface FormatOptions {
   signed?: boolean
 }
 
+// A bigint formats exactly, however large: a total across ledgers can go past
+// the safe integers.
 export function formatAmount(
-  amount: number,
+  amount: number | bigint,
   currency: CurrencyCode,
   locale: string,
   options: FormatOptions = {},
 ): string {
-  assertAmount(amount)
+  let units = unitsOf(amount)
   let digits = minorUnitDigits(currency)
-  if (options.hideZeroDecimals && amount % 10 ** digits === 0) {
-    amount /= 10 ** digits
+  const scale = 10n ** BigInt(digits)
+  if (options.hideZeroDecimals && units % scale === 0n) {
+    units /= scale
     digits = 0
   }
   const formatter = numberFormat(locale, {
@@ -72,20 +86,20 @@ export function formatAmount(
   })
   // Intl formats a decimal string exactly (ES2023), but the ES2022 types only
   // declare numbers.
-  return formatter.format(toDecimalString(amount, digits) as unknown as number)
+  return formatter.format(toDecimalString(units, digits) as unknown as number)
 }
 
 // The amount as the Usuario would type it, to fill a form field: every decimal,
 // without symbol or grouping ('1234,56' in es-CO). parseAmount reads it back.
 export function formatAmountInput(amount: number, currency: CurrencyCode, locale: string): string {
-  assertAmount(amount)
+  const units = unitsOf(amount)
   const digits = minorUnitDigits(currency)
   const formatter = numberFormat(locale, {
     minimumFractionDigits: digits,
     maximumFractionDigits: digits,
     useGrouping: false,
   })
-  return formatter.format(toDecimalString(amount, digits) as unknown as number)
+  return formatter.format(toDecimalString(units, digits) as unknown as number)
 }
 
 export type ParseError = 'empty' | 'invalid' | 'too-many-decimals' | 'too-large'
