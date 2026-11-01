@@ -64,6 +64,23 @@ jobs:
           GOARCH: amd64
         run: go build -trimpath -ldflags "-s -w -X main.version=${{ github.sha }}" -o bin/quitsie ./cmd/server
 
+      - name: Install Chromium for the end-to-end tests
+        working-directory: web
+        run: npx playwright install --with-deps --only-shell chromium
+
+      - name: Test the binary end to end
+        working-directory: web
+        timeout-minutes: 5
+        run: npx playwright test
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: failure()
+        with:
+          name: e2e-traces
+          path: web/e2e/results
+          retention-days: 7
+          if-no-files-found: ignore
+
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: quitsie-linux-amd64

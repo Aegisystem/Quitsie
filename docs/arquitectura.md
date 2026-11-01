@@ -196,7 +196,7 @@ Los Saldos no se guardan: se calculan sumando, lo cual es rápido a esta escala.
 
 ## Despliegue y operación
 
-- En cada push, GitHub Actions ejecuta las pruebas de Go y de TypeScript, compila la PWA y la embebe en el binario Go (`linux/amd64`). También revisa los scripts, los workflows y las unidades de `deploy/` con `shellcheck`, `actionlint` y `systemd-analyze`.
+- En cada push, GitHub Actions ejecuta las pruebas de Go y de TypeScript, compila la PWA y la embebe en el binario Go (`linux/amd64`). Después prueba ese binario de punta a punta con Playwright en Chromium. Si esas pruebas fallan, no se despliega. También revisa los scripts, los workflows y las unidades de `deploy/` con `shellcheck`, `actionlint` y `systemd-analyze`.
 - En cada push a `main`, copia el binario a la VM por SSH a través del túnel y reinicia el servicio. El reinicio dura alrededor de un segundo, aceptable en la v1.
 - La VM tiene tres servicios systemd: la aplicación, Litestream y `cloudflared`.
 - Un temporizador prueba cada semana la restauración del respaldo (`litestream restore`).

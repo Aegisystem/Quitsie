@@ -70,20 +70,34 @@ function useBands(balances: ReadonlyMap<string, number | bigint>) {
   return withSettling(useSettled(now, bandsKey, settlingMs), now).bands
 }
 
-// Full-strength color fields, one per currency: blue when owed, red when owing.
-// Balances in different currencies are never added together. A total across
-// ledgers comes as a bigint, since it can go past the safe integers.
-export function BalanceBands({
-  balances,
-  footer,
-  settledTitle,
-  settledBody,
-}: {
+interface BandsProps {
+  // A total across ledgers comes as a bigint, since it can go past the safe
+  // integers.
   balances: ReadonlyMap<string, number | bigint>
   footer?: ReactNode
   settledTitle?: string
   settledBody?: string
-}) {
+}
+
+// A Saldo that counts UnsyncedRecords looks like any other, so it says so.
+export function BalanceBands({ provisional, ...bands }: BandsProps & { provisional?: boolean }) {
+  const { t } = useTranslation()
+  return (
+    <>
+      <Bands {...bands} />
+      {provisional && (
+        <p className="band-note">
+          <span className="sync-mark sync-unsynced" aria-hidden="true" />
+          {t('balance.provisional')}
+        </p>
+      )}
+    </>
+  )
+}
+
+// Full-strength color fields, one per currency: blue when owed, red when owing.
+// Balances in different currencies are never added together.
+function Bands({ balances, footer, settledTitle, settledBody }: BandsProps) {
   const { t } = useTranslation()
   const label = useBalanceLabel()
   const entries = useBands(balances)

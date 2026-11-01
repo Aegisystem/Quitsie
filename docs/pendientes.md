@@ -1,6 +1,6 @@
 # Pendientes
 
-Este documento dice qué falta para abrir Quitsie al público y en qué orden. Se comprobó el 2026-11-01 contra la rama `claude/exciting-thompson-t1qh2a`, que parte de `main` en `e73d9b0` y aún no está integrada. El vocabulario sigue [CONTEXT.md](../CONTEXT.md). Las decisiones tomadas están en [adr/](adr/) y las reglas en [reglas-de-negocio.md](reglas-de-negocio.md).
+Este documento dice qué falta para abrir Quitsie al público y en qué orden. Se comprobó el 2026-11-01 contra la rama `claude/exciting-thompson-t1qh2a`, que incluye `main` hasta `b11606e` y aún no está integrada en ella. El vocabulario sigue [CONTEXT.md](../CONTEXT.md). Las decisiones tomadas están en [adr/](adr/) y las reglas en [reglas-de-negocio.md](reglas-de-negocio.md).
 
 Borra cada punto de aquí cuando quede terminado. Antes de actuar sobre un punto, compruébalo en el código.
 
@@ -8,22 +8,21 @@ Borra cada punto de aquí cuando quede terminado. Antes de actuar sobre un punto
 
 - **API:** las 35 operaciones de `openapi.yaml` están implementadas.
 - **PWA:** usa datos reales: réplica, cola, formularios, Grupos, Amistades, invitaciones y sesiones.
-- **Calidad:** la rama pasa `go vet`, las pruebas de Go y de la web, el typecheck, el build, `shellcheck`, `actionlint` y `systemd-analyze verify`. `govulncheck` no pudo ejecutarse en esta sesión porque la red bloquea `vuln.go.dev`; lo ejecuta la CI, y la rama no añade dependencias de Go.
+- **Calidad:** `main` pasa la CI con Go 1.26.10, incluidas las pruebas de punta a punta. Esta rama pasa además, en local, `go vet`, las pruebas de Go, de la web y de punta a punta, el typecheck, el build, `shellcheck`, `actionlint` y `systemd-analyze verify`. `govulncheck` no pudo ejecutarse en la sesión que la escribió porque la red bloquea `vuln.go.dev`; lo ejecuta la CI, y la rama no añade dependencias de Go.
 - **Seguridad:** de los 14 hallazgos quedan 3 abiertos (8, 9 y 11), y los tres esperan una decisión del dueño. El detalle está en [revision-seguridad.md](revision-seguridad.md).
 - **Producción:** no hay nada desplegado. GitHub no tiene variables ni secretos, y `.quitsie-wizard.env` no existe, así que el asistente de despliegue nunca se ejecutó.
 
 ## Orden de trabajo
 
 1. Revisar la rama `claude/exciting-thompson-t1qh2a` e integrarla en `main` (sección 0).
-2. Integrar la rama de pruebas de punta a punta (sección 1).
-3. Obtener del dueño las decisiones que bloquean (sección 3).
-4. Arreglar los hallazgos de seguridad abiertos (sección 2).
-5. Resolver lo que falta fuera del código (sección 5).
-6. Desplegar y comprobar en producción (sección 4).
+2. Obtener del dueño las decisiones que bloquean (sección 3).
+3. Arreglar los hallazgos de seguridad abiertos (sección 2).
+4. Resolver lo que falta fuera del código (sección 5).
+5. Desplegar y comprobar en producción (sección 4).
 
 ## 0. Rama sin revisar
 
-`claude/exciting-thompson-t1qh2a` trae, en commits `Merge …` sobre `e73d9b0`:
+`claude/exciting-thompson-t1qh2a` trae, en commits `Merge …` sobre `e73d9b0` y ya unida con `main`:
 
 - Los arreglos de los hallazgos 5, 6, 13 y 14, con el [ADR 0011](adr/0011-codigos-atados-al-navegador.md).
 - Cabeceras de seguridad, `Cache-Control: no-store` en la API, y HSTS y redirección a HTTPS en producción.
@@ -34,22 +33,6 @@ Borra cada punto de aquí cuando quede terminado. Antes de actuar sobre un punto
 - Notas para el dueño: [opciones para la IP pública](investigacion/ip-publica.md) y el [inventario de datos personales](datos-personales.md).
 
 Dos cambios afectan a quien ya probó la app: las migraciones `00003` a `00006` se aplican al arrancar, y un código de acceso solo vale en el navegador que lo pidió.
-
-## 1. Rama sin integrar
-
-`claude/sweet-einstein-7c3928` (`ff2d2a4`) tiene 6 commits sobre `26948a3`. Trae pruebas de Playwright (5 pruebas en 4 archivos), su paso en la CI y un aviso de Saldo provisional en Inicio y en el libro. No está en GitHub, solo en la máquina del dueño. Unía con `main` sin conflictos antes de la rama de la sección 0, que cambió `Balance.tsx` y `Home`: el aviso de Saldo provisional puede chocar con ellos.
-
-Pasos:
-
-1. Actualiza la rama con `main` y ejecuta `npm run e2e` en `web/`.
-2. Revisa los fallos contra los límites nuevos:
-   - `GET /sync` admite un pull por Usuario, así que una prueba con el mismo Usuario en dos contextos puede recibir `429` y tardar un reintento. Cada contexto ya envía su propio `CF-Connecting-IP`.
-   - Un código solo vale en el contexto que lo pidió, con su cookie de flujo.
-   - Un navegador nuevo pide 3 códigos por hora por email e IP, y una IP pide 10 por hora. Las pruebas que entran muchas veces deben rotar `CF-Connecting-IP` o reutilizar el contexto, que pasa a ser un dispositivo conocido.
-   - Las cookies se llaman ahora `__Host-quitsie_session`, `__Host-quitsie_code_flow`, `__Host-quitsie_known_device` y `__Host-quitsie_google`, todas con `Path=/`.
-   - La CSP prohíbe scripts en línea, también los que inyecte una prueba con `addScriptTag({ content })`. `addInitScript` sí funciona.
-3. Integra y mira la primera ejecución en GitHub: `playwright install --with-deps` nunca corrió allí. Estas pruebas frenan el despliegue si fallan.
-4. Menciona las pruebas en la sección Despliegue de `docs/arquitectura.md`.
 
 ## 2. Seguridad abierta
 
@@ -137,7 +120,7 @@ Nada de `deploy/` se probó en una VM real ni bajo systemd real: las unidades nu
 ## 7. Sin verificar
 
 - Cloudflare, Google, Resend y la VM reales.
-- Safari, Firefox y dos dispositivos reales a la vez. En desarrollo, Safari puede rechazar las cookies `Secure` por `http://localhost`.
+- Safari, Firefox y dos dispositivos reales a la vez. Las pruebas de punta a punta solo cubren Chromium. En desarrollo, Safari puede rechazar las cookies `Secure` por `http://localhost`.
 - Copiar y compartir el enlace con el portapapeles real, sin el permiso que concede Playwright.
 - La caché HTTP del navegador tras cerrar sesión, aunque la API ya responde `no-store`.
 

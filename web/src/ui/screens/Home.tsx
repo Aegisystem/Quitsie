@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import { liveHome } from '../../local'
+import { liveHome, liveRecords } from '../../local'
 import { Amount, BalanceBands, toneOf } from '../components/Balance'
 import { Figure, figureState, GroupGlyph, Icon } from '../components/icons'
 import { FirstSync, InstallPrompt, Screen, useOnline } from '../components/Shell'
@@ -27,6 +27,7 @@ export function Home({ user }: { user: User }) {
   const { t } = useTranslation()
   const online = useOnline()
   const [home] = useLive('home', () => liveHome(replica))
+  const [records] = useLive('records', () => liveRecords(replica))
   const filled = useReplicaFilled()
 
   const mine = (home ?? []).filter(({ members }) => myMember(members, user.id))
@@ -80,7 +81,12 @@ export function Home({ user }: { user: User }) {
     >
       <h1 className="sr-only">{t('home.title')}</h1>
       <section aria-label={t('home.summary')} className="full-bleed">
-        <BalanceBands balances={myTotals(mine, user)} settledTitle={t('balance.settledAll')} settledBody={t('balance.settledAllWink')} />
+        <BalanceBands
+          balances={myTotals(mine, user)}
+          settledTitle={t('balance.settledAll')}
+          settledBody={t('balance.settledAllWink')}
+          provisional={records?.unsynced.some(({ ledgerId }) => mine.some(({ ledger }) => ledger.id === ledgerId))}
+        />
       </section>
 
       <div className="home-actions">
