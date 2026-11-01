@@ -19,6 +19,7 @@ import (
 
 	"github.com/Aegisystem/Quitsie/api/internal/auth"
 	"github.com/Aegisystem/Quitsie/api/internal/httpapi"
+	"github.com/Aegisystem/Quitsie/api/internal/invites"
 	"github.com/Aegisystem/Quitsie/api/internal/mail"
 	"github.com/Aegisystem/Quitsie/api/internal/store"
 )
@@ -218,6 +219,27 @@ func TestADeletedAccountLeavesNoEmailOnItsMembers(t *testing.T) {
 	if m.UserID != nil || m.Email != nil || m.Name != "Pepa" {
 		t.Errorf("member = %+v, want pending, named Pepa and with no email", m)
 	}
+}
+
+// A forged link is refused by what it costs to check it, whatever the ledger
+// holds: this ledger cannot even be loaded.
+func TestAForgedLinkDoesNotLoadTheLedger(t *testing.T) {
+	w := newWorld(t)
+	ana := w.signIn("Ana")
+	groupID := ana.createGroup(`{"name":"Casa","currency":"COP"}`)
+	me := ana.memberID(groupID, "Ana")
+	ana.expense(groupID, "COP", me, map[string]int64{me: 1000})
+	if _, err := w.db.Exec(`UPDATE expenses SET total = 'not a number'`); err != nil {
+		t.Fatal(err)
+	}
+	forged, err := invites.Token([]byte(strings.Repeat("f", invites.MinSecretLength)), groupID, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rec := w.anonymous().send(http.MethodGet, "/api/v1/invites/"+forged, "")
+
+	decodeProblem(t, rec, http.StatusNotFound, httpapi.ProblemCodeInviteLinkInvalid)
 }
 
 // outbox is a mail.Sender that keeps the emails instead of sending them.

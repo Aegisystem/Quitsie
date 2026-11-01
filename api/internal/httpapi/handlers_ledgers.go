@@ -685,23 +685,25 @@ func (s *Server) inviteLink(l store.Ledger) (InviteLink, error) {
 	return InviteLink{Token: token}, nil
 }
 
-// openInvite loads the live ledger whose current Invite link is token.
+// openInvite loads the live ledger whose current Invite link is token. It reads
+// only the ledger's row to check the link: a forged token comes from anyone,
+// without a session, and must not cost what loading all the records costs.
 func (s *Server) openInvite(ctx context.Context, q *store.Queries, token string) (ledgers.Snapshot, error) {
 	ledgerID, ok := invites.LedgerID(token)
 	if !ok {
 		return ledgers.Snapshot{}, errInviteLinkInvalid
 	}
-	snap, err := ledgers.Load(ctx, q, ledgerID)
+	ledger, err := q.GetLedger(ctx, ledgerID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return ledgers.Snapshot{}, errInviteLinkInvalid
 	}
 	if err != nil {
-		return ledgers.Snapshot{}, err
+		return ledgers.Snapshot{}, fmt.Errorf("get ledger %s: %w", ledgerID, err)
 	}
-	if snap.Ledger.DeletedAt != nil || !invites.Valid(s.deps.InviteSecret, token, snap.Ledger.InviteLinkGeneration) {
+	if ledger.DeletedAt != nil || !invites.Valid(s.deps.InviteSecret, token, ledger.InviteLinkGeneration) {
 		return ledgers.Snapshot{}, errInviteLinkInvalid
 	}
-	return snap, nil
+	return ledgers.Load(ctx, q, ledgerID)
 }
 
 // claimable are the pending Members of snap that can still be claimed.
