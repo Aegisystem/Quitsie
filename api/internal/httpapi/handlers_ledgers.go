@@ -12,7 +12,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/google/uuid"
-	openapi_types "github.com/oapi-codegen/runtime/types"
 
 	"github.com/Aegisystem/Quitsie/api/internal/auth"
 	"github.com/Aegisystem/Quitsie/api/internal/domain"
@@ -58,7 +57,6 @@ func invalid(format string, args ...any) *failure {
 
 const (
 	maxGroupOrMemberName = 80
-	maxEmailLength       = 254
 	maxNewMembers        = 50
 )
 
@@ -92,9 +90,11 @@ func cleanPendingMember(m NewPendingMember) (pendingMember, error) {
 	}
 	p := pendingMember{name: name}
 	if m.Email != nil {
-		email := string(*m.Email)
-		if len(email) > maxEmailLength {
-			return pendingMember{}, invalid("an email must have at most %d characters", maxEmailLength)
+		// The same rule as signing in, which also keeps out what the decoder
+		// lets through but no response could write back: "a b"@example.com.
+		email, err := auth.NormalizeEmail(string(*m.Email))
+		if err != nil {
+			return pendingMember{}, invalid("the email must be a plain address of at most 254 characters")
 		}
 		p.email = &email
 	}
@@ -465,9 +465,8 @@ func memberResponse(m store.Member) Member {
 		r.UserId = &id
 	}
 	// Only a pending Member's email is shown: a linked one's belongs to the User.
-	if m.Email != nil && m.UserID == nil {
-		email := openapi_types.Email(*m.Email)
-		r.Email = &email
+	if m.UserID == nil {
+		r.Email = m.Email
 	}
 	return r
 }

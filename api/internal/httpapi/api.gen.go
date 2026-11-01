@@ -763,10 +763,10 @@ type LoginResult struct {
 // Member A person's place in a Group, or one of the two sides of a Friendship (the Friend is a Member too). Without `userId` it is a pending Member or a pending Friend.
 type Member struct {
 	// Email Only for pending Members, the email given when adding them.
-	Email    *openapi_types.Email `json:"email,omitempty"`
-	Id       openapi_types.UUID   `json:"id"`
-	LedgerId openapi_types.UUID   `json:"ledgerId"`
-	Name     string               `json:"name"`
+	Email    *string            `json:"email,omitempty"`
+	Id       openapi_types.UUID `json:"id"`
+	LedgerId openapi_types.UUID `json:"ledgerId"`
+	Name     string             `json:"name"`
 
 	// Status `former` is a former member: still named on past Expenses, out of new ones.
 	Status MemberStatus `json:"status"`

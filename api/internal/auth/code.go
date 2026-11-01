@@ -55,7 +55,7 @@ func (e *RateLimitError) Is(target error) bool { return target == ErrRateLimited
 // any earlier one for the same email. ip is the client's address, used to
 // limit how many codes one sender can request.
 func (s *Service) RequestCode(ctx context.Context, email, ip string) error {
-	email, err := normalizeEmail(email)
+	email, err := NormalizeEmail(email)
 	if err != nil {
 		return err
 	}
@@ -105,7 +105,7 @@ func (s *Service) RequestCode(ctx context.Context, email, ip string) error {
 // VerifyCode signs in the User with this email, creating it if needed, when
 // code is the last one sent to it.
 func (s *Service) VerifyCode(ctx context.Context, email, code, device string) (SignIn, error) {
-	email, err := normalizeEmail(email)
+	email, err := NormalizeEmail(email)
 	if err != nil {
 		return SignIn{}, err
 	}
@@ -158,9 +158,9 @@ func (s *Service) VerifyCode(ctx context.Context, email, code, device string) (S
 	return signIn, nil
 }
 
-// normalizeEmail lower-cases a bare address such as "Ana@Example.com" and
+// NormalizeEmail lower-cases a bare address such as "Ana@Example.com" and
 // rejects anything else, including display names and lists.
-func normalizeEmail(email string) (string, error) {
+func NormalizeEmail(email string) (string, error) {
 	email = strings.ToLower(strings.TrimSpace(email))
 	addr, err := netmail.ParseAddress(email)
 	if err != nil || addr.Name != "" || addr.Address != email || len(email) > 254 {

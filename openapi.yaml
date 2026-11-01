@@ -1535,7 +1535,6 @@ components:
           type: string
         email:
           type: string
-          format: email
           description: Only for pending Members, the email given when adding them.
         status:
           $ref: "#/components/schemas/MemberStatus"

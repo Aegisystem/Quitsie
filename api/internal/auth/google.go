@@ -186,7 +186,7 @@ func (s *Service) FinishGoogle(ctx context.Context, r *http.Request, device stri
 	if !claims.EmailVerified {
 		return SignIn{}, fmt.Errorf("%w: email not verified by Google", ErrGoogleFailed)
 	}
-	email, err := normalizeEmail(claims.Email)
+	email, err := NormalizeEmail(claims.Email)
 	if err != nil {
 		return SignIn{}, fmt.Errorf("%w: %v", ErrGoogleFailed, err)
 	}

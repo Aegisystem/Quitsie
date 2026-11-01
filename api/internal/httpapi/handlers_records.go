@@ -320,7 +320,7 @@ func pulledMember(m store.Member) Member {
 	}
 	// Only a pending Member shows the email given when adding them; a linked
 	// User's is private.
-	out.Email = (*openapi_types.Email)(m.Email)
+	out.Email = m.Email
 	return out
 }
 

@@ -772,10 +772,7 @@ export interface components {
              */
             userId?: string;
             name: string;
-            /**
-             * Format: email
-             * @description Only for pending Members, the email given when adding them.
-             */
+            /** @description Only for pending Members, the email given when adding them. */
             email?: string;
             status: components["schemas"]["MemberStatus"];
             version: components["schemas"]["Version"];
