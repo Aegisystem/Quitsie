@@ -49,7 +49,7 @@ flowchart LR
 - **HTTP**: `net/http` estándar. Los tipos y la interfaz de los manejadores se generan desde `openapi.yaml` con `oapi-codegen`.
 - **Datos**: SQLite en modo WAL con `modernc.org/sqlite` (Go puro, sin cgo, fácil de compilar para Linux desde cualquier máquina). Las consultas se escriben en SQL y `sqlc` genera el código Go con tipos. Las migraciones van con `goose` y se aplican al arrancar. El SQL se mantiene portable a PostgreSQL ([ADR 0006](adr/0006-sqlite.md)).
 - **Dominio**: valida Gastos y Liquidaciones (sumas y Participantes) y calcula Saldos y la Simplificación de deudas. No reimplementa los Métodos de reparto.
-- **Autenticación**: código de 6 dígitos por email (enviado con Resend) o Google con OpenID Connect ([ADR 0005](adr/0005-login-con-codigo-no-enlace.md)). La sesión es una cookie HttpOnly con un token opaco; en la base solo se guarda su hash. Caduca a los 90 días sin uso y se puede cerrar por dispositivo.
+- **Autenticación**: código de 6 dígitos por email (enviado con Resend) o Google con OpenID Connect ([ADR 0005](adr/0005-login-con-codigo-no-enlace.md)). Google solo se ofrece si el servidor tiene configurado su cliente OAuth: la PWA lo pregunta con `GET /auth/methods` y, si no, no muestra el botón. La sesión es una cookie HttpOnly con un token opaco; en la base solo se guarda su hash. Caduca a los 90 días sin uso y se puede cerrar por dispositivo.
 
 ## Infraestructura ([ADR 0007](adr/0007-go-nativo-en-vm-gratuita.md))
 
