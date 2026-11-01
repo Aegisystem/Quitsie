@@ -24,12 +24,12 @@ import (
 
 func (s *Server) RequestLoginCode(ctx context.Context, req RequestLoginCodeRequestObject) (RequestLoginCodeResponseObject, error) {
 	r := requestFrom(ctx)
-	err := s.deps.Auth.RequestCode(ctx, string(req.Body.Email), senderIP(r))
+	flow, err := s.deps.Auth.RequestCode(ctx, string(req.Body.Email), auth.BrowserOf(r, senderIP(r)))
 	var limited *auth.RateLimitError
 	var spent *auth.MailBudgetError
 	switch {
 	case err == nil:
-		return RequestLoginCode204Response{}, nil
+		return codeSent{flow: flow}, nil
 	case errors.Is(err, auth.ErrInvalidEmail):
 		return RequestLoginCode400ApplicationProblemPlusJSONResponse{BadRequestApplicationProblemPlusJSONResponse(
 			authProblem(http.StatusBadRequest, ProblemCodeValidationFailed, "The email address is not valid."))}, nil
@@ -56,7 +56,7 @@ func (s *Server) VerifyLoginCode(ctx context.Context, req VerifyLoginCodeRequest
 			authProblem(http.StatusBadRequest, ProblemCodeValidationFailed, "A login code is 6 digits.")), nil
 	}
 	r := requestFrom(ctx)
-	signIn, err := s.deps.Auth.VerifyCode(ctx, string(req.Body.Email), req.Body.Code, device(r), clientIP(r))
+	signIn, err := s.deps.Auth.VerifyCode(ctx, string(req.Body.Email), req.Body.Code, device(r), auth.BrowserOf(r, clientIP(r)))
 	switch {
 	case err == nil:
 	case errors.Is(err, auth.ErrInvalidEmail):
@@ -77,11 +77,34 @@ func (s *Server) VerifyLoginCode(ctx context.Context, req VerifyLoginCodeRequest
 	default:
 		return nil, err
 	}
-	cookie := auth.SessionCookie(signIn.Token).String()
-	return VerifyLoginCode200JSONResponse{
-		Body:    LoginResult{User: userFrom(signIn.User), NewUser: signIn.NewUser},
-		Headers: VerifyLoginCode200ResponseHeaders{SetCookie: &cookie},
+	return codeChecked{
+		body:    LoginResult{User: userFrom(signIn.User), NewUser: signIn.NewUser},
+		cookies: []*http.Cookie{auth.SessionCookie(signIn.Token), auth.KnownDeviceCookie(signIn.KnownDevices), auth.ClearCodeFlowCookie()},
 	}, nil
+}
+
+// codeSent and codeChecked answer with cookies. The generated responses have
+// room for one Set-Cookie at most, and they would overwrite the one
+// Authenticate sets when it renews a session.
+type codeSent struct {
+	flow *http.Cookie
+}
+
+func (c codeSent) VisitRequestLoginCodeResponse(w http.ResponseWriter) error {
+	http.SetCookie(w, c.flow)
+	return RequestLoginCode204Response{}.VisitRequestLoginCodeResponse(w)
+}
+
+type codeChecked struct {
+	body    LoginResult
+	cookies []*http.Cookie
+}
+
+func (c codeChecked) VisitVerifyLoginCodeResponse(w http.ResponseWriter) error {
+	for _, cookie := range c.cookies {
+		http.SetCookie(w, cookie)
+	}
+	return VerifyLoginCode200JSONResponse{Body: c.body}.VisitVerifyLoginCodeResponse(w)
 }
 
 var sixDigits = regexp.MustCompile(`^[0-9]{6}$`)
@@ -124,7 +147,7 @@ func (s *Server) FinishGoogleLogin(ctx context.Context, _ FinishGoogleLoginReque
 		if !insideTheApp(returnTo) {
 			returnTo = "/"
 		}
-		return redirect{location: returnTo, cookies: []*http.Cookie{clearFlow, auth.SessionCookie(signIn.Token)}}, nil
+		return redirect{location: returnTo, cookies: []*http.Cookie{clearFlow, auth.SessionCookie(signIn.Token), auth.KnownDeviceCookie(signIn.KnownDevices)}}, nil
 	case errors.Is(err, auth.ErrGoogleCancelled):
 		return redirect{location: "/login", cookies: []*http.Cookie{clearFlow}}, nil
 	default:

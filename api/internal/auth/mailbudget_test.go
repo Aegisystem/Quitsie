@@ -2,7 +2,6 @@ package auth_test
 
 import (
 	"bytes"
-	"context"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -54,7 +53,7 @@ func (f *fixture) askForCodes(t *testing.T, n int) {
 	for range n {
 		f.asked++
 		email, ip := fmt.Sprintf("user%d@example.com", f.asked), fmt.Sprintf("198.51.100.%d", f.asked%256)
-		if err := f.svc.RequestCode(context.Background(), email, ip); err != nil {
+		if err := f.at(ip).requestCode(email); err != nil {
 			t.Fatalf("code %d: %v", f.asked, err)
 		}
 	}
@@ -64,7 +63,7 @@ func (f *fixture) askForCodes(t *testing.T, n int) {
 // retryAfter.
 func (f *fixture) wantBudgetSpent(t *testing.T, retryAfter time.Duration) {
 	t.Helper()
-	err := f.svc.RequestCode(context.Background(), "late@example.com", "192.0.2.1")
+	err := f.at("192.0.2.1").requestCode("late@example.com")
 	var spent *auth.MailBudgetError
 	if !errors.As(err, &spent) || !errors.Is(err, auth.ErrMailBudgetSpent) || spent.RetryAfter != retryAfter {
 		t.Fatalf("err = %v, want ErrMailBudgetSpent for %v", err, retryAfter)
@@ -121,7 +120,7 @@ func TestARestartDoesNotForgetTheEmailsSent(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := restarted.RequestCode(context.Background(), "late@example.com", "192.0.2.1"); !errors.Is(err, auth.ErrMailBudgetSpent) {
+	if err := f.at("192.0.2.1").requestCodeFrom(restarted, "late@example.com"); !errors.Is(err, auth.ErrMailBudgetSpent) {
 		t.Errorf("err = %v, want ErrMailBudgetSpent", err)
 	}
 }
@@ -129,7 +128,7 @@ func TestARestartDoesNotForgetTheEmailsSent(t *testing.T) {
 func TestAnEmailThatFailedDoesNotSpendTheBudget(t *testing.T) {
 	f := newFixture(t, withMailBudget(3, 10), func(cfg *auth.Config) { cfg.Mail = failingMail{} })
 	for i := range 5 {
-		if err := f.svc.RequestCode(context.Background(), fmt.Sprintf("user%d@example.com", i), "192.0.2.1"); err == nil || errors.Is(err, auth.ErrMailBudgetSpent) {
+		if err := f.at("192.0.2.1").requestCode(fmt.Sprintf("user%d@example.com", i)); err == nil || errors.Is(err, auth.ErrMailBudgetSpent) {
 			t.Fatalf("request %d: err = %v, want the mail failure", i+1, err)
 		}
 	}
@@ -140,14 +139,14 @@ func TestARequestRefusedForTheBudgetCostsTheSenderNothing(t *testing.T) {
 	f := newFixture(t, withMailBudget(1, 10))
 	f.askForCodes(t, 1)
 	for range 20 {
-		if err := f.svc.RequestCode(context.Background(), anaEmail, anaIP); !errors.Is(err, auth.ErrMailBudgetSpent) {
+		if err := f.at(anaIP).requestCode(anaEmail); !errors.Is(err, auth.ErrMailBudgetSpent) {
 			t.Fatalf("err = %v, want ErrMailBudgetSpent", err)
 		}
 	}
 
 	f.clock.Advance(time.Hour)
 
-	if err := f.svc.RequestCode(context.Background(), anaEmail, anaIP); err != nil {
+	if err := f.at(anaIP).requestCode(anaEmail); err != nil {
 		t.Errorf("an hour later: %v", err)
 	}
 }

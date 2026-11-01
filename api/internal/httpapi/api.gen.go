@@ -2341,10 +2341,18 @@ type RequestLoginCodeResponseObject interface {
 	VisitRequestLoginCodeResponse(w http.ResponseWriter) error
 }
 
+type RequestLoginCode204ResponseHeaders struct {
+	SetCookie *string
+}
+
 type RequestLoginCode204Response struct {
+	Headers RequestLoginCode204ResponseHeaders
 }
 
 func (response RequestLoginCode204Response) VisitRequestLoginCodeResponse(w http.ResponseWriter) error {
+	if response.Headers.SetCookie != nil {
+		w.Header().Set("Set-Cookie", fmt.Sprint(*response.Headers.SetCookie))
+	}
 	w.WriteHeader(204)
 	return nil
 }

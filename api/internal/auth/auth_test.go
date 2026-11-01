@@ -75,6 +75,53 @@ type fixture struct {
 	clock *clock
 	// asked counts the emails askForCodes used.
 	asked int
+	// browser is the one the tests use unless they make their own.
+	browser *browser
+}
+
+// browser is one browser: it keeps the cookies sign-in gives it, as a real
+// one does.
+type browser struct {
+	svc *auth.Service
+	auth.Browser
+}
+
+func (f *fixture) newBrowser(ip string) *browser {
+	return &browser{svc: f.svc, Browser: auth.Browser{IP: ip}}
+}
+
+// at returns the fixture's browser, now at ip.
+func (f *fixture) at(ip string) *browser {
+	f.browser.IP = ip
+	return f.browser
+}
+
+func (b *browser) requestCode(email string) error {
+	return b.requestCodeFrom(b.svc, email)
+}
+
+// requestCodeFrom asks svc for the code, such as another Service on the
+// same database after a restart.
+func (b *browser) requestCodeFrom(svc *auth.Service, email string) error {
+	flow, err := svc.RequestCode(context.Background(), email, b.Browser)
+	if err == nil {
+		b.Flow = flow.Value
+	}
+	return err
+}
+
+func (b *browser) verify(email, code string) (auth.SignIn, error) {
+	return b.verifyOn(email, code, device)
+}
+
+// verifyOn checks the code from a browser on device, as the User-Agent
+// describes it.
+func (b *browser) verifyOn(email, code, device string) (auth.SignIn, error) {
+	signIn, err := b.svc.VerifyCode(context.Background(), email, code, device, b.Browser)
+	if err == nil {
+		b.Flow, b.KnownDevices = "", signIn.KnownDevices
+	}
+	return signIn, err
 }
 
 func newFixture(t *testing.T, options ...func(*auth.Config)) *fixture {
@@ -107,6 +154,7 @@ func newFixture(t *testing.T, options ...func(*auth.Config)) *fixture {
 	if err != nil {
 		t.Fatal(err)
 	}
+	f.browser = f.newBrowser(anaIP)
 	return f
 }
 
@@ -120,12 +168,11 @@ const (
 
 func TestARequestedCodeSignsANewUserIn(t *testing.T) {
 	f := newFixture(t)
-	ctx := context.Background()
 
-	if err := f.svc.RequestCode(ctx, anaEmail, anaIP); err != nil {
+	if err := f.at(anaIP).requestCode(anaEmail); err != nil {
 		t.Fatal(err)
 	}
-	signIn, err := f.svc.VerifyCode(ctx, anaEmail, f.mail.lastCode(t, anaEmail), device, anaIP)
+	signIn, err := f.at(anaIP).verify(anaEmail, f.mail.lastCode(t, anaEmail))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -154,59 +201,55 @@ func wrongCode(code string) string {
 
 func TestAWrongCodeIsRejected(t *testing.T) {
 	f := newFixture(t)
-	ctx := context.Background()
-	if err := f.svc.RequestCode(ctx, anaEmail, anaIP); err != nil {
+	if err := f.at(anaIP).requestCode(anaEmail); err != nil {
 		t.Fatal(err)
 	}
 	code := f.mail.lastCode(t, anaEmail)
 
-	if _, err := f.svc.VerifyCode(ctx, anaEmail, wrongCode(code), device, anaIP); !errors.Is(err, auth.ErrWrongCode) {
+	if _, err := f.at(anaIP).verify(anaEmail, wrongCode(code)); !errors.Is(err, auth.ErrWrongCode) {
 		t.Fatalf("VerifyCode with a wrong code: err = %v, want ErrWrongCode", err)
 	}
-	if _, err := f.svc.VerifyCode(ctx, anaEmail, code, device, anaIP); err != nil {
+	if _, err := f.at(anaIP).verify(anaEmail, code); err != nil {
 		t.Errorf("the right code after a wrong one: %v", err)
 	}
 }
 
 func TestACodeExpiresAfterTenMinutes(t *testing.T) {
 	f := newFixture(t)
-	ctx := context.Background()
-	if err := f.svc.RequestCode(ctx, anaEmail, anaIP); err != nil {
+	if err := f.at(anaIP).requestCode(anaEmail); err != nil {
 		t.Fatal(err)
 	}
 	code := f.mail.lastCode(t, anaEmail)
 
 	f.clock.Advance(10 * time.Minute)
-	if _, err := f.svc.VerifyCode(ctx, anaEmail, code, device, anaIP); !errors.Is(err, auth.ErrCodeExpired) {
+	if _, err := f.at(anaIP).verify(anaEmail, code); !errors.Is(err, auth.ErrCodeExpired) {
 		t.Errorf("VerifyCode 10 minutes later: err = %v, want ErrCodeExpired", err)
 	}
 }
 
 func TestACodeStillWorksJustBeforeItExpires(t *testing.T) {
 	f := newFixture(t)
-	ctx := context.Background()
-	if err := f.svc.RequestCode(ctx, anaEmail, anaIP); err != nil {
+	if err := f.at(anaIP).requestCode(anaEmail); err != nil {
 		t.Fatal(err)
 	}
 
 	f.clock.Advance(10*time.Minute - time.Second)
-	if _, err := f.svc.VerifyCode(ctx, anaEmail, f.mail.lastCode(t, anaEmail), device, anaIP); err != nil {
+	if _, err := f.at(anaIP).verify(anaEmail, f.mail.lastCode(t, anaEmail)); err != nil {
 		t.Errorf("VerifyCode 9:59 later: %v", err)
 	}
 }
 
 func TestACodeWorksOnlyOnce(t *testing.T) {
 	f := newFixture(t)
-	ctx := context.Background()
-	if err := f.svc.RequestCode(ctx, anaEmail, anaIP); err != nil {
+	if err := f.at(anaIP).requestCode(anaEmail); err != nil {
 		t.Fatal(err)
 	}
 	code := f.mail.lastCode(t, anaEmail)
-	if _, err := f.svc.VerifyCode(ctx, anaEmail, code, device, anaIP); err != nil {
+	if _, err := f.at(anaIP).verify(anaEmail, code); err != nil {
 		t.Fatal(err)
 	}
 
-	if _, err := f.svc.VerifyCode(ctx, anaEmail, code, device, anaIP); !errors.Is(err, auth.ErrCodeExpired) {
+	if _, err := f.at(anaIP).verify(anaEmail, code); !errors.Is(err, auth.ErrCodeExpired) {
 		t.Errorf("reusing a code: err = %v, want ErrCodeExpired", err)
 	}
 }
@@ -214,43 +257,41 @@ func TestACodeWorksOnlyOnce(t *testing.T) {
 func TestVerifyingWithoutRequestingFails(t *testing.T) {
 	f := newFixture(t)
 
-	if _, err := f.svc.VerifyCode(context.Background(), anaEmail, "123456", device, anaIP); !errors.Is(err, auth.ErrCodeExpired) {
+	if _, err := f.at(anaIP).verify(anaEmail, "123456"); !errors.Is(err, auth.ErrCodeExpired) {
 		t.Errorf("err = %v, want ErrCodeExpired", err)
 	}
 }
 
 func TestACodeAllowsFiveAttempts(t *testing.T) {
 	f := newFixture(t)
-	ctx := context.Background()
-	if err := f.svc.RequestCode(ctx, anaEmail, anaIP); err != nil {
+	if err := f.at(anaIP).requestCode(anaEmail); err != nil {
 		t.Fatal(err)
 	}
 	code := f.mail.lastCode(t, anaEmail)
 
 	for i := 1; i <= 4; i++ {
-		if _, err := f.svc.VerifyCode(ctx, anaEmail, wrongCode(code), device, anaIP); !errors.Is(err, auth.ErrWrongCode) {
+		if _, err := f.at(anaIP).verify(anaEmail, wrongCode(code)); !errors.Is(err, auth.ErrWrongCode) {
 			t.Fatalf("attempt %d: err = %v, want ErrWrongCode", i, err)
 		}
 	}
-	if _, err := f.svc.VerifyCode(ctx, anaEmail, code, device, anaIP); err != nil {
+	if _, err := f.at(anaIP).verify(anaEmail, code); err != nil {
 		t.Errorf("fifth attempt with the right code: %v", err)
 	}
 }
 
 func TestACodeIsLockedAfterFiveWrongAttempts(t *testing.T) {
 	f := newFixture(t)
-	ctx := context.Background()
-	if err := f.svc.RequestCode(ctx, anaEmail, anaIP); err != nil {
+	if err := f.at(anaIP).requestCode(anaEmail); err != nil {
 		t.Fatal(err)
 	}
 	code := f.mail.lastCode(t, anaEmail)
 
 	for i := 1; i <= 5; i++ {
-		if _, err := f.svc.VerifyCode(ctx, anaEmail, wrongCode(code), device, anaIP); !errors.Is(err, auth.ErrWrongCode) {
+		if _, err := f.at(anaIP).verify(anaEmail, wrongCode(code)); !errors.Is(err, auth.ErrWrongCode) {
 			t.Fatalf("attempt %d: err = %v, want ErrWrongCode", i, err)
 		}
 	}
-	if _, err := f.svc.VerifyCode(ctx, anaEmail, code, device, anaIP); !errors.Is(err, auth.ErrTooManyAttempts) {
+	if _, err := f.at(anaIP).verify(anaEmail, code); !errors.Is(err, auth.ErrTooManyAttempts) {
 		t.Errorf("sixth attempt with the right code: err = %v, want ErrTooManyAttempts", err)
 	}
 }
@@ -259,15 +300,14 @@ func TestACodeIsLockedAfterFiveWrongAttempts(t *testing.T) {
 // code each time the last one is locked, as an attacker would.
 func guessWrong(t *testing.T, f *fixture, n int) {
 	t.Helper()
-	ctx := context.Background()
 	for i := range n {
 		if i%5 == 0 {
-			if err := f.svc.RequestCode(ctx, anaEmail, anaIP); err != nil {
+			if err := f.at(anaIP).requestCode(anaEmail); err != nil {
 				t.Fatal(err)
 			}
 		}
 		code := f.mail.lastCode(t, anaEmail)
-		if _, err := f.svc.VerifyCode(ctx, anaEmail, wrongCode(code), device, anaIP); !errors.Is(err, auth.ErrWrongCode) {
+		if _, err := f.at(anaIP).verify(anaEmail, wrongCode(code)); !errors.Is(err, auth.ErrWrongCode) {
 			t.Fatalf("guess %d: err = %v, want ErrWrongCode", i+1, err)
 		}
 	}
@@ -277,7 +317,7 @@ func TestANewCodeDoesNotBuyMoreGuesses(t *testing.T) {
 	f := newFixture(t)
 	guessWrong(t, f, 10)
 
-	err := f.svc.RequestCode(context.Background(), anaEmail, anaIP)
+	err := f.at(anaIP).requestCode(anaEmail)
 
 	var limited *auth.RateLimitError
 	if !errors.As(err, &limited) || limited.RetryAfter <= 23*time.Hour || limited.RetryAfter > 24*time.Hour {
@@ -287,15 +327,14 @@ func TestANewCodeDoesNotBuyMoreGuesses(t *testing.T) {
 
 func TestGuessesComeBackAfterADay(t *testing.T) {
 	f := newFixture(t)
-	ctx := context.Background()
 	guessWrong(t, f, 10)
 
 	f.clock.Advance(24 * time.Hour)
 
-	if err := f.svc.RequestCode(ctx, anaEmail, anaIP); err != nil {
+	if err := f.at(anaIP).requestCode(anaEmail); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.svc.VerifyCode(ctx, anaEmail, f.mail.lastCode(t, anaEmail), device, anaIP); err != nil {
+	if _, err := f.at(anaIP).verify(anaEmail, f.mail.lastCode(t, anaEmail)); err != nil {
 		t.Errorf("err = %v, want a sign-in", err)
 	}
 }
@@ -311,50 +350,47 @@ func TestARestartDoesNotForgetTheGuesses(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := restarted.RequestCode(context.Background(), anaEmail, anaIP); !errors.Is(err, auth.ErrRateLimited) {
+	if err := f.at(anaIP).requestCodeFrom(restarted, anaEmail); !errors.Is(err, auth.ErrRateLimited) {
 		t.Errorf("err = %v, want ErrRateLimited", err)
 	}
 }
 
 func TestACodeInHandStopsWorkingOnceTheGuessesAreSpent(t *testing.T) {
 	f := newFixture(t)
-	ctx := context.Background()
 	guessWrong(t, f, 9)
-	if err := f.svc.RequestCode(ctx, anaEmail, anaIP); err != nil {
+	if err := f.at(anaIP).requestCode(anaEmail); err != nil {
 		t.Fatal(err)
 	}
 	code := f.mail.lastCode(t, anaEmail)
-	if _, err := f.svc.VerifyCode(ctx, anaEmail, wrongCode(code), device, anaIP); !errors.Is(err, auth.ErrWrongCode) {
+	if _, err := f.at(anaIP).verify(anaEmail, wrongCode(code)); !errors.Is(err, auth.ErrWrongCode) {
 		t.Fatalf("err = %v, want ErrWrongCode", err)
 	}
 
-	if _, err := f.svc.VerifyCode(ctx, anaEmail, code, device, anaIP); !errors.Is(err, auth.ErrTooManyAttempts) {
+	if _, err := f.at(anaIP).verify(anaEmail, code); !errors.Is(err, auth.ErrTooManyAttempts) {
 		t.Errorf("err = %v, want ErrTooManyAttempts", err)
 	}
 }
 
 func TestGuessesAtOneEmailDoNotTouchAnother(t *testing.T) {
 	f := newFixture(t)
-	ctx := context.Background()
 	guessWrong(t, f, 10)
 
-	if err := f.svc.RequestCode(ctx, "beto@example.com", anaIP); err != nil {
+	if err := f.at(anaIP).requestCode("beto@example.com"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.svc.VerifyCode(ctx, "beto@example.com", f.mail.lastCode(t, "beto@example.com"), device, anaIP); err != nil {
+	if _, err := f.at(anaIP).verify("beto@example.com", f.mail.lastCode(t, "beto@example.com")); err != nil {
 		t.Errorf("err = %v, want a sign-in", err)
 	}
 }
 
 func TestOneIPCannotSpreadItsGuessesOverManyEmails(t *testing.T) {
 	f := newFixture(t, withMailBudget(1000, 1000))
-	ctx := context.Background()
 	guess := func(i int) error {
 		email := fmt.Sprintf("user%d@example.com", i)
-		if err := f.svc.RequestCode(ctx, email, fmt.Sprintf("198.51.100.%d", i)); err != nil {
+		if err := f.at(fmt.Sprintf("198.51.100.%d", i)).requestCode(email); err != nil {
 			t.Fatal(err)
 		}
-		_, err := f.svc.VerifyCode(ctx, email, wrongCode(f.mail.lastCode(t, email)), device, anaIP)
+		_, err := f.at(anaIP).verify(email, wrongCode(f.mail.lastCode(t, email)))
 		return err
 	}
 	for i := range 60 {
@@ -376,25 +412,23 @@ func (failingMail) Send(context.Context, mail.Message) error { return errors.New
 // A code nobody received can only be guessed, with no warning to the owner.
 func TestACodeThatWasNotSentDoesNotStayAlive(t *testing.T) {
 	f := newFixture(t, func(cfg *auth.Config) { cfg.Mail = failingMail{} })
-	ctx := context.Background()
 
-	if err := f.svc.RequestCode(ctx, anaEmail, anaIP); err == nil {
+	if err := f.at(anaIP).requestCode(anaEmail); err == nil {
 		t.Fatal("err = nil, want the mail failure")
 	}
 
-	if _, err := f.svc.VerifyCode(ctx, anaEmail, "123456", device, anaIP); !errors.Is(err, auth.ErrCodeExpired) {
-		t.Errorf("err = %v, want ErrCodeExpired", err)
+	if rows := f.dump(t, "login_codes"); rows != "" {
+		t.Errorf("login_codes = %q, want no code", rows)
 	}
 }
 
 func TestANewCodeReplacesTheEarlierOne(t *testing.T) {
 	f := newFixture(t)
-	ctx := context.Background()
-	if err := f.svc.RequestCode(ctx, anaEmail, anaIP); err != nil {
+	if err := f.at(anaIP).requestCode(anaEmail); err != nil {
 		t.Fatal(err)
 	}
 	first := f.mail.lastCode(t, anaEmail)
-	if err := f.svc.RequestCode(ctx, anaEmail, anaIP); err != nil {
+	if err := f.at(anaIP).requestCode(anaEmail); err != nil {
 		t.Fatal(err)
 	}
 	second := f.mail.lastCode(t, anaEmail)
@@ -402,10 +436,10 @@ func TestANewCodeReplacesTheEarlierOne(t *testing.T) {
 		t.Skip("both codes came out equal (one chance in a million)")
 	}
 
-	if _, err := f.svc.VerifyCode(ctx, anaEmail, first, device, anaIP); !errors.Is(err, auth.ErrWrongCode) {
+	if _, err := f.at(anaIP).verify(anaEmail, first); !errors.Is(err, auth.ErrWrongCode) {
 		t.Errorf("the earlier code: err = %v, want ErrWrongCode", err)
 	}
-	if _, err := f.svc.VerifyCode(ctx, anaEmail, second, device, anaIP); err != nil {
+	if _, err := f.at(anaIP).verify(anaEmail, second); err != nil {
 		t.Errorf("the newer code: %v", err)
 	}
 }
@@ -413,11 +447,10 @@ func TestANewCodeReplacesTheEarlierOne(t *testing.T) {
 // signInWithCode requests a code for email and verifies it.
 func (f *fixture) signInWithCode(t *testing.T, email, ip string) auth.SignIn {
 	t.Helper()
-	ctx := context.Background()
-	if err := f.svc.RequestCode(ctx, email, ip); err != nil {
+	if err := f.at(ip).requestCode(email); err != nil {
 		t.Fatal(err)
 	}
-	signIn, err := f.svc.VerifyCode(ctx, email, f.mail.lastCode(t, email), device, anaIP)
+	signIn, err := f.at(anaIP).verify(email, f.mail.lastCode(t, email))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -443,13 +476,12 @@ func TestAnExistingUserSignsInAgain(t *testing.T) {
 
 func TestEmailsIgnoreCaseAndSpaces(t *testing.T) {
 	f := newFixture(t)
-	ctx := context.Background()
 	first := f.signInWithCode(t, anaEmail, anaIP)
 
-	if err := f.svc.RequestCode(ctx, "  Ana@Example.COM ", anaIP); err != nil {
+	if err := f.at(anaIP).requestCode("  Ana@Example.COM "); err != nil {
 		t.Fatal(err)
 	}
-	signIn, err := f.svc.VerifyCode(ctx, "ANA@example.com", f.mail.lastCode(t, anaEmail), device, anaIP)
+	signIn, err := f.at(anaIP).verify("ANA@example.com", f.mail.lastCode(t, anaEmail))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -462,7 +494,7 @@ func TestInvalidEmailsGetNoCode(t *testing.T) {
 	f := newFixture(t)
 
 	for _, email := range []string{"", "ana", "ana@", "Ana <ana@example.com>", "ana@example.com, beto@example.com"} {
-		if err := f.svc.RequestCode(context.Background(), email, anaIP); !errors.Is(err, auth.ErrInvalidEmail) {
+		if err := f.at(anaIP).requestCode(email); !errors.Is(err, auth.ErrInvalidEmail) {
 			t.Errorf("RequestCode(%q): err = %v, want ErrInvalidEmail", email, err)
 		}
 	}
@@ -498,8 +530,7 @@ func (f *fixture) dump(t *testing.T, table string) string {
 // The architecture's security section: only hashes of codes and tokens are stored.
 func TestTheDatabaseKeepsOnlyHashes(t *testing.T) {
 	f := newFixture(t)
-	ctx := context.Background()
-	if err := f.svc.RequestCode(ctx, anaEmail, anaIP); err != nil {
+	if err := f.at(anaIP).requestCode(anaEmail); err != nil {
 		t.Fatal(err)
 	}
 	code := f.mail.lastCode(t, anaEmail)
@@ -507,25 +538,31 @@ func TestTheDatabaseKeepsOnlyHashes(t *testing.T) {
 		t.Errorf("login_codes holds the code %s", code)
 	}
 
-	signIn, err := f.svc.VerifyCode(ctx, anaEmail, code, device, anaIP)
+	if strings.Contains(f.dump(t, "login_codes"), f.browser.Flow) {
+		t.Error("login_codes holds the flow")
+	}
+
+	signIn, err := f.at(anaIP).verify(anaEmail, code)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if strings.Contains(f.dump(t, "sessions"), signIn.Token) {
 		t.Error("sessions holds the session token")
 	}
+	if signIn.KnownDevices == "" || strings.Contains(f.dump(t, "known_devices"), signIn.KnownDevices) {
+		t.Errorf("known_devices holds the token %q", signIn.KnownDevices)
+	}
 }
 
 // Emails of people who never finished signing in should not stay around.
 func TestExpiredCodesAreForgotten(t *testing.T) {
 	f := newFixture(t)
-	ctx := context.Background()
-	if err := f.svc.RequestCode(ctx, "beto@example.com", anaIP); err != nil {
+	if err := f.at(anaIP).requestCode("beto@example.com"); err != nil {
 		t.Fatal(err)
 	}
 
 	f.clock.Advance(codeLifetime)
-	if err := f.svc.RequestCode(ctx, anaEmail, anaIP); err != nil {
+	if err := f.at(anaIP).requestCode(anaEmail); err != nil {
 		t.Fatal(err)
 	}
 	if strings.Contains(f.dump(t, "login_codes"), "beto@example.com") {

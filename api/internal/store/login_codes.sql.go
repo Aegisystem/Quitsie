@@ -10,6 +10,23 @@ import (
 	"time"
 )
 
+const countLiveLoginCodes = `-- name: CountLiveLoginCodes :one
+SELECT count(*) FROM login_codes
+WHERE email = ? AND expires_at > ?
+`
+
+type CountLiveLoginCodesParams struct {
+	Email     string
+	ExpiresAt time.Time
+}
+
+func (q *Queries) CountLiveLoginCodes(ctx context.Context, arg CountLiveLoginCodesParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countLiveLoginCodes, arg.Email, arg.ExpiresAt)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countLoginCodeAttempt = `-- name: CountLoginCodeAttempt :exec
 UPDATE login_codes
 SET attempts = attempts + 1
@@ -22,14 +39,15 @@ func (q *Queries) CountLoginCodeAttempt(ctx context.Context, id string) error {
 }
 
 const createLoginCode = `-- name: CreateLoginCode :exec
-INSERT INTO login_codes (id, email, code_hash, expires_at, created_at)
-VALUES (?, ?, ?, ?, ?)
+INSERT INTO login_codes (id, email, code_hash, flow_hash, expires_at, created_at)
+VALUES (?, ?, ?, ?, ?, ?)
 `
 
 type CreateLoginCodeParams struct {
 	ID        string
 	Email     string
 	CodeHash  string
+	FlowHash  *string
 	ExpiresAt time.Time
 	CreatedAt time.Time
 }
@@ -39,6 +57,7 @@ func (q *Queries) CreateLoginCode(ctx context.Context, arg CreateLoginCodeParams
 		arg.ID,
 		arg.Email,
 		arg.CodeHash,
+		arg.FlowHash,
 		arg.ExpiresAt,
 		arg.CreatedAt,
 	)
@@ -65,6 +84,16 @@ func (q *Queries) DeleteExpiredLoginCodes(ctx context.Context, expiresAt time.Ti
 	return err
 }
 
+const deleteLoginCodeOfFlow = `-- name: DeleteLoginCodeOfFlow :exec
+DELETE FROM login_codes
+WHERE flow_hash = ?
+`
+
+func (q *Queries) DeleteLoginCodeOfFlow(ctx context.Context, flowHash *string) error {
+	_, err := q.db.ExecContext(ctx, deleteLoginCodeOfFlow, flowHash)
+	return err
+}
+
 const deleteLoginCodes = `-- name: DeleteLoginCodes :exec
 DELETE FROM login_codes
 WHERE email = ?
@@ -75,15 +104,13 @@ func (q *Queries) DeleteLoginCodes(ctx context.Context, email string) error {
 	return err
 }
 
-const getLatestLoginCode = `-- name: GetLatestLoginCode :one
-SELECT id, email, code_hash, expires_at, attempts, created_at FROM login_codes
-WHERE email = ?
-ORDER BY created_at DESC, id DESC
-LIMIT 1
+const getLoginCodeOfFlow = `-- name: GetLoginCodeOfFlow :one
+SELECT id, email, code_hash, expires_at, attempts, created_at, flow_hash FROM login_codes
+WHERE flow_hash = ?
 `
 
-func (q *Queries) GetLatestLoginCode(ctx context.Context, email string) (LoginCode, error) {
-	row := q.db.QueryRowContext(ctx, getLatestLoginCode, email)
+func (q *Queries) GetLoginCodeOfFlow(ctx context.Context, flowHash *string) (LoginCode, error) {
+	row := q.db.QueryRowContext(ctx, getLoginCodeOfFlow, flowHash)
 	var i LoginCode
 	err := row.Scan(
 		&i.ID,
@@ -92,6 +119,7 @@ func (q *Queries) GetLatestLoginCode(ctx context.Context, email string) (LoginCo
 		&i.ExpiresAt,
 		&i.Attempts,
 		&i.CreatedAt,
+		&i.FlowHash,
 	)
 	return i, err
 }

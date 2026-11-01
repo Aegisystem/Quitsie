@@ -33,6 +33,13 @@ type Expense struct {
 	DeletedAt   *time.Time
 }
 
+type KnownDevice struct {
+	TokenHash  string
+	UserID     string
+	CreatedAt  time.Time
+	LastUsedAt time.Time
+}
+
 type Ledger struct {
 	ID                   string
 	Kind                 string
@@ -52,6 +59,7 @@ type LoginCode struct {
 	ExpiresAt time.Time
 	Attempts  int64
 	CreatedAt time.Time
+	FlowHash  *string
 }
 
 type LoginFailure struct {

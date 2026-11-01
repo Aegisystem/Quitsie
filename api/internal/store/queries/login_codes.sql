@@ -1,12 +1,18 @@
 -- name: CreateLoginCode :exec
-INSERT INTO login_codes (id, email, code_hash, expires_at, created_at)
-VALUES (?, ?, ?, ?, ?);
+INSERT INTO login_codes (id, email, code_hash, flow_hash, expires_at, created_at)
+VALUES (?, ?, ?, ?, ?, ?);
 
--- name: GetLatestLoginCode :one
+-- name: GetLoginCodeOfFlow :one
 SELECT * FROM login_codes
-WHERE email = ?
-ORDER BY created_at DESC, id DESC
-LIMIT 1;
+WHERE flow_hash = ?;
+
+-- name: CountLiveLoginCodes :one
+SELECT count(*) FROM login_codes
+WHERE email = ? AND expires_at > ?;
+
+-- name: DeleteLoginCodeOfFlow :exec
+DELETE FROM login_codes
+WHERE flow_hash = ?;
 
 -- name: DeleteLoginCodes :exec
 DELETE FROM login_codes

@@ -89,6 +89,9 @@ type SignIn struct {
 	// Token goes in the session cookie (see SessionCookie). This is the only
 	// copy: the database keeps just its hash.
 	Token string
+	// KnownDevices goes in the known-device cookie (see KnownDeviceCookie),
+	// so that later sign-ins know this browser.
+	KnownDevices string
 	// NewUser is true when this sign-in created the User, so the PWA can ask
 	// for a name and a PreferredCurrency.
 	NewUser bool

@@ -32,7 +32,7 @@ export interface paths {
         put?: never;
         /**
          * Emails a 6-digit sign-in code.
-         * @description Answers 204 whether or not an account exists for the email, so the endpoint does not reveal who has one. The code expires after 10 minutes. Sending is limited per email and per IP (per /56 in IPv6), and the server sends a limited number of emails per hour and per day to everyone together.
+         * @description Answers 204 whether or not an account exists for the email, so the endpoint does not reveal who has one. The code expires after 10 minutes, and only this browser can check it: the answer sets a flow cookie, and a new request from the same browser replaces its earlier code (ADR 0011). Sending is limited per IP (per /56 in IPv6), and per email unless the browser signed in to that email's User before, which has a limit of its own. The server also sends a limited number of emails per hour and per day to everyone together.
          */
         post: operations["requestLoginCode"];
         delete?: never;
@@ -52,7 +52,7 @@ export interface paths {
         put?: never;
         /**
          * Exchanges a sign-in code for a session.
-         * @description Creates the User the first time an email signs in (`newUser` is then true and the client asks for a name and a Preferred currency). A code admits 5 attempts at most.
+         * @description Creates the User the first time an email signs in (`newUser` is then true and the client asks for a name and a Preferred currency). Only the browser that requested the code can check it, with its flow cookie. A code admits 5 attempts at most, and an email 10 wrong ones a day from browsers it never signed in from; each browser it signed in from has 10 of its own.
          */
         post: operations["verifyLoginCode"];
         delete?: never;
@@ -90,7 +90,7 @@ export interface paths {
         };
         /**
          * Google redirects back here; signs in and returns to the app.
-         * @description Always answers with a redirect to the app: to `returnTo` on success, creating the User if needed; to `/login` if the person declined; or to `/login?error=google` on any other failure.
+         * @description Always answers with a redirect to the app: to `returnTo` on success, creating the User if needed and setting the session and known-device cookies; to `/login` if the person declined; or to `/login?error=google` on any other failure.
          */
         get: operations["finishGoogleLogin"];
         put?: never;
@@ -1176,6 +1176,8 @@ export interface operations {
             /** @description The code was sent, if the email can receive one. */
             204: {
                 headers: {
+                    /** @description The flow cookie that ties the code to this browser. HttpOnly, Secure and SameSite=Lax, for the 10 minutes of the code. */
+                    "Set-Cookie"?: string;
                     [name: string]: unknown;
                 };
                 content?: never;
@@ -1222,7 +1224,7 @@ export interface operations {
             /** @description Signed in. */
             200: {
                 headers: {
-                    /** @description The session cookie. */
+                    /** @description The session cookie, and the known-device cookie that tells later sign-ins this browser signed in to the User before (HttpOnly, Secure, for a year; signing out keeps it). It also deletes the flow cookie. */
                     "Set-Cookie"?: string;
                     [name: string]: unknown;
                 };
@@ -1230,7 +1232,7 @@ export interface operations {
                     "application/json": components["schemas"]["LoginResult"];
                 };
             };
-            /** @description The code is wrong (`login_code_invalid`) or expired (`login_code_expired`), or the body is invalid. */
+            /** @description The code is wrong (`login_code_invalid`), or this browser has no live code for the email (`login_code_expired`): it expired, was used, or was requested from another browser. Or the body is invalid. */
             400: {
                 headers: {
                     [name: string]: unknown;
