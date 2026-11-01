@@ -85,7 +85,10 @@ install_litestream() {
   local dir; dir=$(mktemp -d)
   curl -fsSL "$LITESTREAM_URL" -o "$dir/litestream.deb"
   echo "$LITESTREAM_SHA256  $dir/litestream.deb" | sha256sum -c --quiet - || die "el .deb de Litestream no coincide con el SHA-256 fijado"
-  dpkg -i "$dir/litestream.deb" >/dev/null
+  # /etc/litestream.yml is a conffile of the package, and ours replaces it.
+  # Without these options an upgrade stops to ask about it, behind the
+  # >/dev/null. install_files puts ours back anyway.
+  dpkg -i --force-confdef --force-confold "$dir/litestream.deb" >/dev/null
   rm -rf "$dir"
   # The package may start its own unit with its own config; ours replaces it below.
   note "$(litestream version)"
