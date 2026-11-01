@@ -136,20 +136,33 @@ jobs:
           cp -R /usr/lib/systemd/system "$root/usr/lib/systemd/"
           # Some of the system's units are symlinks to files elsewhere (dracut's
           # are, on GitHub's runners), and inside the scratch root they lead
-          # nowhere, which newer systemd reports. Each such link becomes a copy
-          # of what it points to on this machine, or goes if nothing is there.
-          # Masked units point to /dev/null, which systemd reads by name.
-          find "$root/usr/lib/systemd/system" -type l ! -lname /dev/null -print0 |
+          # nowhere, which newer systemd reports. Masked units point to
+          # /dev/null, which systemd reads by name, and stay.
+          system_units=$root/usr/lib/systemd/system
+          leads_nowhere() {
+            local target
+            target=$(readlink "$1")
+            case $target in
+              /*) [ ! -e "$root$target" ] ;;
+              *) [ ! -e "$(dirname "$1")/$target" ] ;;
+            esac
+          }
+          # A unit file becomes a copy of what it points to on this machine,
+          # or goes if nothing is there.
+          find "$system_units" -maxdepth 1 -type l ! -lname /dev/null -print0 |
             while IFS= read -r -d '' link; do
-              target=$(readlink "$link")
-              case $target in
-                /*) inside=$root$target ;;
-                *) inside=$(dirname "$link")/$target ;;
-              esac
-              [ -e "$inside" ] && continue
+              leads_nowhere "$link" || continue
               real=$(readlink -f "${link#"$root"}") || real=
               rm "$link"
               if [ -n "$real" ] && [ -e "$real" ]; then cp -R "$real" "$link"; fi
+            done
+          # An entry of a .wants or .requires directory must stay a symlink: it
+          # points to the unit of its name beside it, or goes if there is none.
+          find "$system_units" -mindepth 2 -type l ! -lname /dev/null -print0 |
+            while IFS= read -r -d '' link; do
+              leads_nowhere "$link" || continue
+              rm "$link"
+              if [ -e "$system_units/${link##*/}" ]; then ln -s "../${link##*/}" "$link"; fi
             done
           sed -n 's/^ExecStart=\([^ ]*\).*/\1/p' deploy/*.service | sort -u | while read -r exe; do
             install -D -m 0755 /dev/null "$root$exe"
