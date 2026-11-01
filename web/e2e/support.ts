@@ -88,6 +88,12 @@ export const expenseRow = (page: Page, description: string): Locator => page.get
 
 export const unsyncedMark = (row: Locator): Locator => row.getByRole('img', { name: 'Sin sincronizar' })
 
+// From the ledger: the address of the Group's Invite link.
+export async function inviteLink(page: Page): Promise<string> {
+  await page.getByRole('link', { name: 'Invitar' }).click()
+  return (await page.locator('.link-box code').textContent()) ?? ''
+}
+
 // The band with the User's own Saldo at the top of the ledger.
 export const balance = (page: Page): Locator => page.locator('.band').first()
 
