@@ -1,7 +1,7 @@
 import createClient from 'openapi-fetch'
 import { describe, expect, it } from 'vitest'
 import type { paths } from '../../api/schema.gen'
-import { type ExpenseUpdate, updateExpense } from './updateExpense'
+import { afterEdit, type ExpenseUpdate, updateExpense } from './updateExpense'
 
 const update: ExpenseUpdate = {
   expectedVersion: 7,
@@ -54,5 +54,15 @@ describe('updateExpense', () => {
       throw new TypeError('Failed to fetch')
     }
     expect(await updateExpense(client(unreachable), 'e1', update)).toBe('offline')
+  })
+})
+
+describe('a failed save, once the User edits the form', () => {
+  it.each(['currency', 'participants', 'gone', 'offline', 'failed'] as const)('stops showing %s', (outcome) => {
+    expect(afterEdit(outcome)).toBeUndefined()
+  })
+
+  it('keeps a conflict, which only the new version solves', () => {
+    expect(afterEdit('conflict')).toBe('conflict')
   })
 })

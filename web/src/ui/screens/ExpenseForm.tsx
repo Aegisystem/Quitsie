@@ -20,7 +20,7 @@ import {
   type SplitValues,
 } from '../forms/expense'
 import { activeMembers, isActive } from '../forms/people'
-import { updateExpense, type UpdateOutcome } from '../forms/updateExpense'
+import { afterEdit, updateExpense, type UpdateOutcome } from '../forms/updateExpense'
 import { readValue, valueError } from '../forms/values'
 import { categories } from '../types'
 import { previewOwedShares, type SplitParticipant } from '../split'
@@ -257,6 +257,9 @@ function ExpenseForm({ summary, user, me, purpose }: { summary: LedgerSummary; u
   }, [changed])
 
   const setValue = (id: string, text: string) => setValues((v) => ({ ...v, [method]: { ...v[method], [id]: text } }))
+  // Any change the User makes: every field of the form reports it with a change
+  // event, and the few controls that do not call it themselves.
+  const edited = () => setFailure(afterEdit)
 
   const save = async () => {
     setTouched(true)
@@ -388,6 +391,7 @@ function ExpenseForm({ summary, user, me, purpose }: { summary: LedgerSummary; u
       <form
         className="form"
         noValidate
+        onChange={edited}
         onSubmit={(e) => {
           e.preventDefault()
           void save()
@@ -463,7 +467,17 @@ function ExpenseForm({ summary, user, me, purpose }: { summary: LedgerSummary; u
           <div className="chips chips-scroll" role="radiogroup" aria-label={t('categories.label')}>
             {categories.map((c) => (
               <label key={c} className="chip chip-glyph">
-                <input type="radio" name={`${ids}-category`} checked={category === c} onChange={() => setCategory(c)} onClick={() => category === c && setCategory(undefined)} />
+                <input
+                  type="radio"
+                  name={`${ids}-category`}
+                  checked={category === c}
+                  onChange={() => setCategory(c)}
+                  onClick={() => {
+                    if (category !== c) return
+                    setCategory(undefined)
+                    edited()
+                  }}
+                />
                 <CategoryGlyph category={c} size={20} />
                 <span>{t(`categories.${c}`)}</span>
               </label>
@@ -487,7 +501,14 @@ function ExpenseForm({ summary, user, me, purpose }: { summary: LedgerSummary; u
                   </option>
                 ))}
               </select>
-              <button type="button" className="button button-small button-quiet" onClick={() => setManyPayers(true)}>
+              <button
+                type="button"
+                className="button button-small button-quiet"
+                onClick={() => {
+                  setManyPayers(true)
+                  edited()
+                }}
+              >
                 {t('expenseForm.severalPayers')}
               </button>
             </div>
@@ -533,7 +554,14 @@ function ExpenseForm({ summary, user, me, purpose }: { summary: LedgerSummary; u
                   </span>
                 </p>
                 {former.paid.size === 0 && (
-                  <button type="button" className="button button-small button-quiet" onClick={() => setManyPayers(false)}>
+                  <button
+                    type="button"
+                    className="button button-small button-quiet"
+                    onClick={() => {
+                      setManyPayers(false)
+                      edited()
+                    }}
+                  >
                     {t('expenseForm.onePayer')}
                   </button>
                 )}
