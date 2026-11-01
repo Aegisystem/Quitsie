@@ -116,7 +116,7 @@ jobs:
         run: |
           root=$RUNNER_TEMP/root
           mkdir -p "$root/etc/systemd/system" "$root/usr/lib/systemd"
-          cp -a /usr/lib/systemd/system "$root/usr/lib/systemd/"
+          cp -R /usr/lib/systemd/system "$root/usr/lib/systemd/"
           sed -n 's/^ExecStart=\([^ ]*\).*/\1/p' deploy/*.service | sort -u | while read -r exe; do
             install -D -m 0755 /dev/null "$root$exe"
           done
