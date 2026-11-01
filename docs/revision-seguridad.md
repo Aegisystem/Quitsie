@@ -1,30 +1,30 @@
 # Revisión de seguridad
 
-Revisión previa a abrir Quitsie al público, hecha el 2026-10-31 sobre el commit `26948a3` de `main`. El vocabulario sigue [CONTEXT.md](../CONTEXT.md). No se cambió código: este archivo es el único resultado.
+Revisión previa a abrir Quitsie al público, hecha el 2026-10-31 sobre el commit `26948a3` de `main`. El vocabulario sigue [CONTEXT.md](../CONTEXT.md). Los hallazgos 1 a 4 se arreglaron después, en esta misma rama, y cada uno dice con qué commits y qué se volvió a medir.
 
-> **El repositorio es público y este documento explica cómo reproducir ataques que hoy funcionan.** No lo lleves a `main` hasta arreglar los hallazgos 1 a 4.
+> **El repositorio es público y este documento explica cómo reproducir ataques.** Los hallazgos 5 a 13 siguen abiertos. Integra este archivo en `main` solo junto con los arreglos de los hallazgos 1 a 4, nunca antes.
 
 ## Resumen
 
-Hay **13 hallazgos verificados: 1 crítico, 2 altos, 7 medios y 3 bajos**. **Cuatro bloquean abrir al público** (1 a 4). El aislamiento entre libros aguantó todo lo que se le probó: sin un enlace válido, nadie leyó ni cambió un libro ajeno. Los problemas graves son de disponibilidad, y el único camino hacia una cuenta ajena es adivinar su código (hallazgo 4).
+Hay **13 hallazgos verificados: 1 crítico, 2 altos, 7 medios y 3 bajos**. **Los cuatro que bloqueaban abrir al público (1 a 4) están arreglados.** El aislamiento entre libros aguantó todo lo que se le probó: sin un enlace válido, nadie leyó ni cambió un libro ajeno. Los problemas graves son de disponibilidad, y el único camino hacia una cuenta ajena es adivinar su código (hallazgo 4).
 
-| # | Gravedad | Hallazgo | ¿Bloquea? | Quién puede |
+| # | Gravedad | Hallazgo | Estado | Quién puede |
 | --- | --- | --- | --- | --- |
-| 1 | Crítica | Una petición sin sesión consume un minuto de CPU (Go 1.26.1) | **Sí** | Cualquiera |
-| 2 | Alta | Un email de Miembro pendiente rompe `GET /sync` para todo el Grupo | **Sí** | Quien tenga el enlace |
-| 3 | Alta | Una sola cuenta agota la memoria, la CPU y el disco | **Sí** | Cualquier Usuario |
-| 4 | Media | Los intentos de código no tienen tope por cuenta | **Sí** | Cualquiera |
-| 5 | Media | Cualquiera impide entrar a otra persona durante una hora | No | Cualquiera |
-| 6 | Media | El envío de correos no tiene tope global | No | Cualquiera |
-| 7 | Media | El limitador de códigos crece sin tope en memoria | No | Cualquiera |
-| 8 | Media | Quien fue sacado de un Grupo vuelve con el enlace viejo | No | Antiguo Miembro |
-| 9 | Media | La réplica sigue en el dispositivo tras cerrar la sesión a distancia | No | Quien tenga el dispositivo |
-| 10 | Media | El email sobrevive al borrado de la cuenta y reaparece | No | Miembros del Grupo |
-| 11 | Baja | Quien entra con el enlace ve los emails de los Miembros pendientes | No | Quien tenga el enlace |
-| 12 | Baja | Un enlace falsificado carga el libro entero antes de comprobarse | No | Cualquiera con un id de libro |
-| 13 | Baja | Los Saldos desbordan `int64` e invierten las Deudas | No | Miembro del Grupo |
+| 1 | Crítica | Una petición sin sesión consume un minuto de CPU (Go 1.26.1) | **Arreglado** | Cualquiera |
+| 2 | Alta | Un email de Miembro pendiente rompe `GET /sync` para todo el Grupo | **Arreglado** | Quien tenga el enlace |
+| 3 | Alta | Una sola cuenta agota la memoria, la CPU y el disco | **Arreglado** | Cualquier Usuario |
+| 4 | Media | Los intentos de código no tienen tope por cuenta | **Arreglado** | Cualquiera |
+| 5 | Media | Cualquiera impide entrar a otra persona durante un día | Abierto, empeoró con el arreglo del 4 | Cualquiera |
+| 6 | Media | El envío de correos no tiene tope global | Abierto | Cualquiera |
+| 7 | Media | El limitador de códigos crece sin tope en memoria | Abierto | Cualquiera |
+| 8 | Media | Quien fue sacado de un Grupo vuelve con el enlace viejo | Abierto | Antiguo Miembro |
+| 9 | Media | La réplica sigue en el dispositivo tras cerrar la sesión a distancia | Abierto | Quien tenga el dispositivo |
+| 10 | Media | El email sobrevive al borrado de la cuenta y reaparece | Abierto | Miembros del Grupo |
+| 11 | Baja | Quien entra con el enlace ve los emails de los Miembros pendientes | Abierto | Quien tenga el enlace |
+| 12 | Baja | Un enlace falsificado carga el libro entero antes de comprobarse | Abierto | Cualquiera con un id de libro |
+| 13 | Baja | Los Saldos desbordan `int64` e invierten las Deudas | Abierto | Miembro del Grupo |
 
-Orden propuesto: el hallazgo 1 se arregla en una línea y conviene hacerlo hoy. Los hallazgos 10 y 12 también son cambios mínimos.
+Los hallazgos 7, 10 y 12 son cambios mínimos. Los hallazgos 8 y 11 necesitan una decisión de producto.
 
 **Gravedad.** Crítica: alguien sin cuenta tumba el servicio o lee datos ajenos. Alta: una cuenta normal deja sin servicio a otras personas. Media: daño acotado a una persona o incumplimiento de una regla de privacidad. Baja: efecto pequeño o limitado al propio libro.
 
@@ -38,7 +38,7 @@ El binario confía en `CF-Connecting-IP` por loopback, así que las pruebas rota
 
 ### 1. Una petición sin sesión consume un minuto de CPU
 
-**Crítica. Bloquea.** Cualquiera, sin cuenta.
+**Crítica. Arreglado en `6e1fe10`.** Cualquiera, sin cuenta.
 
 **Archivos:** `api/go.mod:3`, `.github/workflows/ci.yml:28`, `api/internal/httpapi/limits.go:17` y `github.com/oapi-codegen/runtime/types/email.go`.
 
@@ -55,13 +55,15 @@ Dos peticiones simultáneas bastarían para ocupar los 2 vCPU compartidos de la 
 
 **Arreglo.**
 
-1. Sube `api/go.mod` a `go 1.26.10`. Compilado así, el mismo código pasa de 42 avisos a `No vulnerabilities found` en `govulncheck` y el ataque queda en 0,02 s.
-2. Pon un tope de cuerpo de unos 4 KiB en las rutas públicas de `/auth/`, para que el próximo fallo de un analizador no tenga 2 MiB con los que trabajar.
-3. Añade `govulncheck ./...` a la CI, para que un Go desactualizado rompa el build en vez de pasar inadvertido.
+1. `api/go.mod` pasó a `go 1.26.10`. `govulncheck` pasa de 42 avisos a `No vulnerabilities found`.
+2. `POST /auth/*` lee 4 KiB como máximo, y el servidor responde `413` sin analizar el resto.
+3. La CI ejecuta `govulncheck ./...`. Un aviso nuevo pone la CI en rojo y frena el despliegue hasta actualizar.
+
+**Medido después, contra el binario real.** El cuerpo de 1,57 MB responde `413` en 14 ms, sin CPU apreciable.
 
 ### 2. Un email de Miembro pendiente rompe `GET /sync` para todo el Grupo
 
-**Alta. Bloquea.** Cualquier Miembro vinculado, y por tanto cualquiera con el Enlace de invitación.
+**Alta. Arreglado en `033ad77`.** Cualquier Miembro vinculado, y por tanto cualquiera con el Enlace de invitación.
 
 **Archivos:** `api/internal/httpapi/handlers_ledgers.go:88` (`cleanPendingMember`), `api/internal/httpapi/handlers_records.go:323` (`pulledMember`) y `handlers_ledgers.go:468` (`memberResponse`).
 
@@ -88,15 +90,14 @@ La segunda petición responde 500, pero la fila ya se guardó.
 
 **Arreglo.**
 
-1. Valida el email de los Miembros pendientes con la misma regla que el login: comparte `normalizeEmail` y responde `400 validation_failed` si el valor no sobrevive a la ida y vuelta.
-2. Haz que una fila no pueda tumbar el pull: en las respuestas, declara el email del Miembro como texto sin `format: email`, para que el serializador no lo valide.
-3. Añade una prueba: ese email recibe 400 y `/sync` sigue en 200.
+1. El email de los Miembros y Amigos pendientes pasa por `auth.NormalizeEmail`, la regla del login. Un valor inválido recibe `400 validation_failed`.
+2. En las respuestas, `Member.email` es texto sin `format: email`, así que una fila guardada ya no puede romper el pull. Una prueba lo comprueba con una fila dañada escrita directamente en la base.
 
-No hace falta migrar datos porque aún no hay producción.
+**Medido después, contra el binario real.** Los cuatro emails del ataque reciben 400 por `POST`, `PUT`, `POST /groups` y `POST /friendships`, y `GET /sync` sigue en 200 para todo el Grupo. No hizo falta migrar datos porque aún no hay producción.
 
 ### 3. Una sola cuenta agota la memoria, la CPU y el disco
 
-**Alta. Bloquea.** Cualquier Usuario.
+**Alta. Arreglado en `c03f82e`, `764952b`, `8c850d4`, `ca09625` y `c7340d6`.** Cualquier Usuario.
 
 **Archivos:** `api/internal/httpapi/handlers_ledgers.go:475` (sin tope de Miembros), `api/internal/sync/pull.go:65` y `:129` (`GET /sync` sin paginar, Deudas de cada libro cambiado), `api/internal/domain/debt.go:26`, `api/cmd/server/main.go:114` (solo `ReadHeaderTimeout`).
 
@@ -115,15 +116,30 @@ La preparación lleva unos 4 minutos respetando el límite. La VM tiene 1 GB: el
 
 **Arreglo.**
 
-1. Pon topes de producto en el servidor: Miembros por Grupo (200 sobra), Grupos por Usuario, registros por libro. El contrato ya tiene `maxItems: 50` al crear un Grupo, pero `AddPendingMember` no tiene nada parecido.
-2. Pagina `GET /sync`: un máximo de filas por respuesta, con `hasMore`, y escritura en streaming en vez de un único objeto en memoria.
-3. Permite como mucho dos pulls grandes a la vez con un semáforo, y responde `429` al resto.
-4. Pon un límite de bytes escritos por Usuario y hora, además del de peticiones.
-5. Fija `GOMEMLIMIT=700MiB` en `deploy/quitsie.service`, y `WriteTimeout` e `IdleTimeout` en `http.Server`.
+1. Topes: 200 Miembros por Grupo, 200 libros por Usuario y 200.000 filas por libro. Un libro lleno solo admite borrar registros y las salidas (salir, sacar a un Miembro, deshacer una Reclamación, borrar el Grupo), para que ningún Miembro atrape a los demás. Los rechazos usan el código nuevo `limit_reached`.
+2. Presupuesto de 5 MiB de cambios por Usuario y hora. Leer y todo `/auth/` quedan fuera, para que cerrar sesión siempre funcione.
+3. `GET /sync` corta cada respuesta en unas 20.000 filas. El cliente ya recorría `hasMore`, así que no cambió.
+4. Dos pulls a la vez y uno por Usuario. El resto espera hasta 5 segundos o recibe `429`.
+5. `GOMEMLIMIT=700MiB` en `deploy/quitsie.service`, y `WriteTimeout` e `IdleTimeout` en `http.Server`.
+
+**Medido después, contra el binario real con `GOMAXPROCS=2`.** Para la memoria y la vecina se preparó el peor caso dentro de los topes: una cuenta con 5 libros llenos de 199.000 filas, 200 Miembros y Gastos de 100 pagadores por 100 deudores, sin Simplificación (369 MB de base).
+
+| Medida | Antes | Después |
+| --- | --- | --- |
+| Memoria con 8 lectores simultáneos | 2.095 MB | **150 MB** |
+| `POST /records` de la vecina, p50 | 113 ms | 4 ms |
+| `GET /me` de la vecina, p50 | 87 ms | menos de 1 ms |
+| `GET /sync` de la vecina, p50 | No medido | 3 ms, 11 ms de máximo |
+| Respuesta más grande de `GET /sync` | Todo el historial | 4,1 MB |
+| Disco, con una cuenta | 345 MB por minuto posibles | Lote rechazado al llegar a 4,9 MB enviados |
+
+Un pull completo de esa cuenta tarda 40 s y 50 páginas. El cliente real, en el navegador, recorrió dos páginas de un libro de 36.000 filas y guardó los 12.000 Gastos con el Saldo correcto.
+
+**Riesgo que queda.** Los límites son por cuenta, y el presupuesto y los pulls simultáneos viven en memoria. Una persona con varias cuentas los suma, y cada IP puede pedir 30 códigos por hora. Dos cuentas con libros llenos pueden ocupar las dos plazas de `GET /sync`.
 
 ### 4. Los intentos de código no tienen tope por cuenta
 
-**Media. Bloquea**, porque es el único camino hacia la cuenta de otra persona y arreglarlo cuesta poco.
+**Media. Arreglado en `835a94c`.** Bloqueaba porque es el único camino hacia la cuenta de otra persona.
 
 **Archivos:** `api/internal/auth/code.go:25`, `:62` y `:75-99`, `api/internal/auth/ratelimit.go:13-14`.
 
@@ -133,24 +149,35 @@ La preparación lleva unos 4 minutos respetando el límite. La VM tiene 1 GB: el
 
 Eso da un 1,8 % al mes contra una cuenta concreta, a cambio de 3.600 correos que la víctima vería. Repartido, es peor: una IP puede pedir 30 códigos por hora para 30 emails distintos, o sea 150 intentos. Con 100 direcciones son 15.000 intentos por hora, es decir, **una cuenta cada 3 días** de media sobre una lista de al menos 600 emails. Además, por lectura de `code.go:75-99`, el código se guarda antes de enviar el correo: si el envío falla o la cuota de Resend se agotó, el código sigue siendo válido y la víctima no recibe aviso.
 
-**Arreglo.** Guarda en la base un presupuesto de intentos fallidos por email, que no se reinicie con cada código (por ejemplo 10 al día), y añade un límite de verificaciones fallidas por IP. Borra el código si el envío falla. Persistir en SQLite también cubre el hallazgo 7.
+**Arreglo.**
 
-### 5. Cualquiera impide entrar a otra persona durante una hora
+1. Un email admite 10 códigos equivocados en 24 horas, sumando todos sus códigos. La cuenta vive en la tabla `login_failures`, con el hash del email.
+2. Una IP admite 60 verificaciones por hora.
+3. Si el correo no se pudo enviar, el código se borra.
 
-**Media.** Cualquiera, sin cuenta.
+**Medido después, contra el binario real.** Un email recibe 10 intentos en vez de 25, y el tercer código responde `429` con `Retry-After: 86400`. El código correcto también se rechaza. Tras reiniciar el binario, la respuesta sigue siendo `429`. Una IP recibe `429` en la verificación 61.
+
+Con este tope, una cuenta concreta acumula 3.650 intentos sobre un millón en un año.
+
+**Coste.** Cualquiera puede bloquear los códigos de un email durante un día: ver el hallazgo 5.
+
+### 5. Cualquiera impide entrar a otra persona durante un día
+
+**Media. Abierto.** Cualquiera, sin cuenta. El arreglo del hallazgo 4 lo empeoró: el bloqueo pasó de una hora a 24 horas. Antes de ese arreglo el atacante podía repetirlo cada hora, así que el bloqueo ya podía ser permanente; ahora le cuesta menos peticiones.
 
 **Archivos:** `api/internal/auth/code.go:62` y `:127`, `api/internal/auth/ratelimit.go:13`.
 
-**Ataque.** Basta conocer el email. Hay dos formas, y las dos se pueden repetir cada hora con unas pocas peticiones desde una IP.
+**Ataque.** Basta conocer el email. Hay tres formas, y todas se pueden repetir con unas pocas peticiones desde una IP.
 
 **Verificado.**
 
-- Cinco peticiones del atacante agotan el cupo: la víctima, desde su propia IP, recibe `429 rate_limited` con `Retry-After: 3600`.
+- Cinco peticiones del atacante agotan el cupo de envíos: la víctima, desde su propia IP, recibe `429 rate_limited` con `Retry-After: 3600`.
 - Si la víctima ya pidió su código, cinco intentos fallidos del atacante lo queman: al escribir el código correcto recibe `429 too_many_attempts`.
+- Diez intentos fallidos del atacante, con dos códigos, bloquean ese email durante 24 horas: la víctima recibe `429` con `Retry-After: 86400`, y un código correcto se rechaza.
 
-Las sesiones abiertas no se ven afectadas: el daño recae en quien estrena dispositivo o quedó sin sesión.
+Las sesiones abiertas y Google no se ven afectados: el daño recae en quien estrena dispositivo o quedó sin sesión y entra con código.
 
-**Arreglo.** Ata cada código al navegador que lo pidió con una cookie de flujo `HttpOnly`, y cuenta los intentos por flujo, de modo que las conjeturas de otro no gasten el código de la víctima. Cuenta el cupo de envíos por pareja de email e IP y deja el tope por email como un techo más alto.
+**Arreglo.** Ata cada código al navegador que lo pidió con una cookie de flujo `HttpOnly`, y cuenta los intentos por flujo y el cupo de envíos por pareja de email e IP. El tope por email de 10 fallos se mantiene como techo más alto, para que un atacante con muchas IP no recupere los intentos que quitó el hallazgo 4.
 
 ### 6. El envío de correos no tiene tope global
 
@@ -174,7 +201,7 @@ Las sesiones abiertas no se ven afectadas: el daño recae en quien estrena dispo
 
 **Verificado.** 90.000 peticiones con 300 IP subieron la memoria de 18 a 93 MB, unos 830 bytes por clave en el peor caso (emails de casi 254 caracteres). Una IP sostiene 18.300 claves por hora, y cada clave vive hasta dos horas: unos 30 MB. Con unas 35 direcciones se llena 1 GB, y un /56 de IPv6 da 256. El llenado completo de la VM no se probó.
 
-**Arreglo.** No escribas la clave si no hay eventos, comprueba primero la cuota de IP y pon un tope de claves, como ya hace `internal/ratelimit`. Si los contadores pasan a SQLite por el hallazgo 4, este desaparece.
+**Arreglo.** No escribas la clave si no hay eventos, comprueba primero la cuota de IP y pon un tope de claves, como ya hace `internal/ratelimit`. El arreglo del hallazgo 4 no lo cubre: el cupo de envíos sigue en memoria.
 
 ### 8. Quien fue sacado de un Grupo vuelve con el enlace viejo
 
@@ -252,7 +279,7 @@ La regla actual dice que quien vuelve recupera su Antiguo Miembro, lo cual tiene
 
 **Verificado.** 9.300 Gastos de 10^15 en 93 peticiones y 3 segundos. Lo real es que la otra persona debe 9.300.000.000.000.000.000; `GET /sync` dice que el pagador debe 9.146.744.073.709.551.616 a esa persona, con el sentido invertido. No hubo pánicos.
 
-**Arreglo.** Rechaza al escribir cualquier registro que deje un Saldo por encima de 2^62, con `invalid_amounts`. El tope de registros del hallazgo 3 también lo cierra. Corrige la frase de las reglas.
+**Arreglo.** Rechaza al escribir cualquier registro que deje un Saldo por encima de 2^62, con `invalid_amounts`. El tope de filas del hallazgo 3 no lo impide, porque 9.300 Gastos caben en un libro. Corrige la frase de las reglas.
 
 ## A comprobar al desplegar
 
@@ -301,8 +328,8 @@ No son hallazgos: no se encontró forma de aprovecharlos. Conviene añadirlos po
 
 | Herramienta | Resultado |
 | --- | --- |
-| `govulncheck` (Go 1.26.1) | **42 avisos, todos de la biblioteca estándar: 27 alcanzables, 6 importados, 9 solo en el módulo** |
-| `govulncheck` (Go 1.26.10) | `No vulnerabilities found`, sin cambiar código |
+| `govulncheck` (Go 1.26.1, en la revisión) | **42 avisos, todos de la biblioteca estándar: 27 alcanzables, 6 importados, 9 solo en el módulo** |
+| `govulncheck` (Go 1.26.10, actual) | `No vulnerabilities found` |
 | `npm audit --omit=dev` | 0 vulnerabilidades en lo que llega al navegador |
 | `npm audit` | 12 (10 moderadas, 2 bajas), todas en herramientas de compilación |
 
@@ -315,7 +342,7 @@ Las de npm vienen de `vite-plugin-pwa` (`workbox-build`, `ejs`, `glob`, `deepmer
 - **Cloudflare real.** No hay despliegue: ni el túnel, ni `CF-Connecting-IP` a través de él, ni si el borde frenaría alguno de estos ataques. La regla de loopback se comprobó por lectura y por `limits_test.go`. La prueba con una dirección de red real se hizo al endurecer el servidor, y no se repitió para no exponer el binario en la red local.
 - **Google real.** Solo el proveedor falso de las pruebas.
 - **Resend real.** Ni cuotas ni rebotes.
-- **La VM `e2-micro`.** La caída por memoria y el llenado del disco se deducen de lo medido en local.
+- **La VM `e2-micro`.** La caída por memoria y el llenado del disco se dedujeron de lo medido en local. Las mediciones posteriores a los arreglos también son locales.
 - **Service worker en ejecución.** No llegó a registrarse en el navegador integrado, que falló al obtener el script, aunque el servidor lo entrega con 200. La conclusión sale de leer el `sw.js` generado.
 - **Safari en iOS y la PWA instalada.**
 - **La caché HTTP del navegador** tras cerrar sesión.
