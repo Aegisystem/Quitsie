@@ -205,7 +205,10 @@ GCP_ZONE="${QUITSIE_ZONE:-us-east1-b}"            # us-east1 is a free-tier regi
 IMAGE_FAMILY="${QUITSIE_IMAGE_FAMILY:-debian-13}" # debian-12 also works
 QUITSIE_DOMAIN=""
 GCP_PROJECT=""
+QUITSIE_ALERT_EMAIL=""
 _SECRET_INPUT=""
+# The same check as provision.sh: the address travels inside a remote command.
+EMAIL_RE='^[A-Za-z0-9._%+-]+@([A-Za-z0-9-]+\.)+[A-Za-z]{2,}$'
 
 have_cmd() { command -v "$1" >/dev/null 2>&1; }
 
@@ -439,16 +442,30 @@ stage "Aprovisionar la VM"
 say "Copio los archivos versionados de deploy/ a la VM y ejecuto provision.sh allí."
 say "Te pedirá, con entrada oculta, el Account ID y las claves de R2 y el token del túnel;"
 say "se escriben en /etc/quitsie/*.env (modo 600) y en ningún otro sitio. Puedes pegar el comando completo del túnel."
+say "Antes te pido el email para las alertas, que no es secreto."
 DEPLOY_PUBKEY=$(_existing DEPLOY_PUBKEY || true)
 if [[ -z "$DEPLOY_PUBKEY" ]]; then
   warn "No hay clave pública de despliegue (etapa 7). Repite esa etapa antes de seguir."
   exit 1
 fi
+printf '\n'
+say "La VM revisa cada 5 minutos que la aplicación responda, que el disco no se llene, que el respaldo"
+say "funcione y que no haya errores, y te escribe si algo falla. Los correos salen por Resend (etapa 12)."
+while true; do
+  ask QUITSIE_ALERT_EMAIL "Email para las alertas (vacío: solo quedan en el registro de la VM):"
+  [[ -z "$QUITSIE_ALERT_EMAIL" || "$QUITSIE_ALERT_EMAIL" =~ $EMAIL_RE ]] && break
+  warn "Escribe una dirección sencilla, como tu@gmail.com"
+done
+if [[ -n "$QUITSIE_ALERT_EMAIL" ]]; then
+  write_env QUITSIE_ALERT_EMAIL "$QUITSIE_ALERT_EMAIL"
+else
+  SKIPPED+=("Email de las alertas: repite la etapa 9, o en la VM: sudoedit /etc/quitsie/alert.env")
+fi
 if confirm "¿Copiar deploy/ y ejecutar provision.sh en la VM?"; then
   export COPYFILE_DISABLE=1 # keeps macOS from adding ._* files to the archive
   if git ls-files -z deploy | xargs -0 tar -cf - \
     | vm_ssh --command 'rm -rf ~/quitsie-deploy && mkdir ~/quitsie-deploy && tar -xf - -C ~/quitsie-deploy --strip-components=1'; then
-    run vm_ssh --command "sudo env QUITSIE_DEPLOY_PUBKEY='$DEPLOY_PUBKEY' bash ~/quitsie-deploy/provision.sh" -- -t \
+    run vm_ssh --command "sudo env QUITSIE_DEPLOY_PUBKEY='$DEPLOY_PUBKEY' QUITSIE_ALERT_EMAIL='$QUITSIE_ALERT_EMAIL' bash ~/quitsie-deploy/provision.sh" -- -t \
       || SKIPPED+=("provision.sh falló: corrige el error y vuelve a ejecutar este asistente")
   else
     warn "No pude copiar deploy/ a la VM."
@@ -573,7 +590,7 @@ fi
 pause
 
 # ── 14 ────────────────────────────────────────────────────────────────────
-stage "Prueba de restauración del respaldo"
+stage "Prueba de restauración y de las alertas"
 say "Restauro el último respaldo de R2 en una carpeta temporal de la VM y compruebo su integridad."
 say "La base real no se toca. Hazlo ahora y repítelo cada mes (docs/despliegue.md)."
 note "Litestream sube los cambios casi al instante, pero la base no existe hasta el primer arranque del binario."
@@ -582,10 +599,17 @@ if confirm "¿Ejecutar quitsie-restore-test en la VM?"; then
   run vm_ssh --command 'sudo systemctl is-active litestream && sudo quitsie-restore-test' </dev/null \
     || SKIPPED+=("Prueba de restauración: sudo quitsie-restore-test en la VM (docs/despliegue.md)")
 fi
+printf '\n'
+QUITSIE_ALERT_EMAIL=$(_existing QUITSIE_ALERT_EMAIL || true)
+if [[ -n "$QUITSIE_ALERT_EMAIL" ]] && confirm "¿Enviar un correo de prueba de las alertas a $QUITSIE_ALERT_EMAIL?"; then
+  run vm_ssh --command 'sudo quitsie-alert-check --test' </dev/null \
+    || SKIPPED+=("Correo de prueba de las alertas: sudo quitsie-alert-check --test en la VM (docs/despliegue.md)")
+fi
 # ──────────────────────────────────────────────────────────────────────────
 
 finish
 say "Pendiente (no urgente):"
+note "- Opcional: un monitor externo gratuito (por ejemplo UptimeRobot) sobre https://$QUITSIE_DOMAIN/api/v1/health cada 5 minutos. Si la VM entera cae, no puede avisar de sí misma (docs/despliegue.md, «Alertas»)."
 note "- quitsie.app: haz que redirija a $QUITSIE_DOMAIN con una Redirect Rule (docs/despliegue.md)."
 note "- Apunta en tu calendario la caducidad del token de servicio y la prueba de restauración mensual."
 note "- Acceso de emergencia a la VM: gcloud compute ssh $VM_NAME --zone $GCP_ZONE --tunnel-through-iap"

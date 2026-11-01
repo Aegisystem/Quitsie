@@ -107,6 +107,9 @@ jobs:
       - name: Lint the workflows
         run: actionlint
 
+      - name: Test the alert check against stand-ins
+        run: bash deploy/alert-check.test.sh
+
       # systemd-analyze wants the executables the units start and the system's
       # own units, so it looks at ours inside a scratch root that has both.
       - name: Verify the systemd units

@@ -33,12 +33,12 @@ Requisitos en tu ordenador: `gh` con sesión iniciada (`gh auth login`) y `gclou
 | 6 | Creas el túnel de Cloudflare y publicas el dominio hacia `localhost:8080`. |
 | 7 | Genera un par de claves SSH solo para desplegar; la privada va directa al secreto `DEPLOY_SSH_KEY`. |
 | 8 | Creas el token de R2 para Litestream. |
-| 9 | Copia `deploy/` a la VM y ejecuta `provision.sh`, donde escribes las claves de R2 y el token del túnel. |
+| 9 | Te pide el email de las alertas, copia `deploy/` a la VM y ejecuta `provision.sh`, donde escribes las claves de R2 y el token del túnel. |
 | 10 | Creas un token de servicio de Cloudflare Access; sus dos valores van a secretos de GitHub. |
 | 11 | Creas la aplicación de Access para `ssh.<dominio>` y después publicas esa ruta en el túnel. |
 | 12 | Creas la clave de Resend y rellenas `/etc/quitsie/quitsie.env`, que es obligatorio; el asistente comprueba que no falte ninguna variable. |
 | 13 | Configura las variables de GitHub y lanza el primer despliegue. |
-| 14 | Ejecuta la prueba de restauración. |
+| 14 | Ejecuta la prueba de restauración y envía un correo de prueba de las [alertas](#alertas). |
 
 Al terminar, `https://<dominio>/` muestra la página de estado de la PWA y `https://<dominio>/api/v1/health` responde `{"status":"ok","database":"ok","version":"<commit>"}`.
 
@@ -67,6 +67,7 @@ Nada secreto está en el repositorio ni pasa por un chat. Las plantillas `deploy
 | Clave SSH privada de despliegue | secreto `DEPLOY_SSH_KEY` de GitHub | el asistente, directo desde `ssh-keygen` |
 | Token de servicio de Access | secretos `CF_ACCESS_CLIENT_ID` y `CF_ACCESS_CLIENT_SECRET` de GitHub | el asistente, con entrada oculta |
 | Dominio, clave pública de la VM | variables `QUITSIE_URL`, `DEPLOY_SSH_HOST` y `DEPLOY_SSH_HOST_KEY` de GitHub (públicas) | el asistente |
+| Email de las alertas (no es secreto) | `/etc/quitsie/alert.env` en la VM (modo 600) | `provision.sh`, con el valor que le pasa el asistente (etapa 9) |
 
 ## Despliegue continuo
 
@@ -111,6 +112,8 @@ systemctl status quitsie litestream cloudflared
 journalctl -u quitsie -n 100 --no-pager
 journalctl -u litestream -u quitsie-restore -n 50 --no-pager
 curl -s http://127.0.0.1:8080/api/v1/health
+systemctl list-timers 'quitsie-*'
+journalctl -u quitsie-alert-check -u 'quitsie-alert@*' -n 50 --no-pager
 ```
 
 | Pieza | Unidad o archivo | Notas |
@@ -120,6 +123,7 @@ curl -s http://127.0.0.1:8080/api/v1/health
 | Respaldo | `litestream.service`, `/etc/litestream.yml` | Réplica continua a R2; conserva una semana de puntos de restauración. |
 | Entrada | `cloudflared.service` | Se actualiza con `apt upgrade`. |
 | Despliegue | `/usr/local/sbin/quitsie-deploy` | Lo ejecuta el usuario `deploy`. |
+| Alertas | `quitsie-alert-check.timer`, `quitsie-alert@.service`, `/usr/local/sbin/quitsie-alert-check` | Revisa la VM cada 5 minutos y te escribe ([Alertas](#alertas)). Guarda lo ya avisado en `/var/lib/quitsie-alert`. |
 
 **Aplicar cambios de `deploy/`** (unidades, `litestream.yml`, versión de Litestream): conecta por IAP, actualiza el checkout y ejecuta otra vez `sudo bash deploy/provision.sh`. Es idempotente y no vuelve a pedir lo que ya tiene. Para subir Litestream, cambia `LITESTREAM_VERSION` y `LITESTREAM_SHA256` en `provision.sh` (el digest sale de `gh api repos/benbjohnson/litestream/releases/tags/v<versión>`).
 
@@ -137,6 +141,28 @@ curl -s http://127.0.0.1:8080/api/v1/health
 | Clave SSH de despliegue | Repite la etapa 7 (generar una nueva) y la 9 (reinstalar la pública). |
 | Clave de Resend | Crea una nueva en Resend, `sudoedit /etc/quitsie/quitsie.env`, `sudo systemctl restart quitsie`, y revoca la vieja. |
 | Secreto de invitaciones | `sudoedit /etc/quitsie/quitsie.env` y `sudo systemctl restart quitsie`. Revoca todos los Enlaces de invitación a la vez. |
+
+## Alertas
+
+La VM se vigila a sí misma, sin servicios de pago ni cuentas nuevas. Cada 5 minutos, `quitsie-alert-check.timer` ejecuta `/usr/local/sbin/quitsie-alert-check` ([`deploy/alert-check.sh`](../deploy/alert-check.sh)), que te escribe a `QUITSIE_ALERT_EMAIL` por Resend, con la clave y el remitente de `/etc/quitsie/quitsie.env`.
+
+| Comprobación | Avisa cuando |
+| --- | --- |
+| Aplicación | `GET /api/v1/health` en `127.0.0.1:8080` no devuelve 200 tres veces seguidas. No se mira antes del primer despliegue ni mientras `quitsie-deploy` trabaja. |
+| Servicios | `quitsie`, `litestream` o `cloudflared` no están activos, o systemd los volvió a arrancar solo desde la comprobación anterior. `quitsie-restore` falló. |
+| Disco | El disco de `/var/lib/quitsie` llega al 85 %. |
+| Errores | Llegó al registro de `quitsie` o de `litestream` una línea `level=ERROR`, un `panic` o un `fatal error`. La aplicación registra en ERROR todo lo que necesita al dueño, también cada respuesta 500. |
+
+Además, `quitsie`, `litestream` y `cloudflared` llevan `OnFailure=quitsie-alert@%n.service`: cuando systemd marca una como fallida, el aviso sale en ese momento, sin esperar a la siguiente comprobación.
+
+- **Un correo por problema, no uno cada 5 minutos.** Todo lo que encuentra una comprobación va en un solo correo. Si sigue fallando, se repite como mucho cada 4 horas, y cuando vuelve a funcionar llega «todo vuelve a funcionar». Los errores no tienen arreglo que detectar: se acumulan y salen juntos, como mucho cada 4 horas.
+- **Como mucho 10 correos de alerta al día.** Comparten la cuenta de Resend con los códigos de acceso, y el plan gratuito envía 100 al día.
+- **El correo no lleva datos de nadie.** De cada línea de error solo copia el mensaje (`msg`), no el resto de campos.
+- **Sin email, solo el registro.** Con `QUITSIE_ALERT_EMAIL` vacío, lo que encuentra se queda en el registro de la unidad. Para cambiar la dirección: `sudoedit /etc/quitsie/alert.env`; no hace falta reiniciar nada.
+- **Probarlo.** `sudo quitsie-alert-check --test` envía un correo de prueba, y `sudo quitsie-alert-check` hace una comprobación y dice qué ve.
+- Un despliegue que revierte también puede avisar: los errores del binario nuevo quedan en el registro.
+
+**Si la VM entera cae, no puede avisar de sí misma.** Tampoco ve un túnel que en la VM parece activo pero no llega a Cloudflare. Para eso, crea gratis un monitor externo, por ejemplo en UptimeRobot, que pida `https://<dominio>/api/v1/health` cada 5 minutos y te escriba si no devuelve 200. Es opcional; el asistente lo recuerda al final.
 
 ## Respaldo y restauración
 
@@ -183,6 +209,7 @@ Con `quitsie.com` como principal, haz que `quitsie.app` redirija a él: añade a
 | El workflow falla en «Install the binary…» con un error de Access o 255 | Token de servicio caducado o mal copiado, o la aplicación de Access no incluye el token en una política Service Auth. |
 | El workflow falla con «host key verification failed» | La variable `DEPLOY_SSH_HOST_KEY` no es la de la VM actual. |
 | El deploy termina con «rolling back» | El binario nuevo no llegó a estar sano; el anterior sigue sirviendo. El log trae las últimas líneas del servicio. |
+| No llegan las alertas | `sudo quitsie-alert-check --test` dice por qué: falta `QUITSIE_ALERT_EMAIL`, la clave de Resend, o ya salieron los 10 correos del día. |
 | Una unidad no arranca por el aislamiento (`status=2xx` en `systemctl status`) | Se endureció sin poder probarlo en la VM real. Comenta la directiva sospechosa en `deploy/` (p. ej. `CapabilityBoundingSet=` o `RestrictNamespaces=`), vuelve a ejecutar `provision.sh` y avisa para corregir el archivo. |
 
 ## Qué contiene `deploy/`
@@ -193,6 +220,9 @@ Con `quitsie.com` como principal, haz que `quitsie.app` redirija a él: añade a
 | `provision.sh` | Prepara la VM (idempotente). |
 | `quitsie-deploy.sh` | Se instala como `/usr/local/sbin/quitsie-deploy`: instala el binario, reinicia y revierte. |
 | `restore-test.sh` | Se instala como `/usr/local/sbin/quitsie-restore-test`. |
+| `alert-check.sh` | Se instala como `/usr/local/sbin/quitsie-alert-check`: las [alertas](#alertas). |
+| `alert-check.test.sh` | Prueba `alert-check.sh` con sustitutos de `curl`, `systemctl` y `journalctl`; la ejecuta la CI. |
 | `quitsie.service`, `quitsie-restore.service`, `litestream.service`, `cloudflared.service` | Unidades systemd. |
+| `quitsie-alert-check.service`, `quitsie-alert-check.timer`, `quitsie-alert@.service` | Unidades de las alertas. |
 | `litestream.yml` | Configuración de Litestream (sin secretos). |
 | `*.env.example` | Nombres de las variables de `/etc/quitsie/*.env`. |
