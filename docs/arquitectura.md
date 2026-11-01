@@ -110,6 +110,8 @@ sequenceDiagram
 
 Un respaldo restaurado es una copia vieja de la base. La base perdida pudo entregar versiones por encima del contador del respaldo, y si el contador siguiera desde ahí, un dispositivo con el cursor entre ellas se saltaría filas nuevas y conservaría para siempre las que el servidor perdió. Por eso, en su primer arranque sobre una base restaurada, el servidor hace saltar el contador hasta la hora actual en microsegundos, o mil millones de versiones si eso llega más lejos, y anota el tramo saltado en `restore_gaps`. `GET /sync` responde `410` a un cursor dentro de un tramo, igual que a uno por delante del servidor, y el cliente descarta la réplica, conserva los Registros sin sincronizar y los rechazados, y trae todo desde 0. El reloj acota a la vez todas las copias de la base, porque el contador crece mucho más despacio que uno por microsegundo; así el salto cubre también un respaldo anterior a otra restauración, que no guarda el tramo de aquella. Los mil millones cubren un reloj atrasado. El servidor sabe que hubo una restauración por una marca junto a la base ([despliegue.md](despliegue.md#qué-pasa-al-restaurar)).
 
+Un cursor igual o anterior a la versión del respaldo no recibe `410`, aunque el dispositivo puede tener por aceptado un registro que el servidor perdió. Por eso, al terminar cada pull, un registro aceptado que no llegó a la réplica vuelve a ser un Registro sin sincronizar y se envía otra vez; si el servidor ya lo tenía, lo acepta sin duplicarlo.
+
 ## Modelo de datos
 
 Los importes se guardan como enteros en la unidad mínima de su moneda (centavos) y las monedas como código ISO 4217. Nunca se usan decimales de coma flotante.
