@@ -1,12 +1,12 @@
 # Revisión de seguridad
 
-Revisión previa a abrir Quitsie al público, hecha el 2026-10-31 sobre el commit `26948a3` de `main`. El vocabulario sigue [CONTEXT.md](../CONTEXT.md). Los hallazgos 1 a 4, 7, 10 y 12 se arreglaron después, y cada uno dice con qué commits y qué se volvió a medir.
+Revisión previa a abrir Quitsie al público, hecha el 2026-10-31 sobre el commit `26948a3` de `main`. El vocabulario sigue [CONTEXT.md](../CONTEXT.md). Los hallazgos 1 a 7, 10, 12, 13 y 14 se arreglaron después, y cada uno dice con qué commits y qué se volvió a medir.
 
-> **El repositorio es público y este documento explica cómo reproducir ataques.** Los hallazgos 5, 6, 8, 9, 11, 13 y 14 siguen abiertos.
+> **El repositorio es público y este documento explica cómo reproducir ataques.** Los hallazgos 8, 9 y 11 siguen abiertos.
 
 ## Resumen
 
-Hay **14 hallazgos verificados: 1 crítico, 2 altos, 7 medios y 4 bajos**. **Los cuatro que bloqueaban abrir al público (1 a 4) están arreglados**, y también el 7, el 10 y el 12. El aislamiento entre libros aguantó todo lo que se le probó: sin un enlace válido, nadie leyó ni cambió un libro ajeno. Los problemas graves son de disponibilidad, y el único camino hacia una cuenta ajena es adivinar su código (hallazgo 4).
+Hay **14 hallazgos verificados: 1 crítico, 2 altos, 7 medios y 4 bajos**. **Los cuatro que bloqueaban abrir al público (1 a 4) están arreglados**, y también el 5, el 6, el 7, el 10, el 12, el 13 y el 14. Quedan abiertos tres, y los tres esperan una decisión del dueño. El aislamiento entre libros aguantó todo lo que se le probó: sin un enlace válido, nadie leyó ni cambió un libro ajeno. Los problemas graves son de disponibilidad, y el único camino hacia una cuenta ajena es adivinar su código (hallazgo 4).
 
 | # | Gravedad | Hallazgo | Estado | Quién puede |
 | --- | --- | --- | --- | --- |
@@ -14,18 +14,18 @@ Hay **14 hallazgos verificados: 1 crítico, 2 altos, 7 medios y 4 bajos**. **Los
 | 2 | Alta | Un email de Miembro pendiente rompe `GET /sync` para todo el Grupo | **Arreglado** | Quien tenga el enlace |
 | 3 | Alta | Una sola cuenta agota la memoria, la CPU y el disco | **Arreglado** | Cualquier Usuario |
 | 4 | Media | Los intentos de código no tienen tope por cuenta | **Arreglado** | Cualquiera |
-| 5 | Media | Cualquiera impide entrar a otra persona durante un día | Abierto, empeoró con el arreglo del 4 | Cualquiera |
-| 6 | Media | El envío de correos no tiene tope global | Abierto | Cualquiera |
+| 5 | Media | Cualquiera impide entrar a otra persona durante un día | **Arreglado** | Cualquiera |
+| 6 | Media | El envío de correos no tiene tope global | **Arreglado** | Cualquiera |
 | 7 | Media | El limitador de códigos crece sin tope en memoria | **Arreglado** | Cualquiera |
 | 8 | Media | Quien fue sacado de un Grupo vuelve con el enlace viejo | Abierto | Antiguo Miembro |
 | 9 | Media | La réplica sigue en el dispositivo tras cerrar la sesión a distancia | Abierto | Quien tenga el dispositivo |
 | 10 | Media | El email sobrevive al borrado de la cuenta y reaparece | **Arreglado** | Miembros del Grupo |
 | 11 | Baja | Quien entra con el enlace ve los emails de los Miembros pendientes | Abierto | Quien tenga el enlace |
 | 12 | Baja | Un enlace falsificado carga el libro entero antes de comprobarse | **Arreglado** | Cualquiera con un id de libro |
-| 13 | Baja | Los Saldos desbordan `int64` e invierten las Deudas | Abierto | Miembro del Grupo |
-| 14 | Baja | Pedir un código recorre toda la tabla con el bloqueo de escritura | Abierto | Cualquiera con más de mil direcciones |
+| 13 | Baja | Los Saldos desbordan `int64` e invierten las Deudas | **Arreglado** | Miembro del Grupo |
+| 14 | Baja | Pedir un código recorre toda la tabla con el bloqueo de escritura | **Arreglado** | Cualquiera con más de mil direcciones |
 
-Los hallazgos 8 y 11 necesitan una decisión de producto.
+Los hallazgos 8, 9 y 11 necesitan una decisión de producto: las decisiones 1, 3 y 2 de [pendientes.md](pendientes.md#3-decisiones-del-dueño).
 
 **Gravedad.** Crítica: alguien sin cuenta tumba el servicio o lee datos ajenos. Alta: una cuenta normal deja sin servicio a otras personas. Media: daño acotado a una persona o incumplimiento de una regla de privacidad. Baja: efecto pequeño o limitado al propio libro.
 
@@ -136,7 +136,7 @@ La preparación lleva unos 4 minutos respetando el límite. La VM tiene 1 GB: el
 
 Un pull completo de esa cuenta tarda 40 s y 50 páginas. El cliente real, en el navegador, recorrió dos páginas de un libro de 36.000 filas y guardó los 12.000 Gastos con el Saldo correcto.
 
-**Riesgo que queda.** Los límites son por cuenta, y el presupuesto y los pulls simultáneos viven en memoria. Una persona con varias cuentas los suma, y cada IP puede pedir 30 códigos por hora. Dos cuentas con libros llenos pueden ocupar las dos plazas de `GET /sync`.
+**Riesgo que queda.** Los límites son por cuenta, y el presupuesto y los pulls simultáneos viven en memoria. Una persona con varias cuentas los suma, y cada IP puede pedir 10 códigos por hora (eran 30 antes del arreglo del hallazgo 6). Dos cuentas con libros llenos pueden ocupar las dos plazas de `GET /sync`.
 
 ### 4. Los intentos de código no tienen tope por cuenta
 
@@ -365,7 +365,7 @@ No son hallazgos: no se encontró forma de aprovecharlos. Conviene añadirlos po
 - **Cookie con prefijo `__Host-`**, para que un subdominio nunca pueda fijarla.
 - **Duración máxima de sesión.** Hoy se renueva indefinidamente mientras se use.
 - **Borrar la cuenta sin código reciente.** Una sesión robada basta para hacerlo.
-- **GitHub Actions por etiqueta.** Fijarlas por SHA protege el flujo que maneja la clave de despliegue.
+- **GitHub Actions por etiqueta.** Fijarlas por SHA protege el flujo que maneja la clave de despliegue. **Hecho** (`57e8469`): cada `uses:` apunta a un commit, con la versión en un comentario, y la CI pasa `actionlint` y `shellcheck`.
 
 ## Revisado sin hallazgos
 
@@ -410,6 +410,6 @@ Las de npm vienen de `vite-plugin-pwa` (`workbox-build`, `ejs`, `glob`, `deepmer
 - **Google real.** Solo el proveedor falso de las pruebas.
 - **Resend real.** Ni cuotas ni rebotes.
 - **La VM `e2-micro`.** La caída por memoria y el llenado del disco se dedujeron de lo medido en local. Las mediciones posteriores a los arreglos también son locales.
-- **Service worker en ejecución.** No llegó a registrarse en el navegador integrado, que falló al obtener el script, aunque el servidor lo entrega con 200. La conclusión sale de leer el `sw.js` generado.
+- **Service worker en ejecución.** No llegó a registrarse en el navegador integrado, que falló al obtener el script, aunque el servidor lo entrega con 200. La conclusión sale de leer el `sw.js` generado. Después, al probar las cabeceras, sí se registró en Chromium con la CSP puesta: precargó la interfaz y abrió la app sin red.
 - **Safari en iOS y la PWA instalada.**
 - **La caché HTTP del navegador** tras cerrar sesión.
