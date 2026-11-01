@@ -8,28 +8,16 @@ Borra cada punto de aquí cuando quede terminado. Antes de actuar sobre un punto
 
 - **API:** las 34 operaciones de `openapi.yaml` están implementadas.
 - **PWA:** usa datos reales: réplica, cola, formularios, Grupos, Amistades, invitaciones y sesiones.
-- **Calidad:** `main` pasa la CI con Go 1.26.10, y `govulncheck` no encuentra nada.
+- **Calidad:** `main` pasa la CI con Go 1.26.10, incluidas las pruebas de punta a punta, y `govulncheck` no encuentra nada.
 - **Seguridad:** hay 14 hallazgos, 7 arreglados y 7 abiertos. Ninguno de los abiertos es crítico o alto. El detalle está en [revision-seguridad.md](revision-seguridad.md).
 - **Producción:** no hay nada desplegado. GitHub no tiene variables ni secretos, y `.quitsie-wizard.env` no existe, así que el asistente de despliegue nunca se ejecutó.
 
 ## Orden de trabajo
 
-1. Integrar la rama de pruebas de punta a punta (sección 1).
-2. Obtener del dueño las decisiones que bloquean (sección 3).
-3. Arreglar los hallazgos de seguridad abiertos (sección 2).
-4. Resolver lo que falta fuera del código (sección 5).
-5. Desplegar y comprobar en producción (sección 4).
-
-## 1. Rama sin integrar
-
-`claude/sweet-einstein-7c3928` (`ff2d2a4`) tiene 6 commits sobre `26948a3`. Trae pruebas de Playwright (5 pruebas en 4 archivos), su paso en la CI y un aviso de Saldo provisional en Inicio y en el libro. Une con `main` sin conflictos.
-
-Pasos:
-
-1. Actualiza la rama con `main` y ejecuta `npm run e2e` en `web/`.
-2. Revisa los fallos contra los límites nuevos. `GET /sync` admite un pull por Usuario, así que una prueba con el mismo Usuario en dos contextos puede recibir `429` y tardar un reintento. Cada contexto ya envía su propio `CF-Connecting-IP`.
-3. Integra y mira la primera ejecución en GitHub: `playwright install --with-deps` nunca corrió allí. Estas pruebas frenan el despliegue si fallan.
-4. Menciona las pruebas en la sección Despliegue de `docs/arquitectura.md`.
+1. Obtener del dueño las decisiones que bloquean (sección 3).
+2. Arreglar los hallazgos de seguridad abiertos (sección 2).
+3. Resolver lo que falta fuera del código (sección 5).
+4. Desplegar y comprobar en producción (sección 4).
 
 ## 2. Seguridad abierta
 
@@ -120,9 +108,7 @@ Nada de `deploy/` se probó en una VM real. `shellcheck` y `actionlint` nunca se
 ## 7. Sin verificar
 
 - Cloudflare, Google, Resend y la VM reales.
-- Sin conexión real con la PWA compilada, fuera de las pruebas de Playwright que aún no están en `main`.
-- El service worker en ejecución: no se registra en el navegador integrado de la app.
-- Safari, Firefox y dos dispositivos reales a la vez.
+- Safari, Firefox y dos dispositivos reales a la vez. Las pruebas de punta a punta solo cubren Chromium.
 - Copiar y compartir el enlace con el portapapeles real.
 - La caché HTTP del navegador tras cerrar sesión.
 
