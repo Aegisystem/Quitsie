@@ -92,6 +92,8 @@ flowchart LR
 
 Las migraciones se aplican al arrancar y solo avanzan. Si un despliegue revierte, el binario viejo arranca contra el esquema nuevo: mantén cada migración compatible con la versión anterior (añadir antes de quitar).
 
+**Acciones fijadas.** Los dos workflows usan cada acción de GitHub por el SHA de su commit, con la versión en un comentario, así que nadie cambia lo que corre moviendo un tag. Para subir una, busca el último tag de su versión mayor con `git ls-remote --tags https://github.com/actions/<acción>`, toma su SHA (el de la línea `^{}` si el tag es anotado) y cambia el SHA y el comentario.
+
 ## Operar la VM
 
 Acceso de emergencia, sin pasar por Cloudflare:
