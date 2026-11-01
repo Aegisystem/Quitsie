@@ -115,14 +115,7 @@ func run(logger *slog.Logger) error {
 		InviteSecret: cfg.inviteSecret,
 		HTTPSOrigin:  cfg.httpsOrigin,
 	})
-	srv := &http.Server{
-		Addr:              cfg.addr,
-		Handler:           httpapi.NewHandler(api, pwa),
-		ReadHeaderTimeout: 10 * time.Second,
-		// Longer than the slowest pull, with its wait to get in.
-		WriteTimeout: 60 * time.Second,
-		IdleTimeout:  2 * time.Minute,
-	}
+	srv := newHTTPServer(cfg.addr, httpapi.NewHandler(api, pwa), logger)
 	serveErr := make(chan error, 1)
 	go func() { serveErr <- srv.ListenAndServe() }()
 	logger.Info("listening", "url", "http://"+cfg.addr, "version", version, "db", cfg.dbPath)
@@ -141,6 +134,26 @@ func run(logger *slog.Logger) error {
 		return err
 	}
 	return nil
+}
+
+// newHTTPServer serves handler on addr.
+func newHTTPServer(addr string, handler http.Handler, logger *slog.Logger) *http.Server {
+	return &http.Server{
+		Addr:              addr,
+		Handler:           handler,
+		ReadHeaderTimeout: 10 * time.Second,
+		// Longer than the slowest pull, with its wait to get in.
+		WriteTimeout: 60 * time.Second,
+		IdleTimeout:  2 * time.Minute,
+		// What net/http logs on its own is a bug in a handler (a panic, a
+		// header written twice, a bad Content-Length) or a failure to accept
+		// connections, such as running out of file descriptors. All of it
+		// needs the owner, and the alerts only read level=ERROR; without
+		// this it goes through the log package at INFO. The server speaks
+		// plain HTTP to cloudflared, so the TLS handshake errors that
+		// scanners cause never reach it.
+		ErrorLog: slog.NewLogLogger(logger.Handler(), slog.LevelError),
+	}
 }
 
 // config is the server's configuration, read from the environment.
