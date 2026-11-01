@@ -278,7 +278,7 @@ La regla actual dice que quien vuelve recupera su Antiguo Miembro, lo cual tiene
 
 ### 13. Los Saldos desbordan `int64` e invierten las Deudas
 
-**Baja.** Miembro del Grupo. Solo afecta a su propio libro, donde ya podía poner cualquier cifra.
+**Baja. Arreglado en `72aaa7f`, `d927991`, `e968cec`, `8f20889`, `588144a` y `7458809`.** Miembro del Grupo. Solo afecta a su propio libro, donde ya podía poner cualquier cifra.
 
 **Archivos:** `api/internal/domain/balance.go:30-33`, `api/internal/domain/validate_expense.go:108`, `docs/reglas-de-negocio.md:11`.
 
@@ -286,7 +286,18 @@ La regla actual dice que quien vuelve recupera su Antiguo Miembro, lo cual tiene
 
 **Verificado.** 9.300 Gastos de 10^15 en 93 peticiones y 3 segundos. Lo real es que la otra persona debe 9.300.000.000.000.000.000; `GET /sync` dice que el pagador debe 9.146.744.073.709.551.616 a esa persona, con el sentido invertido. No hubo pánicos.
 
-**Arreglo.** Rechaza al escribir cualquier registro que deje un Saldo por encima de 2^62, con `invalid_amounts`. El tope de filas del hallazgo 3 no lo impide, porque 9.300 Gastos caben en un libro. Corrige la frase de las reglas.
+**Arreglo.** El tope no es 2^62, como proponía esta revisión, sino 2^53 − 1 (9.007.199.254.740.991), algo más de nueve Gastos de 10^15. El cliente maneja los importes como números de JavaScript, exactos solo hasta ahí: por encima, `JSON.parse` ya los redondea y `formatAmount` lanzaba una excepción al pintarlos. Con el binario de `e73d9b0`, diez Gastos de 10^15, un Saldo de 10^16 muy lejos de 2^62, dejaron en blanco Inicio y el Grupo de quien los pagó, con `10000000000000000 is not an integer amount in minor units`. El tope de filas del hallazgo 3 no lo impide, porque 9.300 Gastos caben en un libro.
+
+1. `domain.MaxBalance` vale 2^53 − 1. `ledgers.Snapshot.Domain` suma los Saldos del libro en 128 bits, así que ni el número de registros ni la vuelta de un `int64` engañan la comprobación. Los validadores por los que ya pasaba cada escritura rechazan con `invalid_amounts` el cambio que lleve más allá del tope algún Saldo que mueva: crear, editar, borrar y restaurar Gastos y Liquidaciones, y cambiar la Moneda del grupo a una con más decimales. En `POST /records` cada registro se juzga contra el libro tal como lo dejaron los aceptados antes en el mismo lote. Reclamar no mueve registros ni junta libros, así que no necesita comprobación.
+2. Las Deudas simplificadas nunca superan los Saldos, pero las Deudas entre dos personas sí: Gastos en círculo (Ana paga por Beto, Beto por Carla, Carla por Ana) las hacen crecer con todos los Saldos en cero. Comprobarlas al escribir costaría hasta 2 s con el bloqueo de escritura tomado, en un libro lleno de Gastos de 100 pagadores por 100 deudores. En su lugar, `GET /sync` las suma en 128 bits y, si alguna pasa del tope, entrega las simplificadas.
+3. El cliente tiene el mismo tope, `maxBalance`. Los formularios de Gasto y Liquidación lo comprueban con los Saldos provisionales antes de guardar, con o sin conexión: «Con esto, tu saldo pasaría de lo que Quitsie puede apuntar.» El total de Inicio, que reúne hasta 200 libros, se suma con `bigint` y se muestra exacto, y `formatAmount` ya no lanza con un entero grande.
+4. Las reglas, el contrato y los comentarios ya no dicen que el tope de 10^15 evita el desbordamiento.
+
+Cada escritura suma ahora los Saldos del libro una vez: 14 ms para 198.000 Aportes y Cuotas en una prueba de rendimiento, además de la carga del libro que ya hacía. A cambio, `GET /sync` ya no calcula las Deudas entre parejas de un libro con Simplificación para tirarlas.
+
+**Medido después, contra el binario real.** El mismo ataque, 93 lotes de 100 Gastos de 10^15, tardó 0,9 s: se aceptaron 9 y se rechazaron 9.291 con `invalid_amounts`. `GET /sync` trajo 9 Gastos y una sola Deuda, de Beto a Ana por 9 × 10^15, en el sentido correcto. Restaurar uno borrado tras volver al tope, y editar uno de 1 USD a 10^13 USD, respondieron 400 `invalid_amounts`. En el navegador, Inicio mostró sin errores un total de 180 billones de dólares, de dos Grupos al tope y más allá de 2^53, y el formulario no dejó guardar un Gasto que llevaba un Saldo más allá del tope.
+
+**Riesgo que queda.** Un Grupo sin Simplificación cuyas Deudas entre parejas pasan del tope muestra las simplificadas sin avisar de ello; hacen falta billones dando vueltas en círculo. Los libros guardados antes del arreglo no se revisan, porque aún no hay producción.
 
 ### 14. Pedir un código recorre toda la tabla con el bloqueo de escritura
 
