@@ -429,9 +429,14 @@ func (s *Server) UpdateGroup(ctx context.Context, req UpdateGroupRequestObject) 
 // relabel changes the currency of the Group in snap to to, with every
 // Expense and Settlement, deleted ones included because they can be
 // restored. It keeps the numbers people read and never converts; if some
-// amount would lose decimals it returns the *domain.RelabelError.
+// amount would lose decimals it returns the *domain.RelabelError, and if some
+// Balance would go beyond domain.MaxBalance, an invalid_amounts failure.
 func relabel(ctx context.Context, q *store.Queries, snap ledgers.Snapshot, to domain.Currency, version int64) error {
-	if _, _, err := domain.Relabel(snap.Expenses(), snap.Settlements(), to); err != nil {
+	_, _, err := domain.Relabel(snap.Expenses(), snap.Settlements(), to)
+	if errors.Is(err, domain.ErrBalanceTooLarge) {
+		return &failure{status: http.StatusBadRequest, code: ProblemCodeInvalidAmounts, title: "A Balance would go over the limit in the new currency.", detail: err.Error()}
+	}
+	if err != nil {
 		return err
 	}
 	if err := q.RelabelCurrency(ctx, snap.Ledger.ID, string(to), version); err != nil {

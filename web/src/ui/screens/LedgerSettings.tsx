@@ -187,7 +187,7 @@ function GroupForm({ group, user }: { group: Group; user: User }) {
       ) : (
         error && (
           <p className="notice notice-problem" role="alert">
-            {problemText(t, error)}
+            {problemText(t, error, { invalid_amounts: t('ledgerSettings.relabelBalance', { currency }) })}
           </p>
         )
       )}

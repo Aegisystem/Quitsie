@@ -6,18 +6,18 @@ import { bandsOf, emptyingMs, tokensOf, withSettling } from './tally'
 
 export type Tone = 'favor' | 'against' | 'even'
 
-export function toneOf(amount: number): Tone {
+export function toneOf(amount: number | bigint): Tone {
   return amount > 0 ? 'favor' : amount < 0 ? 'against' : 'even'
 }
 
-export function Amount({ minor, currency, signed, tone }: { minor: number; currency: string; signed?: boolean; tone?: Tone }) {
+export function Amount({ minor, currency, signed, tone }: { minor: number | bigint; currency: string; signed?: boolean; tone?: Tone }) {
   return <span className={`amount${tone ? ` amount-${tone}` : ''}`}>{formatMoney(minor, currency, { signed })}</span>
 }
 
 // The User's own Balance in words: "Te deben", "Debes", "Estás a mano".
 export function useBalanceLabel() {
   const { t } = useTranslation()
-  return (amount: number) => (amount > 0 ? t('balance.owedToYou') : amount < 0 ? t('balance.youOwe') : t('balance.settled'))
+  return (amount: number | bigint) => (amount > 0 ? t('balance.owedToYou') : amount < 0 ? t('balance.youOwe') : t('balance.settled'))
 }
 
 // Without motion, what leaves goes at once, as everything else does.
@@ -80,7 +80,7 @@ export function TallyLegend({ unit, currency }: { unit: number; currency: string
 
 // The bands to show. Being even is seeing the row empty (DESIGN.md), so a
 // currency whose Balance just reached zero keeps its band until it has.
-function useBands(balances: ReadonlyMap<string, number>) {
+function useBands(balances: ReadonlyMap<string, number | bigint>) {
   const now = bandsOf(balances)
   // The bands as they were last left on screen.
   const [shown, setShown] = useState(now)
@@ -93,7 +93,7 @@ function useBands(balances: ReadonlyMap<string, number>) {
       if (nowKey !== shownKey) settle()
       return
     }
-    const longest = Math.max(...settling.map(({ amount, unit }) => tokensOf(amount, unit).length))
+    const longest = Math.max(...settling.map(({ amount, unit }) => tokensOf(Number(amount), unit).length))
     const timer = window.setTimeout(settle, emptyingMs(longest))
     return () => window.clearTimeout(timer)
     // The keys stand for the bands themselves.
@@ -102,14 +102,15 @@ function useBands(balances: ReadonlyMap<string, number>) {
 }
 
 // Full-strength color fields, one per currency: blue when owed, red when owing.
-// Balances in different currencies are never added together.
+// Balances in different currencies are never added together. A total across
+// ledgers comes as a bigint, since it can go past the safe integers.
 export function BalanceBands({
   balances,
   footer,
   settledTitle,
   settledBody,
 }: {
-  balances: ReadonlyMap<string, number>
+  balances: ReadonlyMap<string, number | bigint>
   footer?: ReactNode
   settledTitle?: string
   settledBody?: string
@@ -146,9 +147,11 @@ export function BalanceBands({
         <div key={currency} className={`band band-${toneOf(amount)}`}>
           <div className="band-inner">
             <p className="band-label">{label(amount)}</p>
-            <p className={`band-amount${compact ? ' band-amount-compact' : ''}`}>{formatMoney(Math.abs(amount), currency)}</p>
+            <p className={`band-amount${compact ? ' band-amount-compact' : ''}`}>{formatMoney(amount < 0 ? -amount : amount, currency)}</p>
             <div className="band-tally">
-              <Tally amount={amount} unit={unit} />
+              {/* Tokens only show the size, which a number is close enough for
+                  even past the safe integers. */}
+              <Tally amount={Number(amount)} unit={unit} />
               <TallyLegend unit={unit} currency={currency} />
             </div>
           </div>

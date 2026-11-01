@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { overMaxBalance } from '../../domain'
 import { liveHome, liveRecords } from '../../local'
 import { Amount, SyncMark } from '../components/Balance'
 import { CategoryGlyph, Icon, SettlementGlyph } from '../components/icons'
@@ -132,9 +133,19 @@ function RejectedRow({ rejected, summary, user }: { rejected: RejectedRecord; su
       : { name: 'settle', ledgerId: rejected.ledgerId, fromRejected: rejected.id }
   const relabeled =
     rejected.kind === 'settlement' && rejected.reason === 'currency_mismatch' && group ? relabelAmount(rejected.settlement.amount, currency, group.currency) : undefined
+  // In a currency with more decimals the same number is a larger amount, which
+  // may not fit in someone's Balance.
+  const pastLimit =
+    rejected.kind === 'settlement' &&
+    relabeled !== undefined &&
+    !!group &&
+    overMaxBalance(summary?.balances ?? [], {
+      expenses: [],
+      settlements: [{ id: rejected.id, from: rejected.settlement.fromMemberId, to: rejected.settlement.toMemberId, amount: relabeled, currency: group.currency }],
+    }) !== undefined
 
   const fixCurrency = async () => {
-    if (rejected.kind !== 'settlement' || !group || relabeled === undefined) return
+    if (rejected.kind !== 'settlement' || !group || relabeled === undefined || pastLimit) return
     await engine.addSettlement({ ...rejected.settlement, amount: relabeled, currency: group.currency }, { replacing: rejected.id })
     toast(t('records.fixedCurrency'))
   }
@@ -148,6 +159,7 @@ function RejectedRow({ rejected, summary, user }: { rejected: RejectedRecord; su
     <li className="rejected">
       <RecordRow record={rejected} state="rejected" summary={summary} user={user} />
       <p className="rejected-reason">{reason}</p>
+      {pastLimit && group && <p className="hint">{t('records.fixCurrencyBalance', { currency: group.currency })}</p>}
       {confirming ? (
         <div className="confirm" role="group" aria-label={t('records.discardConfirm', { name })}>
           <p>{t('records.discardConfirm', { name })}</p>
@@ -172,7 +184,7 @@ function RejectedRow({ rejected, summary, user }: { rejected: RejectedRecord; su
               {t('records.fix')}
             </a>
           )}
-          {relabeled !== undefined && group && (
+          {relabeled !== undefined && group && !pastLimit && (
             <button type="button" className="button button-secondary button-small" disabled={!online} title={online ? undefined : t('common.onlineOnly')} onClick={() => void fixCurrency()}>
               {t('records.fixCurrency', { currency: group.currency })}
             </button>

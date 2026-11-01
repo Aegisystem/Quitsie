@@ -462,7 +462,7 @@ type Activity struct {
 // ActivityKind What changed. New kinds may be added; clients skip the ones they do not know.
 type ActivityKind string
 
-// Amount Positive amount of a record in the minor unit of its currency (ISO 4217), for example 1050 = 10.50 USD. At most 10^15, so adding up Balances never overflows.
+// Amount Positive amount of a record in the minor unit of its currency (ISO 4217), for example 1050 = 10.50 USD. At most 10^15. That bounds one record, not a Balance, which adds up many: a record that would take a Balance beyond 2^53 - 1 is rejected with `invalid_amounts`.
 //
 // Example: 1050
 type Amount = int64
@@ -536,7 +536,7 @@ type CurrencyPrecisionProblem struct {
 
 // Debt How much one person owes another specific person.
 type Debt struct {
-	// Amount Positive amount in the minor unit of its currency. It adds up many records, so unlike an Amount it may be over 10^15.
+	// Amount Positive amount in the minor unit of its currency. It adds up many records, so unlike an Amount it may be over 10^15, but never over 2^53 - 1, up to which a JavaScript number holds every integer exactly. The Balances stay within that, and so do the simplified Debts; when a Debt between two people would not, the ledger gets its simplified Debts even without Debt simplification.
 	//
 	//
 	// Example: 1050
@@ -591,7 +591,7 @@ type Expense struct {
 	// SplitMethod How the client computed the OwedShares (ADR 0003). The server stores it only to re-edit the Expense and never recomputes the shares.
 	SplitMethod SplitMethod `json:"splitMethod"`
 
-	// Total Positive amount of a record in the minor unit of its currency (ISO 4217), for example 1050 = 10.50 USD. At most 10^15, so adding up Balances never overflows.
+	// Total Positive amount of a record in the minor unit of its currency (ISO 4217), for example 1050 = 10.50 USD. At most 10^15. That bounds one record, not a Balance, which adds up many: a record that would take a Balance beyond 2^53 - 1 is rejected with `invalid_amounts`.
 	//
 	//
 	// Example: 1050
@@ -625,7 +625,7 @@ type ExpenseUpdate struct {
 	// SplitMethod How the client computed the OwedShares (ADR 0003). The server stores it only to re-edit the Expense and never recomputes the shares.
 	SplitMethod SplitMethod `json:"splitMethod"`
 
-	// Total Positive amount of a record in the minor unit of its currency (ISO 4217), for example 1050 = 10.50 USD. At most 10^15, so adding up Balances never overflows.
+	// Total Positive amount of a record in the minor unit of its currency (ISO 4217), for example 1050 = 10.50 USD. At most 10^15. That bounds one record, not a Balance, which adds up many: a record that would take a Balance beyond 2^53 - 1 is rejected with `invalid_amounts`.
 	//
 	//
 	// Example: 1050
@@ -819,7 +819,7 @@ type NewExpense struct {
 	// SplitMethod How the client computed the OwedShares (ADR 0003). The server stores it only to re-edit the Expense and never recomputes the shares.
 	SplitMethod SplitMethod `json:"splitMethod"`
 
-	// Total Positive amount of a record in the minor unit of its currency (ISO 4217), for example 1050 = 10.50 USD. At most 10^15, so adding up Balances never overflows.
+	// Total Positive amount of a record in the minor unit of its currency (ISO 4217), for example 1050 = 10.50 USD. At most 10^15. That bounds one record, not a Balance, which adds up many: a record that would take a Balance beyond 2^53 - 1 is rejected with `invalid_amounts`.
 	//
 	//
 	// Example: 1050
@@ -860,7 +860,7 @@ type NewPendingMember struct {
 
 // NewSettlement A Settlement created on the device. `currency` follows the same rule as in NewExpense.
 type NewSettlement struct {
-	// Amount Positive amount of a record in the minor unit of its currency (ISO 4217), for example 1050 = 10.50 USD. At most 10^15, so adding up Balances never overflows.
+	// Amount Positive amount of a record in the minor unit of its currency (ISO 4217), for example 1050 = 10.50 USD. At most 10^15. That bounds one record, not a Balance, which adds up many: a record that would take a Balance beyond 2^53 - 1 is rejected with `invalid_amounts`.
 	//
 	//
 	// Example: 1050
@@ -894,7 +894,7 @@ type OwedShare struct {
 
 // PaidShare What a Participant paid of an Expense.
 type PaidShare struct {
-	// Amount Positive amount of a record in the minor unit of its currency (ISO 4217), for example 1050 = 10.50 USD. At most 10^15, so adding up Balances never overflows.
+	// Amount Positive amount of a record in the minor unit of its currency (ISO 4217), for example 1050 = 10.50 USD. At most 10^15. That bounds one record, not a Balance, which adds up many: a record that would take a Balance beyond 2^53 - 1 is rejected with `invalid_amounts`.
 	//
 	//
 	// Example: 1050
@@ -947,7 +947,7 @@ type RecordResult struct {
 	Id     openapi_types.UUID `json:"id"`
 	Kind   RecordResultKind   `json:"kind"`
 
-	// Reason Only when rejected. `ledger_unavailable`: the ledger was deleted or the User is no longer an active Member. `currency_mismatch`: the Group currency changed. `invalid_participants`: someone is not an active Member. `invalid_amounts`: an amount is out of range or the shares do not add up to the total. `id_conflict`: the id belongs to another record. `limit_reached`: the ledger is full. `invalid_record`: any other rule of the contract.
+	// Reason Only when rejected. `ledger_unavailable`: the ledger was deleted or the User is no longer an active Member. `currency_mismatch`: the Group currency changed. `invalid_participants`: someone is not an active Member. `invalid_amounts`: an amount is out of range, the shares do not add up to the total, or the record would take a Balance beyond 2^53 - 1 minor units, counting the records of the batch accepted before it. `id_conflict`: the id belongs to another record. `limit_reached`: the ledger is full. `invalid_record`: any other rule of the contract.
 	Reason *RecordResultReason `json:"reason,omitempty"`
 	Status RecordResultStatus  `json:"status"`
 
@@ -960,7 +960,7 @@ type RecordResult struct {
 // RecordResultKind defines model for RecordResult.Kind.
 type RecordResultKind string
 
-// RecordResultReason Only when rejected. `ledger_unavailable`: the ledger was deleted or the User is no longer an active Member. `currency_mismatch`: the Group currency changed. `invalid_participants`: someone is not an active Member. `invalid_amounts`: an amount is out of range or the shares do not add up to the total. `id_conflict`: the id belongs to another record. `limit_reached`: the ledger is full. `invalid_record`: any other rule of the contract.
+// RecordResultReason Only when rejected. `ledger_unavailable`: the ledger was deleted or the User is no longer an active Member. `currency_mismatch`: the Group currency changed. `invalid_participants`: someone is not an active Member. `invalid_amounts`: an amount is out of range, the shares do not add up to the total, or the record would take a Balance beyond 2^53 - 1 minor units, counting the records of the batch accepted before it. `id_conflict`: the id belongs to another record. `limit_reached`: the ledger is full. `invalid_record`: any other rule of the contract.
 type RecordResultReason string
 
 // RecordResultStatus defines model for RecordResult.Status.
@@ -989,7 +989,7 @@ type Session struct {
 
 // Settlement A record that one person paid another back. No real money moves.
 type Settlement struct {
-	// Amount Positive amount of a record in the minor unit of its currency (ISO 4217), for example 1050 = 10.50 USD. At most 10^15, so adding up Balances never overflows.
+	// Amount Positive amount of a record in the minor unit of its currency (ISO 4217), for example 1050 = 10.50 USD. At most 10^15. That bounds one record, not a Balance, which adds up many: a record that would take a Balance beyond 2^53 - 1 is rejected with `invalid_amounts`.
 	//
 	//
 	// Example: 1050
@@ -1075,6 +1075,9 @@ type SettlementId = openapi_types.UUID
 
 // BadRequest Error body (RFC 9457, `application/problem+json`).
 type BadRequest = Problem
+
+// BalanceLimit Error body (RFC 9457, `application/problem+json`).
+type BalanceLimit = Problem
 
 // NotFound Error body (RFC 9457, `application/problem+json`).
 type NotFound = Problem
@@ -2237,6 +2240,8 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 
 type BadRequestApplicationProblemPlusJSONResponse Problem
 
+type BalanceLimitApplicationProblemPlusJSONResponse Problem
+
 type NotFoundApplicationProblemPlusJSONResponse Problem
 
 type ProblemApplicationProblemPlusJSONResponse Problem
@@ -2706,6 +2711,22 @@ func (response DeleteExpense204Response) VisitDeleteExpenseResponse(w http.Respo
 	return nil
 }
 
+type DeleteExpense400ApplicationProblemPlusJSONResponse struct {
+	BalanceLimitApplicationProblemPlusJSONResponse
+}
+
+func (response DeleteExpense400ApplicationProblemPlusJSONResponse) VisitDeleteExpenseResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type DeleteExpense401ApplicationProblemPlusJSONResponse struct {
 	UnauthorizedApplicationProblemPlusJSONResponse
 }
@@ -2887,6 +2908,22 @@ func (response RestoreExpense200JSONResponse) VisitRestoreExpenseResponse(w http
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RestoreExpense400ApplicationProblemPlusJSONResponse struct {
+	BalanceLimitApplicationProblemPlusJSONResponse
+}
+
+func (response RestoreExpense400ApplicationProblemPlusJSONResponse) VisitRestoreExpenseResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -3410,9 +3447,7 @@ func (response UpdateGroup200JSONResponse) VisitUpdateGroupResponse(w http.Respo
 	return err
 }
 
-type UpdateGroup400ApplicationProblemPlusJSONResponse struct {
-	BadRequestApplicationProblemPlusJSONResponse
-}
+type UpdateGroup400ApplicationProblemPlusJSONResponse Problem
 
 func (response UpdateGroup400ApplicationProblemPlusJSONResponse) VisitUpdateGroupResponse(w http.ResponseWriter) error {
 
@@ -4616,6 +4651,22 @@ func (response DeleteSettlement204Response) VisitDeleteSettlementResponse(w http
 	return nil
 }
 
+type DeleteSettlement400ApplicationProblemPlusJSONResponse struct {
+	BalanceLimitApplicationProblemPlusJSONResponse
+}
+
+func (response DeleteSettlement400ApplicationProblemPlusJSONResponse) VisitDeleteSettlementResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type DeleteSettlement401ApplicationProblemPlusJSONResponse struct {
 	UnauthorizedApplicationProblemPlusJSONResponse
 }
@@ -4697,6 +4748,22 @@ func (response RestoreSettlement200JSONResponse) VisitRestoreSettlementResponse(
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RestoreSettlement400ApplicationProblemPlusJSONResponse struct {
+	BalanceLimitApplicationProblemPlusJSONResponse
+}
+
+func (response RestoreSettlement400ApplicationProblemPlusJSONResponse) VisitRestoreSettlementResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
 	_, err := buf.WriteTo(w)
 	return err
 }

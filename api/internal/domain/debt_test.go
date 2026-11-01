@@ -20,8 +20,18 @@ func expense(id string, paid []domain.PaidShare, owed []domain.OwedShare) domain
 	}
 }
 
+// pairwise is PairwiseDebts of Debts that stay within MaxBalance.
+func pairwise(t *testing.T, expenses []domain.Expense, settlements []domain.Settlement) []domain.Debt {
+	t.Helper()
+	debts, ok := domain.PairwiseDebts(expenses, settlements)
+	if !ok {
+		t.Fatalf("PairwiseDebts reports a Debt beyond MaxBalance")
+	}
+	return debts
+}
+
 func TestPairwiseDebtsOfAnExpense(t *testing.T) {
-	got := domain.PairwiseDebts([]domain.Expense{dinner()}, nil)
+	got := pairwise(t, []domain.Expense{dinner()}, nil)
 
 	want := []domain.Debt{{FromMemberID: "beto", ToMemberID: "ana", Currency: "USD", Amount: 525}}
 	if !reflect.DeepEqual(got, want) {
@@ -36,7 +46,7 @@ func TestPairwiseDebtsSplitAnExpenseInProportion(t *testing.T) {
 		[]domain.OwedShare{{MemberID: "carla", Amount: 500}, {MemberID: "dani", Amount: 500}},
 	)
 
-	got := domain.PairwiseDebts([]domain.Expense{shared}, nil)
+	got := pairwise(t, []domain.Expense{shared}, nil)
 
 	want := []domain.Debt{
 		{FromMemberID: "carla", ToMemberID: "ana", Currency: "USD", Amount: 300},
@@ -59,7 +69,7 @@ func TestPairwiseDebtsShareOutTheLeftoverDeterministically(t *testing.T) {
 		{MemberID: "eva", Amount: 34},
 	}
 
-	got := domain.PairwiseDebts([]domain.Expense{expense("lunch", paid, owed)}, nil)
+	got := pairwise(t, []domain.Expense{expense("lunch", paid, owed)}, nil)
 
 	share := map[string]int64{"carla": 33, "dani": 33, "eva": 34}
 	owes := map[string]int64{}
@@ -82,7 +92,7 @@ func TestPairwiseDebtsShareOutTheLeftoverDeterministically(t *testing.T) {
 		[]domain.PaidShare{paid[1], paid[0]},
 		[]domain.OwedShare{owed[2], owed[0], owed[1]},
 	)
-	if again := domain.PairwiseDebts([]domain.Expense{reordered}, nil); !reflect.DeepEqual(again, got) {
+	if again := pairwise(t, []domain.Expense{reordered}, nil); !reflect.DeepEqual(again, got) {
 		t.Errorf("with the shares in another order: %+v, want %+v", again, got)
 	}
 }
@@ -95,7 +105,7 @@ func TestPairwiseDebtsDoNotPanicOnAnInvalidExpense(t *testing.T) {
 		expense("unpaid", nil, []domain.OwedShare{{MemberID: "beto", Amount: 300}}),
 	}
 	for _, e := range invalid {
-		domain.PairwiseDebts([]domain.Expense{e}, nil)
+		_, _ = domain.PairwiseDebts([]domain.Expense{e}, nil)
 	}
 }
 
@@ -104,7 +114,7 @@ func TestPairwiseDebtsOffsetEachOther(t *testing.T) {
 	betoPaysForAna := expense("coffee", []domain.PaidShare{{MemberID: "beto", Amount: 300}}, []domain.OwedShare{{MemberID: "ana", Amount: 300}})
 	betoPaysForCarla := expense("snack", []domain.PaidShare{{MemberID: "beto", Amount: 200}}, []domain.OwedShare{{MemberID: "carla", Amount: 200}})
 
-	got := domain.PairwiseDebts([]domain.Expense{anaPaysForBeto, betoPaysForAna, betoPaysForCarla}, nil)
+	got := pairwise(t, []domain.Expense{anaPaysForBeto, betoPaysForAna, betoPaysForCarla}, nil)
 
 	// Without debt simplification Carla owes Beto, not Ana.
 	want := []domain.Debt{
@@ -130,7 +140,7 @@ func TestPairwiseDebtsSubtractSettlements(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			settlement := payback()
 			settlement.Amount = tt.amount
-			if got := domain.PairwiseDebts([]domain.Expense{dinner()}, []domain.Settlement{settlement}); !reflect.DeepEqual(got, tt.want) {
+			if got := pairwise(t, []domain.Expense{dinner()}, []domain.Settlement{settlement}); !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("PairwiseDebts = %+v, want %+v", got, tt.want)
 			}
 		})
@@ -144,29 +154,29 @@ func TestPairwiseDebtsIgnoreDeletedExpensesAndSettlements(t *testing.T) {
 	deletedPayback := payback()
 	deletedPayback.DeletedAt = &deletedAt
 
-	if got := domain.PairwiseDebts([]domain.Expense{deletedDinner}, nil); len(got) != 0 {
+	if got := pairwise(t, []domain.Expense{deletedDinner}, nil); len(got) != 0 {
 		t.Errorf("with a deleted expense: PairwiseDebts = %+v, want none", got)
 	}
 	want := []domain.Debt{{FromMemberID: "beto", ToMemberID: "ana", Currency: "USD", Amount: 525}}
-	if got := domain.PairwiseDebts([]domain.Expense{dinner()}, []domain.Settlement{deletedPayback}); !reflect.DeepEqual(got, want) {
+	if got := pairwise(t, []domain.Expense{dinner()}, []domain.Settlement{deletedPayback}); !reflect.DeepEqual(got, want) {
 		t.Errorf("with a deleted settlement: PairwiseDebts = %+v, want %+v", got, want)
 	}
 }
 
 func TestPairwiseDebtsHandleAmountsWhoseProductOverflowsInt64(t *testing.T) {
-	const big = 4_000_000_000_000_000_000 // big * big does not fit in an int64
+	// Sharing out multiplies two amounts: 5 × 10^14 by 6 × 10^14 does not fit in an int64.
 	huge := expense("huge",
-		[]domain.PaidShare{{MemberID: "ana", Amount: big}, {MemberID: "beto", Amount: big}},
-		[]domain.OwedShare{{MemberID: "carla", Amount: big}, {MemberID: "dani", Amount: big}},
+		[]domain.PaidShare{{MemberID: "ana", Amount: 600_000_000_000_000}, {MemberID: "beto", Amount: 400_000_000_000_000}},
+		[]domain.OwedShare{{MemberID: "carla", Amount: 500_000_000_000_000}, {MemberID: "dani", Amount: 500_000_000_000_000}},
 	)
 
-	got := domain.PairwiseDebts([]domain.Expense{huge}, nil)
+	got := pairwise(t, []domain.Expense{huge}, nil)
 
 	want := []domain.Debt{
-		{FromMemberID: "carla", ToMemberID: "ana", Currency: "USD", Amount: big / 2},
-		{FromMemberID: "carla", ToMemberID: "beto", Currency: "USD", Amount: big / 2},
-		{FromMemberID: "dani", ToMemberID: "ana", Currency: "USD", Amount: big / 2},
-		{FromMemberID: "dani", ToMemberID: "beto", Currency: "USD", Amount: big / 2},
+		{FromMemberID: "carla", ToMemberID: "ana", Currency: "USD", Amount: 300_000_000_000_000},
+		{FromMemberID: "carla", ToMemberID: "beto", Currency: "USD", Amount: 200_000_000_000_000},
+		{FromMemberID: "dani", ToMemberID: "ana", Currency: "USD", Amount: 300_000_000_000_000},
+		{FromMemberID: "dani", ToMemberID: "beto", Currency: "USD", Amount: 200_000_000_000_000},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("PairwiseDebts = %+v, want %+v", got, want)
@@ -180,7 +190,7 @@ func TestPairwiseDebtsKeepEachCurrencyApart(t *testing.T) {
 		OwedShares: []domain.OwedShare{{MemberID: "ana", Amount: 3000}},
 	}
 
-	got := domain.PairwiseDebts([]domain.Expense{dinner(), sushi}, nil)
+	got := pairwise(t, []domain.Expense{dinner(), sushi}, nil)
 
 	want := []domain.Debt{
 		{FromMemberID: "ana", ToMemberID: "beto", Currency: "JPY", Amount: 3000},
@@ -188,5 +198,63 @@ func TestPairwiseDebtsKeepEachCurrencyApart(t *testing.T) {
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("PairwiseDebts = %+v, want %+v", got, want)
+	}
+}
+
+// circle is n rounds of Ana paying MaxAmount for Beto, Beto for Carla and
+// Carla for Ana: every Balance stays at zero while the Debts between each
+// pair grow.
+func circle(n int) []domain.Expense {
+	var out []domain.Expense
+	for range n {
+		out = append(out, lent("ana", "beto", domain.MaxAmount)[0], lent("beto", "carla", domain.MaxAmount)[0], lent("carla", "ana", domain.MaxAmount)[0])
+	}
+	return out
+}
+
+func TestPairwiseDebtsReportADebtBeyondTheLimit(t *testing.T) {
+	tests := []struct {
+		name   string
+		rounds int
+	}{
+		// Each pair owes 10^16.
+		{"past the limit", 10},
+		// Each pair owes 1.8447 × 10^19, which an int64 wraps to 2.6 × 10^14.
+		{"past an int64", 18_447},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if debts, ok := domain.PairwiseDebts(circle(tt.rounds), nil); ok || debts != nil {
+				t.Errorf("PairwiseDebts = %+v, %t; want none and false", debts, ok)
+			}
+		})
+	}
+}
+
+func TestDebtsAreSimplifiedOrPairwiseAsTheLedgerSays(t *testing.T) {
+	// Beto owes Ana 10.00 and Carla owes Beto 10.00.
+	records := append(lent("ana", "beto", 1000), lent("beto", "carla", 1000)...)
+
+	pairwise := []domain.Debt{
+		{FromMemberID: "beto", ToMemberID: "ana", Currency: "USD", Amount: 1000},
+		{FromMemberID: "carla", ToMemberID: "beto", Currency: "USD", Amount: 1000},
+	}
+	if got := domain.Debts(records, nil, false); !reflect.DeepEqual(got, pairwise) {
+		t.Errorf("without simplification: Debts = %+v, want %+v", got, pairwise)
+	}
+	simplified := []domain.Debt{{FromMemberID: "carla", ToMemberID: "ana", Currency: "USD", Amount: 1000}}
+	if got := domain.Debts(records, nil, true); !reflect.DeepEqual(got, simplified) {
+		t.Errorf("with simplification: Debts = %+v, want %+v", got, simplified)
+	}
+}
+
+func TestDebtsAreSimplifiedWhenAPairwiseDebtWouldGoBeyondTheLimit(t *testing.T) {
+	records := append(circle(10), lent("ana", "beto", 1000)...)
+
+	got := domain.Debts(records, nil, false)
+
+	want := []domain.Debt{{FromMemberID: "beto", ToMemberID: "ana", Currency: "USD", Amount: 1000}}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("Debts = %+v, want the simplified %+v", got, want)
 	}
 }

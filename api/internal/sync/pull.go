@@ -169,10 +169,7 @@ func changedDebts(ctx context.Context, q *store.Queries, c Changes) ([]LedgerDeb
 		if err != nil {
 			return nil, err
 		}
-		debts := domain.PairwiseDebts(l.Expenses(), l.Settlements())
-		if l.Ledger.SimplifyDebts {
-			debts = domain.SimplifyDebts(l.Balances())
-		}
+		debts := domain.Debts(l.Expenses(), l.Settlements(), l.Ledger.SimplifyDebts)
 		out = append(out, LedgerDebts{LedgerID: id, Debts: debts})
 	}
 	return out, nil

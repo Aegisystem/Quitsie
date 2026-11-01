@@ -51,9 +51,13 @@ func Load(ctx context.Context, q *store.Queries, ledgerID string) (Snapshot, err
 	return Snapshot{Ledger: ledger, Members: members, Records: records}, nil
 }
 
-// Domain is the ledger as the domain validates records against it.
+// Domain is the ledger as the domain validates records against it: its
+// Members, and the Balances of its records, which no change may take beyond
+// domain.MaxBalance.
 func (s Snapshot) Domain() domain.Ledger {
-	return Ledger(s.Ledger, s.Members)
+	d := Ledger(s.Ledger, s.Members)
+	d.AddUp(s.Expenses(), s.Settlements())
+	return d
 }
 
 // Expenses are all the ledger's Expenses in domain terms, deleted ones included.

@@ -152,6 +152,7 @@ Los Saldos no se guardan: se calculan sumando, lo cual es rápido a esta escala.
 - El cuerpo de las peticiones a la API tiene un tope de 2 MiB, suficiente para el lote más grande de `POST /records`. En `POST /auth/*` el tope es de 4 KiB.
 - Cada Usuario tiene un presupuesto de 5 MiB de cambios por hora, además del límite de peticiones.
 - Un Grupo admite 200 Miembros, un Usuario 200 libros y un libro 200.000 filas (ver [reglas](reglas-de-negocio.md#límites)).
+- Ningún Saldo pasa de 2^53 − 1 unidades mínimas, el mayor valor hasta el que el cliente lee exacto cualquier entero. El dominio suma los Saldos en 128 bits y rechaza al escribir el cambio que lleve uno más allá; el cliente comprueba lo mismo en los formularios.
 - Se atienden dos `GET /sync` a la vez y uno por Usuario. El resto espera hasta 5 segundos o recibe `429`, y el cliente reintenta.
 - `GOMEMLIMIT=700MiB` hace que el recolector de basura trabaje más antes de que el kernel mate el proceso, lo que borraría los límites guardados en memoria.
 

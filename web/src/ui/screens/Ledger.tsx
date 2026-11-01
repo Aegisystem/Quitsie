@@ -233,6 +233,8 @@ function RecordRow({
       else toast(kind === 'expense' ? t('ledger.expenseRestoredDone') : t('ledger.settlementRestoredDone'))
     } else if (result === 'formerMember') {
       setProblem(action === 'delete' ? t('ledger.deleteFormerMember') : t('ledger.restoreFormerMember'))
+    } else if (result === 'balance') {
+      setProblem(action === 'delete' ? t('ledger.deleteBalance') : t('ledger.restoreBalance'))
     } else {
       setProblem(result === 'gone' ? t('ledger.recordGone') : result === 'offline' ? t('common.noAnswer') : t('common.tryAgain'))
     }

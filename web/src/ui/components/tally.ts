@@ -21,14 +21,16 @@ export function tokensOf(amount: number, unit: number): number[] {
 }
 
 // One band of Balance: a currency, its amount and what each token stands for.
+// A total across ledgers comes as a bigint, since it can go past the safe
+// integers; the unit only needs its size, which a number is close enough for.
 export interface Band {
   currency: string
-  amount: number
+  amount: number | bigint
   unit: number
 }
 
-export function bandsOf(balances: ReadonlyMap<string, number>): Band[] {
-  return [...balances].map(([currency, amount]) => ({ currency, amount, unit: tallyUnit(amount, currency) }))
+export function bandsOf(balances: ReadonlyMap<string, number | bigint>): Band[] {
+  return [...balances].map(([currency, amount]) => ({ currency, amount, unit: tallyUnit(Number(amount), currency) }))
 }
 
 // The bands to show, given those on screen and those there are now. A currency

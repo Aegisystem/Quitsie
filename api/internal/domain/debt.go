@@ -14,16 +14,34 @@ type Debt struct {
 	Amount       int64
 }
 
+// Debts gives the Debts of a ledger as it shows them: simplified when it
+// simplifies its Debts, pairwise otherwise.
+//
+// Pairwise Debts are not bounded by the Balances: records that go round in a
+// circle (Ana pays for Beto, Beto for Carla, Carla for Ana) grow them while
+// every Balance stays at zero. When one would go beyond MaxBalance, Debts gives
+// the simplified ones instead, which never go beyond the Balances and settle
+// them just the same.
+func Debts(expenses []Expense, settlements []Settlement, simplify bool) []Debt {
+	if !simplify {
+		if debts, ok := PairwiseDebts(expenses, settlements); ok {
+			return debts
+		}
+	}
+	return SimplifyDebts(Balances(expenses, settlements))
+}
+
 // PairwiseDebts gives the Debts of a ledger without debt simplification: who
 // owes whom, Expense by Expense. Within an Expense, each Participant who owes
 // more than they paid owes the Participants who paid more than they owe, in
 // proportion to what each of those is owed. Debts between the same two Members
 // offset each other, and Settlements reduce them. Deleted Expenses and
 // Settlements do not count. The Debts come sorted by currency, debtor and creditor.
+// It reports false, with no Debts, when one would go beyond MaxBalance.
 //
 // It expects Expenses that ValidateExpense accepts. Any other never makes it
 // panic, but then the Debts may not add up to the Balances.
-func PairwiseDebts(expenses []Expense, settlements []Settlement) []Debt {
+func PairwiseDebts(expenses []Expense, settlements []Settlement) ([]Debt, bool) {
 	ledger := make(pairwiseLedger)
 	for _, s := range settlements {
 		if s.DeletedAt == nil {
@@ -134,8 +152,9 @@ func sumAmounts(positions []position) int64 {
 }
 
 // pairwiseLedger keeps one signed amount per pair of Members and currency.
-// For the pair (a, b) with a < b, a positive amount means a owes b.
-type pairwiseLedger map[pairKey]int64
+// For the pair (a, b) with a < b, a positive amount means a owes b. The
+// amounts are exact, since nothing bounds them.
+type pairwiseLedger map[pairKey]*sum
 
 type pairKey struct {
 	currency Currency
@@ -145,16 +164,31 @@ type pairKey struct {
 // add records that from owes to amount.
 func (l pairwiseLedger) add(currency Currency, from, to string, amount int64) {
 	if from < to {
-		l[pairKey{currency, from, to}] += amount
+		l.pair(pairKey{currency, from, to}).add(amount)
 	} else {
-		l[pairKey{currency, to, from}] -= amount
+		l.pair(pairKey{currency, to, from}).sub(amount)
 	}
 }
 
-func (l pairwiseLedger) debts() []Debt {
+// pair is the amount of the pair k, which a large ledger looks up millions of
+// times: a pointer saves a second lookup to store it back.
+func (l pairwiseLedger) pair(k pairKey) *sum {
+	s := l[k]
+	if s == nil {
+		s = new(sum)
+		l[k] = s
+	}
+	return s
+}
+
+// debts are the Debts in l, or false if one goes beyond MaxBalance.
+func (l pairwiseLedger) debts() ([]Debt, bool) {
 	var debts []Debt
-	for k, amount := range l {
-		switch {
+	for k, s := range l {
+		if !s.within(MaxBalance) {
+			return nil, false
+		}
+		switch amount := s.int64(); {
 		case amount > 0:
 			debts = append(debts, Debt{FromMemberID: k.a, ToMemberID: k.b, Currency: k.currency, Amount: amount})
 		case amount < 0:
@@ -162,7 +196,7 @@ func (l pairwiseLedger) debts() []Debt {
 		}
 	}
 	sortDebts(debts)
-	return debts
+	return debts, true
 }
 
 func sortDebts(debts []Debt) {

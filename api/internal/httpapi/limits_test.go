@@ -38,7 +38,7 @@ func (a *recordsAPI) fullBatch(tr trip, size int) httpapi.RecordBatch {
 	const share = int64(20_000_000_000_000)
 	percentage := int64(10000 / size)
 	batch := httpapi.RecordBatch{}
-	for range 100 {
+	for i := range 100 {
 		e := httpapi.NewExpense{
 			Id: id(uuid.NewString()), LedgerId: id(tr.id), Description: strings.Repeat("🍕", 200), Date: day("2026-10-25"),
 			Currency: "USD", Total: share * int64(size), SplitMethod: httpapi.Percentage,
@@ -48,8 +48,13 @@ func (a *recordsAPI) fullBatch(tr trip, size int) httpapi.RecordBatch {
 			e.OwedShares = append(e.OwedShares, httpapi.OwedShare{MemberId: id(m), Amount: share, SplitValue: &percentage})
 		}
 		batch.Expenses = append(batch.Expenses, e)
+		// Back and forth, so that no Balance goes beyond the limit.
+		from, to := tr.anaM, tr.betoM
+		if i%2 == 1 {
+			from, to = to, from
+		}
 		batch.Settlements = append(batch.Settlements, httpapi.NewSettlement{
-			Id: id(uuid.NewString()), LedgerId: id(tr.id), FromMemberId: id(tr.anaM), ToMemberId: id(tr.betoM),
+			Id: id(uuid.NewString()), LedgerId: id(tr.id), FromMemberId: id(from), ToMemberId: id(to),
 			Amount: 1_000_000_000_000_000, Currency: "USD", Date: day("2026-10-25"),
 		})
 	}
