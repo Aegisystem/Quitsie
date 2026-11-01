@@ -6,9 +6,11 @@ export type ExpenseUpdate = components['schemas']['ExpenseUpdate']
 // What happened to an edit, in the terms the form explains them.
 // `conflict`: someone changed or deleted the Expense first, so nothing was saved.
 // `currency`: the Group's currency changed. `participants`: someone left the Group
-// or a former member's shares would change. `gone`: the User cannot see it any more.
+// or a former member's shares would change. `balance`: a Balance would go past
+// what Quitsie can hold, which the form checks first unless someone else got
+// there in between. `gone`: the User cannot see it any more.
 // `offline`: no answer came back.
-export type UpdateOutcome = 'saved' | 'conflict' | 'currency' | 'participants' | 'gone' | 'offline' | 'failed'
+export type UpdateOutcome = 'saved' | 'conflict' | 'currency' | 'participants' | 'balance' | 'gone' | 'offline' | 'failed'
 
 // Editing is online only (ADR 0001): PATCH with the version the User was editing.
 export async function updateExpense(client: Client<paths>, expenseId: string, update: ExpenseUpdate): Promise<UpdateOutcome> {
@@ -23,6 +25,8 @@ export async function updateExpense(client: Client<paths>, expenseId: string, up
         return 'currency'
       case 'invalid_participants':
         return 'participants'
+      case 'invalid_amounts':
+        return 'balance'
       default:
         return 'failed'
     }

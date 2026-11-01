@@ -41,6 +41,13 @@ describe('deleting and restoring records', () => {
     expect(sync).not.toHaveBeenCalled()
   })
 
+  it('reports a Balance that would go past the limit and leaves the replica as it was', async () => {
+    const { actions, sync } = setup(() => problem(400, 'invalid_amounts'))
+    await expect(actions.deleteRecord('expense', id)).resolves.toBe('balance')
+    await expect(actions.restoreRecord('settlement', id)).resolves.toBe('balance')
+    expect(sync).not.toHaveBeenCalled()
+  })
+
   it('does not read any other 409 as a former member', async () => {
     const { actions } = setup(() => problem(409, 'version_conflict'))
     await expect(actions.deleteRecord('expense', id)).resolves.toBe('failed')

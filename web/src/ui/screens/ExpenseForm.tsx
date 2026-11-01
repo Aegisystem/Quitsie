@@ -4,11 +4,12 @@ import { api, type Category, type Member, type NewExpense as NewExpenseRecord, t
 import { liveExpenses, liveHome, liveLedger, liveRecords, type ExpenseView, type LedgerSummary, type RejectionReason } from '../../local'
 import { CategoryGlyph, Figure, figureState, GroupGlyph, Icon } from '../components/icons'
 import { Screen, toast, useOnline } from '../components/Shell'
-import { amountError } from '../forms/amountError'
+import { amountError, balanceError } from '../forms/amountError'
 import { CurrencyOptions } from '../forms/CurrencyOptions'
 import { engine, ledgerName, myMember, replica, useLive } from '../data'
 import { liveUsedCurrencies, useUser } from '../forms/data'
 import {
+  balanceRecords,
   changedFormerShare,
   formerParticipant,
   formerShares,
@@ -219,12 +220,24 @@ function ExpenseForm({ summary, user, me, purpose }: { summary: LedgerSummary; u
   const paidLeft = total - paidShares.reduce((sum, p) => sum + p.amount, 0)
 
   const percentSum = participants.reduce((sum, p) => sum + (method === 'percentage' ? p.value : 0), 0)
+  const splitOk = !preview.issue && preview.unassigned === 0 && !formerChange
+  const owedShares = toOwedShares(preview.owedShares ?? [])
+  // Only once the split and the payers close is it known whose Balance moves, and how far.
+  const closes = splitOk && paidLeft === 0
   const errors = {
-    amount: amountError(read, currency, t),
+    amount:
+      amountError(read, currency, t) ??
+      (closes
+        ? balanceError(
+            summary.balances,
+            { added: balanceRecords({ currency, paidShares, owedShares }), removed: editing && balanceRecords(editing.expense) },
+            { me: me.id, nameOf },
+            t,
+          )
+        : undefined),
     description: description.trim() === '' ? t('expenseForm.descriptionRequired') : undefined,
   }
-  const splitOk = !preview.issue && preview.unassigned === 0 && !formerChange
-  const valid = !errors.amount && !errors.description && splitOk && paidLeft === 0
+  const valid = !errors.amount && !errors.description && closes
 
   // Someone else got there first, whether the server said so or a sync brought it.
   const changed =
@@ -251,7 +264,7 @@ function ExpenseForm({ summary, user, me, purpose }: { summary: LedgerSummary; u
       category,
       splitMethod: method,
       paidShares,
-      owedShares: toOwedShares(preview.owedShares ?? []),
+      owedShares,
     }
     if (editing) {
       const outcome = await updateExpense(api, editing.expense.id, { ...content, expectedVersion: editing.version })
@@ -626,6 +639,8 @@ function failureText(failure: UpdateOutcome, t: ReturnType<typeof useTranslation
       return t('expenseForm.failedCurrency')
     case 'participants':
       return t('expenseForm.failedParticipants')
+    case 'balance':
+      return t('expenseForm.failedBalance')
     case 'gone':
       return t('expenseForm.failedGone')
     case 'offline':

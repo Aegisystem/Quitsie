@@ -4,7 +4,7 @@ import type { Member, User } from '../../api/client'
 import { liveLedger, type LedgerSummary } from '../../local'
 import { Figure, figureState, Icon } from '../components/icons'
 import { Screen, toast, useOnline } from '../components/Shell'
-import { amountError } from '../forms/amountError'
+import { amountError, balanceError } from '../forms/amountError'
 import { CurrencyOptions } from '../forms/CurrencyOptions'
 import { engine, ledgerName, myMember, replica, useLive } from '../data'
 import { liveUsedCurrencies, useUser } from '../forms/data'
@@ -63,9 +63,13 @@ function SettlementFields({ summary, user, me, from, to, amount, currency: sugge
   const read = readAmount(amountText, currency)
   const value = read.ok ? read.value : 0
   const sameSuggestedPair = from === fromId && to === toId && suggested !== undefined && (groupCurrency !== undefined || currency === suggestedCurrency)
+  const people = fromId === toId ? t('settlement.samePerson') : !activeId(fromId) || !activeId(toId) ? t('settlement.onlyActive') : undefined
+  const settlement = { id: '', from: fromId, to: toId, amount: value, currency }
   const errors = {
-    people: fromId === toId ? t('settlement.samePerson') : !activeId(fromId) || !activeId(toId) ? t('settlement.onlyActive') : undefined,
-    amount: amountError(read, currency, t),
+    people,
+    amount:
+      amountError(read, currency, t) ??
+      (people ? undefined : balanceError(summary.balances, { added: { expenses: [], settlements: [settlement] } }, { me: me.id, nameOf }, t)),
   }
   const valid = !errors.people && !errors.amount
 

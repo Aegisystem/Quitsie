@@ -38,7 +38,7 @@ describe('updateExpense', () => {
     [409, 'currency_mismatch', 'currency'],
     [409, 'invalid_participants', 'participants'],
     [404, 'not_found', 'gone'],
-    [400, 'invalid_amounts', 'failed'],
+    [400, 'invalid_amounts', 'balance'],
     [500, 'internal_error', 'failed'],
   ])('reads a %i %s as %s', async (status, code, outcome) => {
     expect(await updateExpense(client(problem(status, code)), 'e1', update)).toBe(outcome)

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { type ExpenseRecord, provisionalBalances, type SettlementRecord } from './balances'
+import { type Balance, type ExpenseRecord, maxBalance, overMaxBalance, provisionalBalances, type SettlementRecord } from './balances'
 
 const nothing = { expenses: [], settlements: [] }
 
@@ -76,5 +76,57 @@ describe('provisionalBalances', () => {
       { participantId: 'ana', currency: 'USD', amount: 3000 },
       { participantId: 'carla', currency: 'USD', amount: -3000 },
     ])
+  })
+})
+
+describe('overMaxBalance', () => {
+  const max = 10 ** 15
+  // Ana paid `amount` for Beto.
+  const lent = (amount: number, id = 'lent'): ExpenseRecord => ({
+    id,
+    currency: 'USD',
+    paidShares: [{ participantId: 'ana', amount }],
+    owedShares: [{ participantId: 'beto', amount }],
+  })
+  const at = (ana: number): Balance[] => [
+    { participantId: 'ana', currency: 'USD', amount: ana },
+    { participantId: 'beto', currency: 'USD', amount: -ana },
+  ]
+  const only = (record: ExpenseRecord | SettlementRecord) =>
+    'paidShares' in record ? { expenses: [record], settlements: [] } : { expenses: [], settlements: [record] }
+
+  it('is the same limit as the server: 2^53 − 1', () => {
+    expect(maxBalance).toBe(9007199254740991)
+  })
+
+  it('lets a Balance reach the limit exactly, either way', () => {
+    expect(overMaxBalance(at(maxBalance - max), only(lent(max)))).toBeUndefined()
+  })
+
+  it('names who would go one past the limit, in favor or against', () => {
+    expect(overMaxBalance(at(maxBalance - max + 1), only(lent(max)))).toBe('ana')
+    const betoOwes: Balance[] = [{ participantId: 'beto', currency: 'USD', amount: -(maxBalance - max + 1) }]
+    expect(overMaxBalance(betoOwes, only(lent(max)))).toBe('beto')
+  })
+
+  it('checks a Settlement too', () => {
+    const anaPaysBeto: SettlementRecord = { id: 's', from: 'ana', to: 'beto', amount: 2, currency: 'USD' }
+    expect(overMaxBalance(at(maxBalance - 2), only(anaPaysBeto))).toBeUndefined()
+    expect(overMaxBalance(at(maxBalance - 1), only(anaPaysBeto))).toBe('ana')
+  })
+
+  it('takes out the Expense an edit replaces, so that it does not count twice', () => {
+    const stored = lent(max / 2, 'taxi')
+    expect(overMaxBalance(at(maxBalance), only(lent(max / 2, 'taxi')), only(stored))).toBeUndefined()
+    expect(overMaxBalance(at(maxBalance), only(lent(max / 2 + 1, 'taxi')), only(stored))).toBe('ana')
+  })
+
+  it('only checks the Balances the record moves, as the server does', () => {
+    const carlaPastIt: Balance[] = [{ participantId: 'carla', currency: 'USD', amount: maxBalance + 2 }]
+    expect(overMaxBalance(carlaPastIt, only(lent(max)))).toBeUndefined()
+  })
+
+  it('keeps each currency apart', () => {
+    expect(overMaxBalance(at(maxBalance), only({ ...lent(max), currency: 'EUR' }))).toBeUndefined()
   })
 })
