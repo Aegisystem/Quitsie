@@ -32,7 +32,7 @@ export interface paths {
         put?: never;
         /**
          * Emails a 6-digit sign-in code.
-         * @description Answers 204 whether or not an account exists for the email, so the endpoint does not reveal who has one. The code expires after 10 minutes. Sending is limited per email and per IP.
+         * @description Answers 204 whether or not an account exists for the email, so the endpoint does not reveal who has one. The code expires after 10 minutes. Sending is limited per email and per IP (per /56 in IPv6), and the server sends a limited number of emails per hour and per day to everyone together.
          */
         post: operations["requestLoginCode"];
         delete?: never;
@@ -608,7 +608,7 @@ export interface components {
          * @description Stable machine-readable error code. New codes may be added; clients treat an unknown code as a generic error for its status.
          * @enum {string}
          */
-        ProblemCode: "validation_failed" | "unauthenticated" | "origin_mismatch" | "not_found" | "rate_limited" | "login_code_invalid" | "login_code_expired" | "too_many_attempts" | "invite_link_invalid" | "version_conflict" | "nonzero_balance" | "currency_mismatch" | "currency_precision_loss" | "invalid_amounts" | "invalid_participants" | "member_not_pending" | "member_not_claimed" | "already_member" | "friendship_exists" | "name_required" | "limit_reached" | "body_too_large" | "cursor_invalid" | "internal_error" | "not_implemented";
+        ProblemCode: "validation_failed" | "unauthenticated" | "origin_mismatch" | "not_found" | "rate_limited" | "mail_budget_spent" | "login_code_invalid" | "login_code_expired" | "too_many_attempts" | "invite_link_invalid" | "version_conflict" | "nonzero_balance" | "currency_mismatch" | "currency_precision_loss" | "invalid_amounts" | "invalid_participants" | "member_not_pending" | "member_not_claimed" | "already_member" | "friendship_exists" | "name_required" | "limit_reached" | "body_too_large" | "cursor_invalid" | "internal_error" | "not_implemented";
         /** @description The `currency_precision_loss` problem, with the records the User must fix first. */
         CurrencyPrecisionProblem: components["schemas"]["Problem"] & {
             expenseIds: string[];
@@ -1185,6 +1185,17 @@ export interface operations {
             429: {
                 headers: {
                     /** @description Seconds to wait before asking again. */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The server sent every email it allows itself for now (`mail_budget_spent`), so it sends no code to anyone. */
+            503: {
+                headers: {
+                    /** @description Seconds until the server sends emails again. */
                     "Retry-After"?: number;
                     [name: string]: unknown;
                 };

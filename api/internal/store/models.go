@@ -60,6 +60,11 @@ type LoginFailure struct {
 	ResetsAt  time.Time
 }
 
+type MailSend struct {
+	Hour time.Time
+	Sent int64
+}
+
 type Member struct {
 	ID        string
 	LedgerID  string

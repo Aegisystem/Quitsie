@@ -73,6 +73,8 @@ type fixture struct {
 	db    *sql.DB
 	mail  *outbox
 	clock *clock
+	// asked counts the emails askForCodes used.
+	asked int
 }
 
 func newFixture(t *testing.T, options ...func(*auth.Config)) *fixture {
@@ -345,7 +347,7 @@ func TestGuessesAtOneEmailDoNotTouchAnother(t *testing.T) {
 }
 
 func TestOneIPCannotSpreadItsGuessesOverManyEmails(t *testing.T) {
-	f := newFixture(t)
+	f := newFixture(t, withMailBudget(1000, 1000))
 	ctx := context.Background()
 	guess := func(i int) error {
 		email := fmt.Sprintf("user%d@example.com", i)

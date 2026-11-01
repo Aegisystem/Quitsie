@@ -320,27 +320,50 @@ func TestAnIPv6NetworkCountsAsOneClient(t *testing.T) {
 	}
 }
 
+// askForCode sends POST /auth/login-code for a new email each time, from
+// peer, with visitor in CF-Connecting-IP, and returns the status.
+func (w *world) askForCode(peer, visitor string) int {
+	w.t.Helper()
+	w.codes++
+	body := fmt.Sprintf(`{"email":"user%d@example.com"}`, w.codes)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login-code", strings.NewReader(body))
+	req.RemoteAddr = peer
+	req.Header.Set("CF-Connecting-IP", visitor)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Origin", testOrigin)
+	rec := httptest.NewRecorder()
+	w.h.ServeHTTP(rec, req)
+	return rec.Code
+}
+
 // The limit on login codes per IP reads the same address.
 func TestAForgedAddressDoesNotDodgeTheLimitOfLoginCodes(t *testing.T) {
 	w := newWorld(t)
-	code := func(i int) int {
-		body := fmt.Sprintf(`{"email":"user%d@example.com"}`, i)
-		req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login-code", strings.NewReader(body))
-		req.RemoteAddr = direct
-		req.Header.Set("CF-Connecting-IP", fmt.Sprintf("198.51.100.%d", i))
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("Origin", testOrigin)
-		rec := httptest.NewRecorder()
-		w.h.ServeHTTP(rec, req)
-		return rec.Code
-	}
-	for i := range 30 {
-		if got := code(i); got != http.StatusNoContent {
+	for i := range 10 {
+		if got := w.askForCode(direct, fmt.Sprintf("198.51.100.%d", i)); got != http.StatusNoContent {
 			t.Fatalf("code %d: status = %d, want 204", i+1, got)
 		}
 	}
 
-	if got := code(30); got != http.StatusTooManyRequests {
-		t.Errorf("31st code from one connection: status = %d, want 429", got)
+	if got := w.askForCode(direct, "198.51.100.10"); got != http.StatusTooManyRequests {
+		t.Errorf("11th code from one connection: status = %d, want 429", got)
+	}
+}
+
+// Each login code is an email out of the server's budget, and a customer
+// often holds a /56: 256 networks of /64.
+func TestLoginCodesCountAnIPv6CustomerByIts56(t *testing.T) {
+	w := newWorld(t)
+	for i := range 10 {
+		if got := w.askForCode(tunnel, fmt.Sprintf("2001:db8:1:%x::1", i)); got != http.StatusNoContent {
+			t.Fatalf("code %d: status = %d, want 204", i+1, got)
+		}
+	}
+
+	if got := w.askForCode(tunnel, "2001:db8:1:ff::1"); got != http.StatusTooManyRequests {
+		t.Errorf("another /64 of the same /56: status = %d, want 429", got)
+	}
+	if got := w.askForCode(tunnel, "2001:db8:1:100::1"); got != http.StatusNoContent {
+		t.Errorf("another /56: status = %d, want 204", got)
 	}
 }

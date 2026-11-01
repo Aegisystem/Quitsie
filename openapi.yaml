@@ -85,7 +85,9 @@ paths:
       description: >
         Answers 204 whether or not an account exists for the email, so the
         endpoint does not reveal who has one. The code expires after 10
-        minutes. Sending is limited per email and per IP.
+        minutes. Sending is limited per email and per IP (per /56 in IPv6),
+        and the server sends a limited number of emails per hour and per day
+        to everyone together.
       tags: [auth]
       security: []
       requestBody:
@@ -104,6 +106,19 @@ paths:
           headers:
             Retry-After:
               description: Seconds to wait before asking again.
+              schema:
+                type: integer
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "503":
+          description: >
+            The server sent every email it allows itself for now
+            (`mail_budget_spent`), so it sends no code to anyone.
+          headers:
+            Retry-After:
+              description: Seconds until the server sends emails again.
               schema:
                 type: integer
           content:
@@ -1220,6 +1235,7 @@ components:
         - origin_mismatch
         - not_found
         - rate_limited
+        - mail_budget_spent
         - login_code_invalid
         - login_code_expired
         - too_many_attempts

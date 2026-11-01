@@ -116,6 +116,7 @@ Un **libro** (`Ledger`) es el contenedor de Gastos y Liquidaciones. Cada Grupo t
 | `sessions` | hash del token, dispositivo, último uso |
 | `login_codes` | hash del código, caducidad, intentos |
 | `login_failures` | hash del email, códigos equivocados y fin de la ventana de 24 horas |
+| `mail_sends` | correos con códigos enviados en cada hora del último día |
 | `ledgers` | tipo (`group` o `friendship`), nombre, Moneda del grupo (vacía en Amistades), Simplificación de deudas, contador de generación del Enlace de invitación, versión, fecha de borrado |
 | `members` | libro, Usuario vinculado (vacío si está pendiente), nombre, email, estado (`active` o `former`), versión |
 | `expenses` | identificador del cliente, libro, descripción, fecha, moneda, total, Categoría, Método de reparto (para reeditar), autor, versión, fecha de borrado |
@@ -131,7 +132,8 @@ Los Saldos no se guardan: se calculan sumando, lo cual es rápido a esta escala.
 
 - Toda consulta se limita a los libros en los que el Usuario tiene un Miembro activo.
 - Cookie `HttpOnly`, `Secure` y `SameSite=Lax`. Además, las peticiones que modifican datos deben traer un encabezado `Origin` del propio dominio (protección CSRF).
-- Los códigos de acceso caducan a los 10 minutos y admiten 5 intentos como máximo. También se limitan los envíos por email y por IP.
+- Los códigos de acceso caducan a los 10 minutos y admiten 5 intentos como máximo. Un email recibe 5 códigos por hora y una IP pide 10; en IPv6 cuenta la red /56, porque un cliente suele tener 256 redes /64.
+- El servidor envía como máximo 40 correos por hora y 90 en 24 horas, entre todos, por debajo de los 100 diarios gratuitos de Resend. Las cifras son provisionales y se cambian con `QUITSIE_MAIL_MAX_PER_HOUR` y `QUITSIE_MAIL_MAX_PER_DAY`. La cuenta vive en la base, así que un reinicio no la borra. Al agotarse, pedir un código responde `503 mail_budget_spent` y el log tiene una línea `ERROR` por cada hora o día agotado.
 - Un email admite 10 códigos equivocados al día, sumando todos sus códigos. Esa cuenta vive en la base, así que un código nuevo o un reinicio no dan más intentos. Una IP admite 60 verificaciones por hora.
 - Los tokens de sesión son aleatorios y en la base solo se guarda su hash. Los Enlaces de invitación se derivan con un HMAC de una clave del servidor, así que no se guardan ([ADR 0010](adr/0010-enlaces-de-invitacion-derivados.md)).
 - Hay un límite de 300 peticiones por minuto por IP en Go, además del de Cloudflare. Detrás del túnel la IP real sale de `CF-Connecting-IP`, y ese encabezado solo se cree si la conexión llega por loopback, porque `cloudflared` corre en la misma VM. Por eso debe ser el único proceso que reenvía tráfico al puerto del servidor.

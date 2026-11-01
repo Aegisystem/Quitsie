@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { googleSignInUrl, session, type CallError, type SignedOutNotice } from '../../session'
 import { GoogleMark, Icon, Mark } from '../components/icons'
 import { useOnline } from '../components/Shell'
+import { signInProblemText } from './signInProblem'
 
 // The server allows 5 attempts per code, and a new code replaces the old one.
 const MAX_ATTEMPTS = 5
@@ -34,16 +35,7 @@ export function SignIn({ notice }: { notice?: SignedOutNotice }) {
 
   const focusCode = () => window.setTimeout(() => codeRef.current?.focus(), 50)
 
-  const callFailed = (error: CallError) => {
-    if (error.kind === 'offline') return t('signIn.offline')
-    if (error.code === 'rate_limited') {
-      if (!error.retryAfter) return t('signIn.rateLimited')
-      if (error.retryAfter > 3600) return t('signIn.rateLimitedForHours', { count: Math.ceil(error.retryAfter / 3600) })
-      return t('signIn.rateLimitedFor', { count: Math.ceil(error.retryAfter / 60) })
-    }
-    if (error.code === 'validation_failed') return t('signIn.invalidEmail')
-    return t('signIn.failed')
-  }
+  const callFailed = (error: CallError) => signInProblemText(t, error)
 
   const sendCode = async (resend: boolean) => {
     const address = email.trim()

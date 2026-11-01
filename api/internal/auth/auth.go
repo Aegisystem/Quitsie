@@ -1,10 +1,12 @@
 package auth
 
 import (
+	"cmp"
 	"context"
 	"database/sql"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/google/uuid"
@@ -13,7 +15,8 @@ import (
 	"github.com/Aegisystem/Quitsie/api/internal/store"
 )
 
-// Config holds what the Service needs. Everything but Now is required.
+// Config holds what the Service needs. DB, Mail and DefaultCurrency are
+// required; the rest is optional.
 type Config struct {
 	DB   *sql.DB
 	Mail mail.Sender
@@ -21,6 +24,13 @@ type Config struct {
 	DefaultCurrency string
 	// Google enables signing in with Google; nil disables it.
 	Google *GoogleConfig
+	// MailPerHour and MailPerDay are the most login-code emails the server
+	// sends in a clock hour and in 24 hours. Zero means DefaultMailPerHour
+	// and DefaultMailPerDay.
+	MailPerHour, MailPerDay int
+	// Logger defaults to slog.Default; it says when the budget of emails is
+	// spent.
+	Logger *slog.Logger
 	// Now defaults to time.Now; tests replace it to move the clock.
 	Now func() time.Time
 }
@@ -31,6 +41,9 @@ type Service struct {
 	mail            mail.Sender
 	defaultCurrency string
 	now             func() time.Time
+	logger          *slog.Logger
+	mailPerHour     int
+	mailPerDay      int
 	sends           *limiter
 	verifications   *limiter
 	google          *google
@@ -40,14 +53,23 @@ func New(cfg Config) (*Service, error) {
 	if cfg.DB == nil || cfg.Mail == nil || cfg.DefaultCurrency == "" {
 		return nil, errors.New("auth: DB, Mail and DefaultCurrency are required")
 	}
+	if cfg.MailPerHour < 0 || cfg.MailPerDay < 0 {
+		return nil, errors.New("auth: MailPerHour and MailPerDay cannot be negative")
+	}
 	if cfg.Now == nil {
 		cfg.Now = time.Now
+	}
+	if cfg.Logger == nil {
+		cfg.Logger = slog.Default()
 	}
 	s := &Service{
 		db:              cfg.DB,
 		mail:            cfg.Mail,
 		defaultCurrency: cfg.DefaultCurrency,
 		now:             func() time.Time { return cfg.Now().UTC() },
+		logger:          cfg.Logger,
+		mailPerHour:     cmp.Or(cfg.MailPerHour, DefaultMailPerHour),
+		mailPerDay:      cmp.Or(cfg.MailPerDay, DefaultMailPerDay),
 		sends:           newLimiter(sendWindow),
 		verifications:   newLimiter(sendWindow),
 	}

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
+	"time"
 	"unicode"
 	"unicode/utf8"
 
@@ -23,8 +24,9 @@ import (
 
 func (s *Server) RequestLoginCode(ctx context.Context, req RequestLoginCodeRequestObject) (RequestLoginCodeResponseObject, error) {
 	r := requestFrom(ctx)
-	err := s.deps.Auth.RequestCode(ctx, string(req.Body.Email), clientIP(r))
+	err := s.deps.Auth.RequestCode(ctx, string(req.Body.Email), senderIP(r))
 	var limited *auth.RateLimitError
+	var spent *auth.MailBudgetError
 	switch {
 	case err == nil:
 		return RequestLoginCode204Response{}, nil
@@ -32,10 +34,16 @@ func (s *Server) RequestLoginCode(ctx context.Context, req RequestLoginCodeReque
 		return RequestLoginCode400ApplicationProblemPlusJSONResponse{BadRequestApplicationProblemPlusJSONResponse(
 			authProblem(http.StatusBadRequest, ProblemCodeValidationFailed, "The email address is not valid."))}, nil
 	case errors.As(err, &limited):
-		seconds := int(math.Ceil(limited.RetryAfter.Seconds()))
+		seconds := retryAfterSeconds(limited.RetryAfter)
 		return RequestLoginCode429ApplicationProblemPlusJSONResponse{
 			Body:    authProblem(http.StatusTooManyRequests, ProblemCodeRateLimited, "Too many login codes requested."),
 			Headers: RequestLoginCode429ResponseHeaders{RetryAfter: &seconds},
+		}, nil
+	case errors.As(err, &spent):
+		seconds := retryAfterSeconds(spent.RetryAfter)
+		return RequestLoginCode503ApplicationProblemPlusJSONResponse{
+			Body:    authProblem(http.StatusServiceUnavailable, ProblemCodeMailBudgetSpent, "The server sent all the emails it can for now."),
+			Headers: RequestLoginCode503ResponseHeaders{RetryAfter: &seconds},
 		}, nil
 	default:
 		return nil, err
@@ -77,6 +85,12 @@ func (s *Server) VerifyLoginCode(ctx context.Context, req VerifyLoginCodeRequest
 }
 
 var sixDigits = regexp.MustCompile(`^[0-9]{6}$`)
+
+// retryAfterSeconds is the value of a Retry-After header, rounded up so the
+// client never asks too early.
+func retryAfterSeconds(d time.Duration) int {
+	return int(math.Ceil(d.Seconds()))
+}
 
 func (s *Server) StartGoogleLogin(ctx context.Context, req StartGoogleLoginRequestObject) (StartGoogleLoginResponseObject, error) {
 	returnTo := "/"

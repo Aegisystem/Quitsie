@@ -33,19 +33,19 @@ func TestAnEmailGetsAtMostFiveCodesPerHour(t *testing.T) {
 	}
 }
 
-func TestAnIPGetsAtMostThirtyCodesPerHour(t *testing.T) {
+func TestAnIPGetsAtMostTenCodesPerHour(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
-	for i := 1; i <= 30; i++ {
+	for i := 1; i <= 10; i++ {
 		if err := f.svc.RequestCode(ctx, fmt.Sprintf("user%d@example.com", i), anaIP); err != nil {
 			t.Fatalf("request %d: %v", i, err)
 		}
 	}
 
-	if err := f.svc.RequestCode(ctx, "user31@example.com", anaIP); !errors.Is(err, auth.ErrRateLimited) {
-		t.Errorf("31st request from one IP: err = %v, want ErrRateLimited", err)
+	if err := f.svc.RequestCode(ctx, "user11@example.com", anaIP); !errors.Is(err, auth.ErrRateLimited) {
+		t.Errorf("11th request from one IP: err = %v, want ErrRateLimited", err)
 	}
-	if err := f.svc.RequestCode(ctx, "user31@example.com", "198.51.100.1"); err != nil {
+	if err := f.svc.RequestCode(ctx, "user11@example.com", "198.51.100.1"); err != nil {
 		t.Errorf("the same email from another IP: %v", err)
 	}
 }

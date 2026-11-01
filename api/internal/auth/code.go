@@ -59,7 +59,9 @@ func (e *RateLimitError) Is(target error) bool { return target == ErrRateLimited
 
 // RequestCode emails a new 6-digit login code to email. The code replaces
 // any earlier one for the same email. ip is the client's address, used to
-// limit how many codes one sender can request.
+// limit how many codes one sender can request. Every email counts against
+// the server's budget (see DefaultMailPerHour); when it is spent, RequestCode
+// returns a *MailBudgetError.
 func (s *Service) RequestCode(ctx context.Context, email, ip string) error {
 	email, err := NormalizeEmail(email)
 	if err != nil {
@@ -72,6 +74,9 @@ func (s *Service) RequestCode(ctx context.Context, email, ip string) error {
 	}
 	if failures.spent() {
 		return &RateLimitError{RetryAfter: failures.ResetsAt.Sub(s.now())}
+	}
+	if err := s.checkMailBudget(ctx); err != nil {
+		return err
 	}
 	if ok, retryAfter := s.sends.allow(s.now(), quota{"email:" + email, maxSendsPerMail}, quota{"ip:" + ip, maxSendsPerIP}); !ok {
 		return &RateLimitError{RetryAfter: retryAfter}
@@ -86,6 +91,8 @@ func (s *Service) RequestCode(ctx context.Context, email, ip string) error {
 	}
 
 	now := s.now()
+	var budgetHour time.Time
+	var lastOfBudget bool
 	err = s.inTx(ctx, func(q *store.Queries) error {
 		if err := q.DeleteLoginCodes(ctx, email); err != nil {
 			return fmt.Errorf("auth: delete login codes: %w", err)
@@ -97,7 +104,11 @@ func (s *Service) RequestCode(ctx context.Context, email, ip string) error {
 		if err := q.DeleteEndedLoginFailures(ctx, now); err != nil {
 			return fmt.Errorf("auth: delete ended login failures: %w", err)
 		}
-		err := q.CreateLoginCode(ctx, store.CreateLoginCodeParams{
+		var err error
+		if budgetHour, lastOfBudget, err = s.spendMail(ctx, q); err != nil {
+			return err
+		}
+		err = q.CreateLoginCode(ctx, store.CreateLoginCodeParams{
 			ID:        id.String(),
 			Email:     email,
 			CodeHash:  hashCode(id.String(), code),
@@ -115,9 +126,13 @@ func (s *Service) RequestCode(ctx context.Context, email, ip string) error {
 
 	if err := s.mail.Send(ctx, codeMessage(email, code)); err != nil {
 		// Nobody got this code, so it could only ever be guessed, and its
-		// owner would never hear of it.
-		cleanup := store.New(s.db).DeleteLoginCodes(context.WithoutCancel(ctx), email)
+		// owner would never hear of it. Nor did it cost an email.
+		q, ctx := store.New(s.db), context.WithoutCancel(ctx)
+		cleanup := errors.Join(q.DeleteLoginCodes(ctx, email), q.UncountMailSend(ctx, budgetHour))
 		return fmt.Errorf("auth: send login code: %w", errors.Join(err, cleanup))
+	}
+	if lastOfBudget {
+		s.reportMailBudgetSpent(ctx)
 	}
 	return nil
 }

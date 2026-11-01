@@ -69,6 +69,24 @@ func TestTheDefaultCurrencyIsDollars(t *testing.T) {
 	}
 }
 
+func TestTheBudgetOfEmails(t *testing.T) {
+	cfg, err := loadConfig(env(production, nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.mailPerHour != 40 || cfg.mailPerDay != 90 {
+		t.Errorf("budget = %d per hour and %d per day, want 40 and 90 by default", cfg.mailPerHour, cfg.mailPerDay)
+	}
+
+	cfg, err = loadConfig(env(production, map[string]string{"QUITSIE_MAIL_MAX_PER_HOUR": "100", "QUITSIE_MAIL_MAX_PER_DAY": "1000"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.mailPerHour != 100 || cfg.mailPerDay != 1000 {
+		t.Errorf("budget = %d per hour and %d per day, want the configured 100 and 1000", cfg.mailPerHour, cfg.mailPerDay)
+	}
+}
+
 func TestGoogleUsesThePublicOrigin(t *testing.T) {
 	cfg, err := loadConfig(env(production, map[string]string{
 		"QUITSIE_GOOGLE_CLIENT_ID":     "id.apps.googleusercontent.com",
@@ -106,6 +124,9 @@ func TestProductionRefusesToStartWithABadEnvironment(t *testing.T) {
 		{"unknown currency", map[string]string{"QUITSIE_DEFAULT_CURRENCY": "XYZ"}, "QUITSIE_DEFAULT_CURRENCY"},
 		{"unknown environment", map[string]string{"QUITSIE_ENV": "staging"}, "QUITSIE_ENV"},
 		{"unknown mail sender", map[string]string{"QUITSIE_MAIL": "smtp"}, "QUITSIE_MAIL"},
+		{"emails per hour not a number", map[string]string{"QUITSIE_MAIL_MAX_PER_HOUR": "forty"}, "QUITSIE_MAIL_MAX_PER_HOUR"},
+		{"no emails per day", map[string]string{"QUITSIE_MAIL_MAX_PER_DAY": "0"}, "QUITSIE_MAIL_MAX_PER_DAY"},
+		{"more emails per hour than per day", map[string]string{"QUITSIE_MAIL_MAX_PER_HOUR": "100"}, "QUITSIE_MAIL_MAX_PER_DAY"},
 		// Anyone who reads the log could sign in as anyone.
 		{"development mail", map[string]string{"QUITSIE_MAIL": "log"}, "QUITSIE_MAIL"},
 	}

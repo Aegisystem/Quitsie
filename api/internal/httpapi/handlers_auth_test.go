@@ -214,6 +214,22 @@ func TestLoginCodesAreLimitedPerEmail(t *testing.T) {
 	}
 }
 
+// The client must tell this apart from its own limits: nobody gets a code.
+func TestASpentBudgetOfEmailsIsAServiceProblem(t *testing.T) {
+	var clk *clock
+	api := newTestAPI(t, withClock(&clk), func(_ *testAPI, cfg *auth.Config) { cfg.MailPerHour = 1 })
+	phone := api.newClient(t)
+	wantStatus(t, phone.do(http.MethodPost, "/api/v1/auth/login-code", `{"email":"ana@example.com"}`), http.StatusNoContent)
+	clk.Advance(15 * time.Minute)
+
+	resp := phone.do(http.MethodPost, "/api/v1/auth/login-code", `{"email":"beto@example.com"}`)
+
+	wantProblem(t, resp, http.StatusServiceUnavailable, httpapi.ProblemCodeMailBudgetSpent)
+	if got := resp.Header.Get("Retry-After"); got != "2700" {
+		t.Errorf("Retry-After = %q, want the 2700 seconds left in the hour", got)
+	}
+}
+
 func TestALoginCodeNeedsAnEmailAddress(t *testing.T) {
 	api := newTestAPI(t)
 	phone := api.newClient(t)
