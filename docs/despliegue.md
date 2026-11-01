@@ -160,7 +160,7 @@ Además, `quitsie`, `litestream`, `cloudflared` y la prueba semanal de restaurac
 
 - **Un correo por problema, no uno cada 5 minutos.** Todo lo que encuentra una comprobación va en un solo correo. Si sigue fallando, se repite como mucho cada 4 horas, y cuando vuelve a funcionar llega «todo vuelve a funcionar». Los errores no tienen arreglo que detectar: se acumulan y salen juntos, como mucho cada 4 horas.
 - **Como mucho 10 correos de alerta al día.** Comparten la cuenta de Resend con los códigos de acceso, y el plan gratuito envía 100 al día.
-- **El correo no lleva datos de nadie.** De cada línea de error solo copia el mensaje (`msg`), no el resto de campos.
+- **El correo no copia las líneas enteras.** De cada línea de error solo va su mensaje (`msg`), recortado; el resto de campos puede llevar datos de los Usuarios.
 - **Sin email, solo el registro.** Con `QUITSIE_ALERT_EMAIL` vacío, lo que encuentra se queda en el registro de la unidad. Para cambiar la dirección: `sudoedit /etc/quitsie/alert.env`; no hace falta reiniciar nada.
 - **Probarlo.** `sudo quitsie-alert-check --test` envía un correo de prueba, y `sudo quitsie-alert-check` hace una comprobación y dice qué ve.
 - Un despliegue que revierte también puede avisar: los errores del binario nuevo quedan en el registro.
