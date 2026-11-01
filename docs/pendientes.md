@@ -125,7 +125,8 @@ Nada de `deploy/` se probó en una VM real ni bajo systemd real: las unidades nu
 
 - Editar un Gasto mientras el Grupo cambia de moneda muestra el aviso de conflicto, no «La moneda del grupo cambió…». No se confirmó por qué; probablemente el cambio de moneda da una versión nueva al Gasto.
 - Abrir un libro por su dirección antes de que termine la primera sincronización dice «Este grupo ya no está en tu lista». No se comprobó si se corrige solo al terminar.
-- Tras reconstruir la réplica por un `410`, los registros que vuelven a la cola salen en la siguiente sincronización, no en la misma.
+- Tras reconstruir la réplica por un `410`, o cuando un pull completo no trae un registro que el servidor había aceptado, ese registro vuelve a la cola pero sale en la siguiente sincronización, no en la misma. Mientras tanto, Registros lo muestra sin sincronizar aunque haya conexión.
+- Dos pestañas abiertas ejecutan dos motores de sincronización sobre la misma IndexedDB sin coordinarse: un pull atrasado de una puede retroceder el cursor o soltar un libro un momento.
 
 **Documentación:**
 
