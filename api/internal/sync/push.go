@@ -39,12 +39,13 @@ type Result struct {
 }
 
 // Push stores a Batch of userID's UnsyncedRecords in one write and returns
-// one Result per record, Expenses first.
+// one Result per record, Expenses first. Records are checked in that order,
+// each against its ledger as the records stored before it left it.
 func Push(ctx context.Context, db *sql.DB, userID string, batch Batch) ([]Result, error) {
 	now := time.Now().UTC()
 	var results []Result
 	_, err := store.Write(ctx, db, func(q *store.Queries, version int64) error {
-		p := pusher{q: q, userID: userID, version: version, now: now, ledgers: make(map[string]*ledgers.Snapshot), rows: make(map[string]int64)}
+		p := pusher{q: q, userID: userID, version: version, now: now, ledgers: make(map[string]*domain.Ledger), rows: make(map[string]int64)}
 		for _, e := range batch.Expenses {
 			r, err := p.expense(ctx, e)
 			if err != nil {
@@ -73,9 +74,11 @@ type pusher struct {
 	userID  string
 	version int64
 	now     time.Time
-	// ledgers caches each ledger of the Batch the User can use; nil for one
-	// they cannot.
-	ledgers map[string]*ledgers.Snapshot
+	// ledgers caches each ledger of the Batch the User can use, as the domain
+	// checks records against it, Balances included; nil for one they cannot.
+	// Each record the Batch stores counts in them, so the next record is
+	// checked against the ledger as it is by then.
+	ledgers map[string]*domain.Ledger
 	// rows counts the rows of each ledger of the Batch, as the records of the
 	// Batch add to them.
 	rows map[string]int64
@@ -100,13 +103,18 @@ func (p pusher) makeRoom(ctx context.Context, ledgerID string, rows int64) (bool
 
 // ledger loads the ledger id, or returns nil if it does not exist, was
 // deleted, or the User has no active Member in it.
-func (p pusher) ledger(ctx context.Context, id string) (*ledgers.Snapshot, error) {
+func (p pusher) ledger(ctx context.Context, id string) (*domain.Ledger, error) {
 	if l, ok := p.ledgers[id]; ok {
 		return l, nil
 	}
-	l, err := usableLedger(ctx, p.q, p.userID, id)
+	snapshot, err := usableLedger(ctx, p.q, p.userID, id)
 	if err != nil {
 		return nil, err
+	}
+	var l *domain.Ledger
+	if snapshot != nil {
+		d := snapshot.Domain()
+		l = &d
 	}
 	p.ledgers[id] = l
 	return l, nil
@@ -140,7 +148,8 @@ func (p pusher) expense(ctx context.Context, e store.ExpenseWithShares) (Result,
 		r.Rejection = &Rejection{ReasonInvalidRecord, err}
 		return r, nil
 	}
-	if err := domain.ValidateExpense(ledger.Domain(), ledgers.Expense(e)); err != nil {
+	expense := ledgers.Expense(e)
+	if err := domain.ValidateExpense(*ledger, expense); err != nil {
 		r.Rejection = rejection(err)
 		return r, nil
 	}
@@ -161,6 +170,7 @@ func (p pusher) expense(ctx context.Context, e store.ExpenseWithShares) (Result,
 	if err := logActivity(ctx, p.q, e.LedgerID, p.userID, activityExpenseCreated, expenseDetails(e.Expense), p.version, p.now); err != nil {
 		return r, err
 	}
+	ledger.AddUp([]domain.Expense{expense}, nil)
 	r.Version = p.version
 	return r, nil
 }
@@ -188,7 +198,8 @@ func (p pusher) settlement(ctx context.Context, s store.Settlement) (Result, err
 		r.Rejection = &Rejection{ReasonIDConflict, errors.New("the id belongs to another settlement")}
 		return r, nil
 	}
-	if err := domain.ValidateSettlement(ledger.Domain(), ledgers.Settlement(s)); err != nil {
+	settlement := ledgers.Settlement(s)
+	if err := domain.ValidateSettlement(*ledger, settlement); err != nil {
 		r.Rejection = rejection(err)
 		return r, nil
 	}
@@ -209,6 +220,7 @@ func (p pusher) settlement(ctx context.Context, s store.Settlement) (Result, err
 	if err := logActivity(ctx, p.q, s.LedgerID, p.userID, activitySettlementCreated, settlementDetails(s), p.version, p.now); err != nil {
 		return r, err
 	}
+	ledger.AddUp(nil, []domain.Settlement{settlement})
 	r.Version = p.version
 	return r, nil
 }

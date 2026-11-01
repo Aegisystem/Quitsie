@@ -22,7 +22,8 @@ const (
 	// ReasonInvalidParticipants: someone is not an active Member, or a former
 	// member's shares changed.
 	ReasonInvalidParticipants Reason = "invalid_participants"
-	// ReasonInvalidAmounts: an amount is out of range or the shares do not add up.
+	// ReasonInvalidAmounts: an amount is out of range, the shares do not add
+	// up, or a Balance would go beyond domain.MaxBalance.
 	ReasonInvalidAmounts Reason = "invalid_amounts"
 	// ReasonIDConflict: the id belongs to another record.
 	ReasonIDConflict Reason = "id_conflict"
@@ -53,7 +54,8 @@ func rejection(err error) *Rejection {
 		errors.Is(err, domain.ErrSameMember), errors.Is(err, domain.ErrFormerMemberChanged):
 		return &Rejection{ReasonInvalidParticipants, err}
 	case errors.Is(err, domain.ErrNonPositiveAmount), errors.Is(err, domain.ErrAmountTooLarge),
-		errors.Is(err, domain.ErrSharesDoNotAddUp), errors.Is(err, domain.ErrMissingShares):
+		errors.Is(err, domain.ErrSharesDoNotAddUp), errors.Is(err, domain.ErrMissingShares),
+		errors.Is(err, domain.ErrBalanceTooLarge):
 		return &Rejection{ReasonInvalidAmounts, err}
 	default:
 		return &Rejection{ReasonInvalidRecord, err}

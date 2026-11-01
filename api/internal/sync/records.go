@@ -88,7 +88,8 @@ func write(ctx context.Context, db *sql.DB, fn func(q *store.Queries, version in
 
 // DeleteExpense makes the Expense id a deleted expense, which no longer counts
 // in Balances. Deleting it again changes nothing. It returns ErrNotFound if
-// userID cannot see it, or a *Rejection if it includes a former member.
+// userID cannot see it, or a *Rejection if it includes a former member or
+// would take a Balance beyond domain.MaxBalance.
 func DeleteExpense(ctx context.Context, db *sql.DB, userID, id string) error {
 	return write(ctx, db, func(q *store.Queries, version int64) error {
 		stored, ledger, err := expenseOf(ctx, q, userID, id)
@@ -111,7 +112,8 @@ func DeleteExpense(ctx context.Context, db *sql.DB, userID, id string) error {
 
 // RestoreExpense makes a deleted Expense count again, with no time limit, and
 // returns it; a live one comes back as it is. It returns ErrNotFound, or a
-// *Rejection if the Expense includes someone who is now a former member.
+// *Rejection if the Expense includes someone who is now a former member or
+// would take a Balance beyond domain.MaxBalance.
 func RestoreExpense(ctx context.Context, db *sql.DB, userID, id string) (store.ExpenseWithShares, error) {
 	var restored store.ExpenseWithShares
 	err := write(ctx, db, func(q *store.Queries, version int64) error {
@@ -163,7 +165,8 @@ func expenseOf(ctx context.Context, q *store.Queries, userID, id string) (store.
 
 // DeleteSettlement makes the Settlement id stop counting in Balances. Deleting
 // it again changes nothing. It returns ErrNotFound if userID cannot see it, or
-// a *Rejection if one of the two people is a former member.
+// a *Rejection if one of the two people is a former member or deleting it
+// would take a Balance beyond domain.MaxBalance.
 func DeleteSettlement(ctx context.Context, db *sql.DB, userID, id string) error {
 	return write(ctx, db, func(q *store.Queries, version int64) error {
 		stored, ledger, err := settlementOf(ctx, q, userID, id)
@@ -186,7 +189,8 @@ func DeleteSettlement(ctx context.Context, db *sql.DB, userID, id string) error 
 
 // RestoreSettlement makes a deleted Settlement count again and returns it; a
 // live one comes back as it is. It returns ErrNotFound, or a *Rejection if
-// one of the two people is now a former member.
+// one of the two people is now a former member or it would take a Balance
+// beyond domain.MaxBalance.
 func RestoreSettlement(ctx context.Context, db *sql.DB, userID, id string) (store.Settlement, error) {
 	var restored store.Settlement
 	err := write(ctx, db, func(q *store.Queries, version int64) error {
