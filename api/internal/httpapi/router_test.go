@@ -75,7 +75,7 @@ func TestRouting(t *testing.T) {
 		{"service worker is revalidated", "/sw.js", http.StatusOK, "no-cache"},
 		{"hashed asset is immutable", "/assets/index-a1b2c.js", http.StatusOK, "public, max-age=31536000, immutable"},
 		{"missing asset is not index.html", "/assets/missing.js", http.StatusNotFound, ""},
-		{"unknown API route is not index.html", "/api/v1/nope", http.StatusNotFound, ""},
+		{"unknown API route is not index.html", "/api/v1/nope", http.StatusNotFound, "no-store"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
