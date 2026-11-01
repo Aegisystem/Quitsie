@@ -1,6 +1,6 @@
 # Pendientes
 
-Este documento dice qué falta para abrir Quitsie al público y en qué orden. Se comprobó el 2026-11-01 contra la rama `claude/exciting-thompson-t1qh2a`, que incluye `main` hasta `b11606e` y aún no está integrada en ella. El vocabulario sigue [CONTEXT.md](../CONTEXT.md). Las decisiones tomadas están en [adr/](adr/) y las reglas en [reglas-de-negocio.md](reglas-de-negocio.md).
+Este documento dice qué falta para abrir Quitsie al público y en qué orden. Se comprobó contra `main` en `927f7f8` el 2026-11-01. El vocabulario sigue [CONTEXT.md](../CONTEXT.md). Las decisiones tomadas están en [adr/](adr/) y las reglas en [reglas-de-negocio.md](reglas-de-negocio.md).
 
 Borra cada punto de aquí cuando quede terminado. Antes de actuar sobre un punto, compruébalo en el código.
 
@@ -8,31 +8,16 @@ Borra cada punto de aquí cuando quede terminado. Antes de actuar sobre un punto
 
 - **API:** las 35 operaciones de `openapi.yaml` están implementadas.
 - **PWA:** usa datos reales: réplica, cola, formularios, Grupos, Amistades, invitaciones y sesiones.
-- **Calidad:** `main` pasa la CI con Go 1.26.10, incluidas las pruebas de punta a punta. Esta rama pasa además, en local, `go vet`, las pruebas de Go, de la web y de punta a punta, el typecheck, el build, `shellcheck`, `actionlint` y `systemd-analyze verify`. `govulncheck` no pudo ejecutarse en la sesión que la escribió porque la red bloquea `vuln.go.dev`; lo ejecuta la CI, y la rama no añade dependencias de Go.
+- **Calidad:** `main` pasa la CI con Go 1.26.10: pruebas de Go, de la web y de punta a punta, `govulncheck`, `shellcheck`, `actionlint` y `systemd-analyze verify`.
 - **Seguridad:** de los 14 hallazgos quedan 3 abiertos (8, 9 y 11), y los tres esperan una decisión del dueño. El detalle está en [revision-seguridad.md](revision-seguridad.md).
 - **Producción:** no hay nada desplegado. GitHub no tiene variables ni secretos, y `.quitsie-wizard.env` no existe, así que el asistente de despliegue nunca se ejecutó.
 
 ## Orden de trabajo
 
-1. Revisar la rama `claude/exciting-thompson-t1qh2a` e integrarla en `main` (sección 0).
-2. Obtener del dueño las decisiones que bloquean (sección 3).
-3. Arreglar los hallazgos de seguridad abiertos (sección 2).
-4. Resolver lo que falta fuera del código (sección 5).
-5. Desplegar y comprobar en producción (sección 4).
-
-## 0. Rama sin revisar
-
-`claude/exciting-thompson-t1qh2a` trae, en commits `Merge …` sobre `e73d9b0` y ya unida con `main`:
-
-- Los arreglos de los hallazgos 5, 6, 13 y 14, con el [ADR 0011](adr/0011-codigos-atados-al-navegador.md).
-- Cabeceras de seguridad, `Cache-Control: no-store` en la API, y HSTS y redirección a HTTPS en producción.
-- El salto de `version_counter` al restaurar un respaldo.
-- `shellcheck`, `actionlint` y `systemd-analyze verify` en la CI, las acciones fijadas por SHA, alertas por correo desde la VM y una prueba semanal de restauración.
-- La deuda menor de interfaz que había en esta lista.
-- «Continuar con Google» solo cuando el servidor lo tiene configurado, cookies con prefijo `__Host-` y los fallos de los manejadores en el log como `ERROR`.
-- Notas para el dueño: [opciones para la IP pública](investigacion/ip-publica.md) y el [inventario de datos personales](datos-personales.md).
-
-Dos cambios afectan a quien ya probó la app: las migraciones `00003` a `00006` se aplican al arrancar, y un código de acceso solo vale en el navegador que lo pidió.
+1. Obtener del dueño las decisiones que bloquean (sección 3).
+2. Arreglar los hallazgos de seguridad abiertos (sección 2).
+3. Resolver lo que falta fuera del código (sección 5).
+4. Desplegar y comprobar en producción (sección 4).
 
 ## 2. Seguridad abierta
 
