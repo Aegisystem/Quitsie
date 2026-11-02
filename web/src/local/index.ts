@@ -3,8 +3,12 @@
 // screens only read from here.
 export {
   clearDevice,
+  handOver,
   type Ledger,
   openReplica,
+  ownerOf,
+  type ParkedRecord,
+  releaseReplica,
   type QueuedRecord,
   type RejectedRecord,
   type RejectionReason,

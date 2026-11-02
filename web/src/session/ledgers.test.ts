@@ -68,6 +68,13 @@ describe('ledger calls', () => {
     expect(syncs()).toBe(0)
   })
 
+  it('readmitting someone removed is a change', async () => {
+    const { calls, requests, syncs } = setup(() => new Response(null, { status: 204 }))
+    expect(await calls.readmitMember('g', 'm')).toEqual({ ok: true, value: undefined })
+    expect(`${requests[0]?.method} ${new URL(requests[0]?.url ?? '').pathname}`).toBe('POST /api/v1/groups/g/members/m/readmit')
+    expect(syncs()).toBe(1)
+  })
+
   it('regenerating an Invite link is a change', async () => {
     const { calls, requests, syncs } = setup(() => json(200, { token: 'new' }))
     await calls.regenerateInviteLink({ id: 'f', kind: 'friendship' })

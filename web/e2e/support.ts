@@ -126,7 +126,13 @@ interface ServerExpense {
 }
 
 // What the server holds for this device's User, whether the device is online or not.
-export async function serverChanges(page: Page): Promise<{ expenses: ServerExpense[]; members: { name: string; userId?: string }[] }> {
+interface ServerMember {
+  name: string
+  userId?: string
+  email?: string
+}
+
+export async function serverChanges(page: Page): Promise<{ expenses: ServerExpense[]; members: ServerMember[] }> {
   const cookies = await page.context().cookies()
   const pull = () =>
     fetch(`${server}/api/v1/sync?since=0`, {
@@ -136,7 +142,7 @@ export async function serverChanges(page: Page): Promise<{ expenses: ServerExpen
   let response = await pull()
   while (response.status === 429) response = await pull()
   expect(response.status).toBe(200)
-  return (await response.json()) as { expenses: ServerExpense[]; members: { name: string; userId?: string }[] }
+  return (await response.json()) as { expenses: ServerExpense[]; members: ServerMember[] }
 }
 
 // How many rows each IndexedDB table of the device holds.

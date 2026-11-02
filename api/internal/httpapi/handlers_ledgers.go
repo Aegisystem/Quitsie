@@ -121,6 +121,15 @@ func cleanPendingMember(m NewPendingMember) (pendingMember, error) {
 	return p, nil
 }
 
+// emailAddedBy is who gives p's email, the only User who sees it again:
+// userID, or nobody when there is no email.
+func (p pendingMember) emailAddedBy(userID string) *string {
+	if p.email == nil {
+		return nil
+	}
+	return &userID
+}
+
 // answer turns err into the operation's problem response when it is a
 // failure; any other error goes back to the strict handler, which logs it
 // and answers 500.
@@ -324,12 +333,13 @@ func (s *Server) CreateGroup(ctx context.Context, req CreateGroupRequestObject) 
 		}
 		for _, p := range pending {
 			err := q.CreateMember(ctx, store.CreateMemberParams{
-				ID:        newID(),
-				LedgerID:  ledger.ID,
-				Name:      p.name,
-				Email:     p.email,
-				Version:   version,
-				CreatedAt: now,
+				ID:           newID(),
+				LedgerID:     ledger.ID,
+				Name:         p.name,
+				Email:        p.email,
+				EmailAddedBy: p.emailAddedBy(user.ID),
+				Version:      version,
+				CreatedAt:    now,
 			})
 			if err != nil {
 				return fmt.Errorf("create pending member: %w", err)
@@ -495,7 +505,18 @@ func (s *Server) DeleteGroup(ctx context.Context, req DeleteGroupRequestObject) 
 
 // --- members ---
 
-func memberResponse(m store.Member) Member {
+// visibleEmail is m's email as viewerID may read it: only a pending Member has
+// one to show, and only to the User who gave it. Everyone else reads the name;
+// the email only serves to suggest the Claim, which the server works out.
+func visibleEmail(m store.Member, viewerID string) *string {
+	if m.UserID != nil || m.EmailAddedBy == nil || *m.EmailAddedBy != viewerID {
+		return nil
+	}
+	return m.Email
+}
+
+// memberResponse is m as viewerID sees it.
+func memberResponse(m store.Member, viewerID string) Member {
 	r := Member{
 		Id:       uuid.MustParse(m.ID),
 		LedgerId: uuid.MustParse(m.LedgerID),
@@ -507,10 +528,7 @@ func memberResponse(m store.Member) Member {
 		id := uuid.MustParse(*m.UserID)
 		r.UserId = &id
 	}
-	// Only a pending Member's email is shown: a linked one's belongs to the User.
-	if m.UserID == nil {
-		r.Email = m.Email
-	}
+	r.Email = visibleEmail(m, viewerID)
 	return r
 }
 
@@ -536,21 +554,23 @@ func (s *Server) AddPendingMember(ctx context.Context, req AddPendingMemberReque
 			return errLimitReached
 		}
 		member = store.Member{
-			ID:        newID(),
-			LedgerID:  snap.Ledger.ID,
-			Name:      pending.name,
-			Email:     pending.email,
-			Status:    "active",
-			Version:   version,
-			CreatedAt: time.Now().UTC(),
+			ID:           newID(),
+			LedgerID:     snap.Ledger.ID,
+			Name:         pending.name,
+			Email:        pending.email,
+			EmailAddedBy: pending.emailAddedBy(user.ID),
+			Status:       "active",
+			Version:      version,
+			CreatedAt:    time.Now().UTC(),
 		}
 		err = q.CreateMember(ctx, store.CreateMemberParams{
-			ID:        member.ID,
-			LedgerID:  member.LedgerID,
-			Name:      member.Name,
-			Email:     member.Email,
-			Version:   version,
-			CreatedAt: member.CreatedAt,
+			ID:           member.ID,
+			LedgerID:     member.LedgerID,
+			Name:         member.Name,
+			Email:        member.Email,
+			EmailAddedBy: member.EmailAddedBy,
+			Version:      version,
+			CreatedAt:    member.CreatedAt,
 		})
 		if err != nil {
 			return fmt.Errorf("add pending member: %w", err)
@@ -560,7 +580,7 @@ func (s *Server) AddPendingMember(ctx context.Context, req AddPendingMemberReque
 	if err != nil {
 		return answer(err, respond)
 	}
-	return AddPendingMember201JSONResponse(memberResponse(member)), nil
+	return AddPendingMember201JSONResponse(memberResponse(member, user.ID)), nil
 }
 
 func (s *Server) UpdatePendingMember(ctx context.Context, req UpdatePendingMemberRequestObject) (UpdatePendingMemberResponseObject, error) {
@@ -588,7 +608,14 @@ func (s *Server) UpdatePendingMember(ctx context.Context, req UpdatePendingMembe
 		if m.UserID != nil {
 			return errMemberNotPending
 		}
-		member, err = q.UpdatePendingMember(ctx, store.UpdatePendingMemberParams{ID: m.ID, Name: pending.name, Email: pending.email, Version: version})
+		email, addedBy := pending.email, pending.emailAddedBy(user.ID)
+		// Whoever cannot see the email cannot send it back: leaving it out only
+		// removes an email the User gave. Sending one makes it theirs.
+		if email == nil && visibleEmail(m, user.ID) == nil {
+			email, addedBy = m.Email, m.EmailAddedBy
+		}
+		params := store.UpdatePendingMemberParams{ID: m.ID, Name: pending.name, Email: email, EmailAddedBy: addedBy, Version: version}
+		member, err = q.UpdatePendingMember(ctx, params)
 		if err != nil {
 			return fmt.Errorf("update pending member: %w", err)
 		}
@@ -597,7 +624,7 @@ func (s *Server) UpdatePendingMember(ctx context.Context, req UpdatePendingMembe
 	if err != nil {
 		return answer(err, respond)
 	}
-	return UpdatePendingMember200JSONResponse(memberResponse(member)), nil
+	return UpdatePendingMember200JSONResponse(memberResponse(member, user.ID)), nil
 }
 
 // memberOf finds the Member memberID in snap, in any status.
@@ -612,14 +639,16 @@ func memberOf(snap ledgers.Snapshot, memberID string) (store.Member, bool) {
 
 // retire turns the active Member m into a former member, who stays on past
 // Expenses but no longer sees the Group. Only with Balance zero: nobody leaves
-// or is removed owing or being owed.
-func retire(ctx context.Context, q *store.Queries, snap ledgers.Snapshot, m store.Member, version int64) error {
+// or is removed owing or being owed. A User someone else removed cannot come
+// back through the Invite link until they are readmitted.
+func retire(ctx context.Context, q *store.Queries, snap ledgers.Snapshot, m store.Member, removed bool, version int64) error {
 	for _, b := range snap.Balances() {
 		if b.MemberID == m.ID {
 			return errNonzeroBalance
 		}
 	}
-	if _, err := q.MarkMemberFormer(ctx, store.MarkMemberFormerParams{ID: m.ID, Version: version}); err != nil {
+	params := store.MarkMemberFormerParams{ID: m.ID, Removed: removed && m.UserID != nil, Version: version}
+	if _, err := q.MarkMemberFormer(ctx, params); err != nil {
 		return fmt.Errorf("mark member former: %w", err)
 	}
 	return nil
@@ -642,7 +671,7 @@ func (s *Server) RemoveMember(ctx context.Context, req RemoveMemberRequestObject
 		if !ok || m.Status != "active" {
 			return errNotFound
 		}
-		if err := retire(ctx, q, snap, m, version); err != nil {
+		if err := retire(ctx, q, snap, m, true, version); err != nil {
 			return err
 		}
 		return activity(ctx, q, snap.Ledger.ID, user.ID, "member_removed", map[string]any{"memberId": m.ID}, version)
@@ -666,7 +695,7 @@ func (s *Server) LeaveGroup(ctx context.Context, req LeaveGroupRequestObject) (L
 		if err != nil {
 			return err
 		}
-		if err := retire(ctx, q, snap, me, version); err != nil {
+		if err := retire(ctx, q, snap, me, false, version); err != nil {
 			return err
 		}
 		return activity(ctx, q, snap.Ledger.ID, user.ID, "member_left", map[string]any{"memberId": me.ID}, version)
@@ -675,6 +704,40 @@ func (s *Server) LeaveGroup(ctx context.Context, req LeaveGroupRequestObject) (L
 		return answer(err, respond)
 	}
 	return LeaveGroup204Response{}, nil
+}
+
+var errMemberNotRemoved = &failure{status: http.StatusConflict, code: ProblemCodeMemberNotRemoved, title: "The Member was not removed from the Group."}
+
+func (s *Server) ReadmitMember(ctx context.Context, req ReadmitMemberRequestObject) (ReadmitMemberResponseObject, error) {
+	respond := func(status int, p Problem) ReadmitMemberResponseObject {
+		return ReadmitMemberdefaultApplicationProblemPlusJSONResponse{Body: p, StatusCode: status}
+	}
+	user, err := currentUser(ctx)
+	if err != nil {
+		return answer(err, respond)
+	}
+	_, err = store.Write(ctx, s.deps.DB, func(q *store.Queries, version int64) error {
+		snap, _, err := open(ctx, q, req.GroupId.String(), "group", user.ID)
+		if err != nil {
+			return err
+		}
+		m, ok := memberOf(snap, req.MemberId.String())
+		if !ok {
+			return errNotFound
+		}
+		// They come back themselves, through the link: nobody is put in a Group.
+		if m.Status != "former" || !m.Removed {
+			return errMemberNotRemoved
+		}
+		if _, err := q.ReadmitMember(ctx, store.ReadmitMemberParams{ID: m.ID, Version: version}); err != nil {
+			return fmt.Errorf("readmit member: %w", err)
+		}
+		return activity(ctx, q, snap.Ledger.ID, user.ID, "member_readmitted", map[string]any{"memberId": m.ID}, version)
+	})
+	if err != nil {
+		return answer(err, respond)
+	}
+	return ReadmitMember204Response{}, nil
 }
 
 // --- invite links ---
@@ -840,6 +903,8 @@ func (s *Server) GetInvite(ctx context.Context, req GetInviteRequestObject) (Get
 		if m, ok := heldBy(snap, user.ID); signedIn && ok && m.Status == "active" {
 			id := uuid.MustParse(m.ID)
 			invite.JoinedMemberId = &id
+		} else if signedIn && ok && m.Removed {
+			invite.Removed = &m.Removed
 		}
 		// A Friend's link is spent once the Friend is linked; only those
 		// already in the Friendship can still open it.
@@ -859,6 +924,7 @@ var (
 	errMemberNotPending = &failure{status: http.StatusConflict, code: ProblemCodeMemberNotPending, title: "The Member is already linked to a User."}
 	errMemberNotClaimed = &failure{status: http.StatusConflict, code: ProblemCodeMemberNotClaimed, title: "The Member is not linked to a User."}
 	errFriendshipExists = &failure{status: http.StatusConflict, code: ProblemCodeFriendshipExists, title: "There is already a Friendship with that User."}
+	errRemoved          = &failure{status: http.StatusConflict, code: ProblemCodeRemovedFromGroup, title: "The User was removed from this Group and must be readmitted first."}
 )
 
 func joinedLedger(m store.Member, kind string) JoinedLedger {
@@ -886,6 +952,9 @@ func (s *Server) JoinGroup(ctx context.Context, req JoinGroupRequestObject) (Joi
 		if held, ok := heldBy(snap, user.ID); ok {
 			if held.Status == "active" {
 				return errAlreadyMember
+			}
+			if held.Removed {
+				return errRemoved
 			}
 			if err := checkRoomForLedger(ctx, q, user.ID); err != nil {
 				return err
@@ -953,8 +1022,11 @@ func (s *Server) ClaimMember(ctx context.Context, req ClaimMemberRequestObject) 
 			return errMemberNotPending
 		}
 		// One Member per User and ledger, former ones included: whoever left
-		// comes back through JoinGroup.
-		if _, held := heldBy(snap, user.ID); held {
+		// comes back through JoinGroup, once readmitted if they were removed.
+		if held, ok := heldBy(snap, user.ID); ok {
+			if held.Status == "former" && held.Removed {
+				return errRemoved
+			}
 			return errAlreadyMember
 		}
 		if err := checkRoomForLedger(ctx, q, user.ID); err != nil {
@@ -995,7 +1067,9 @@ func (s *Server) UndoClaim(ctx context.Context, req UndoClaimRequestObject) (Und
 			return err
 		}
 		m, ok := memberOf(snap, req.MemberId.String())
-		if !ok {
+		// Unlinking a removed User's Member would let them join as a new one
+		// without being readmitted.
+		if !ok || (m.Status == "former" && m.Removed) {
 			return errNotFound
 		}
 		if m.UserID == nil {
@@ -1040,7 +1114,7 @@ func (s *Server) CreateFriendship(ctx context.Context, req CreateFriendshipReque
 		if err != nil {
 			return answer(err, respond)
 		}
-		friend.Name, friend.Email = pending.name, pending.email
+		friend.Name, friend.Email, friend.EmailAddedBy = pending.name, pending.email, pending.emailAddedBy(user.ID)
 	}
 
 	now := time.Now().UTC()

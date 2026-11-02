@@ -40,7 +40,7 @@ var unimplementedRecords = []operationRequest{}
 var (
 	implementedBase    = []string{"GetHealth"}
 	implementedAuth    = []string{"GetLoginMethods", "RequestLoginCode", "VerifyLoginCode", "GetMe", "Logout", "ListSessions", "RevokeSession", "UpdateMe", "DeleteMe", "StartGoogleLogin", "FinishGoogleLogin"}
-	implementedLedgers = []string{"CreateGroup", "UpdateGroup", "DeleteGroup", "AddPendingMember", "UpdatePendingMember", "RemoveMember", "LeaveGroup",
+	implementedLedgers = []string{"CreateGroup", "UpdateGroup", "DeleteGroup", "AddPendingMember", "UpdatePendingMember", "RemoveMember", "LeaveGroup", "ReadmitMember",
 		"GetGroupInviteLink", "RegenerateGroupInviteLink", "GetInvite",
 		"JoinGroup", "ClaimMember", "UndoClaim",
 		"CreateFriendship", "GetFriendInviteLink", "RegenerateFriendInviteLink"}

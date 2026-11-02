@@ -30,7 +30,19 @@ export function pendingMember({ name, email }: Person): NewPendingMember {
   return { name: name.trim(), ...(email.trim() && { email: email.trim() }) }
 }
 
-export function PersonFields({ value, onChange, errors }: { value: Person; onChange: (person: Person) => void; errors?: PersonErrors }) {
+// `emailHint` replaces the usual one, for example when editing a Member whose
+// email, if any, only who gave it can see.
+export function PersonFields({
+  value,
+  onChange,
+  errors,
+  emailHint,
+}: {
+  value: Person
+  onChange: (person: Person) => void
+  errors?: PersonErrors
+  emailHint?: string
+}) {
   const { t } = useTranslation()
   const ids = useId()
   return (
@@ -75,7 +87,7 @@ export function PersonFields({ value, onChange, errors }: { value: Person; onCha
           </p>
         ) : (
           <p className="hint" id={`${ids}-email-hint`}>
-            {t('person.emailHint')}
+            {emailHint ?? t('person.emailHint')}
           </p>
         )}
       </div>

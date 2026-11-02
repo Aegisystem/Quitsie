@@ -32,9 +32,11 @@ Reglas acordadas durante el diseño. El vocabulario sigue [CONTEXT.md](../CONTEX
 - Nadie puede salir ni ser sacado de un Grupo con Saldo distinto de cero; al salir pasa a ser Antiguo Miembro y pierde el acceso al Grupo, aunque su nombre sigue en los Gastos pasados.
 - Cualquier Miembro vinculado puede sacar a otro Miembro, pendiente o vinculado, si su Saldo es cero.
 - Quien fue sacado de un Grupo no puede volver a entrar con el Enlace de invitación hasta que un Miembro vinculado lo readmita. Quien salió por su cuenta sí puede volver con el enlace.
+- Readmitir no devuelve a nadie al Grupo: le permite volver con el Enlace de invitación, y al volver recupera su Antiguo Miembro. Queda en la Actividad.
 - Quien vuelve a un Grupo del que salió recupera su Antiguo Miembro, con todo su historial; no se crea uno nuevo.
 - El nombre y el email de un Miembro pendiente se pueden editar.
 - El email de un Miembro pendiente solo lo ve quien lo añadió; los demás ven su nombre.
+- Quien no ve ese email puede editar el nombre y el email sigue igual. Si escribe otro email, reemplaza al anterior, y desde entonces solo lo ve quien lo escribió.
 - Un Usuario ocupa como máximo un Miembro por Grupo.
 - Un Grupo solo se puede borrar cuando todos los Saldos están en cero.
 - Un Grupo admite 200 Miembros, contando a los Antiguos Miembros. Quien vuelve a un Grupo lleno recupera su Antiguo Miembro igualmente.

@@ -310,6 +310,7 @@ describe('the data on the device', () => {
       log,
       data: {
         admit: async (userId: string) => void log.push(`admit ${userId}`),
+        release: async () => void log.push('release'),
         clear: async () => void log.push('clear'),
         records: async () => ({ unsynced: 2, rejected: 1 }),
       },
@@ -320,7 +321,7 @@ describe('the data on the device', () => {
     const server = fakeServer(routes)
     const { log, data } = device()
     const session = createSession({ client: server.client, storage: memoryStorage(remembered), device: data })
-    return { session, log }
+    return { session, log, client: server.client }
   }
 
   it('goes once the server closed the session, and before the app leaves', async () => {
@@ -343,11 +344,26 @@ describe('the data on the device', () => {
     expect(log).toEqual(['clear'])
   })
 
-  it('stays when the session ends by itself, for the same User to carry on', async () => {
+  // Lost, or closed from another device: whoever holds it must not read the
+  // replica, but the queue waits for its owner (finding 9 of docs/revision-seguridad.md).
+  it('lets the replica go when the session ends by itself, and keeps the queue', async () => {
     const { session, log } = withDevice({ 'GET /me': () => problem(401, 'unauthenticated') }, ana)
     await session.check()
     expect(session.getState().status).toBe('signedOut')
-    expect(log).toEqual([])
+    expect(log).toEqual(['release'])
+  })
+
+  it('does the same on a 401 from any call, such as one from the sync engine', async () => {
+    const { log, client } = withDevice({ 'GET /sync': () => problem(401, 'unauthenticated') }, ana)
+    await client.GET('/sync', { params: { query: { since: 0 } } })
+    expect(log).toEqual(['release'])
+  })
+
+  // Closed before the release could finish, the app tries again when it opens.
+  it('lets the replica go when the app opens with no session', async () => {
+    const { session, log } = withDevice({ 'GET /me': () => problem(401, 'unauthenticated') })
+    await session.check()
+    expect(log).toEqual(['release'])
   })
 
   it('is checked before the app opens for whoever signs in with a code', async () => {

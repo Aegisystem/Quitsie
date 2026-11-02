@@ -1,7 +1,8 @@
 -- name: CreateMember :exec
--- Without a user_id the Member is pending.
-INSERT INTO members (id, ledger_id, user_id, name, email, version, created_at)
-VALUES (?, ?, ?, ?, ?, ?, ?);
+-- Without a user_id the Member is pending. email_added_by is who gave its
+-- email, the only User who sees it.
+INSERT INTO members (id, ledger_id, user_id, name, email, email_added_by, version, created_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?);
 
 -- name: ClaimMember :one
 -- Links an active pending Member to a User, who inherits its history.
@@ -33,9 +34,11 @@ ORDER BY created_at, id;
 
 -- name: MarkMemberFormer :one
 -- A former member keeps appearing in past Expenses but no longer sees the ledger.
+-- removed says whether someone else took them out, which keeps them from
+-- coming back through the Invite link until they are readmitted.
 UPDATE members
-SET status = 'former', version = ?
-WHERE id = ? AND status = 'active'
+SET status = 'former', removed = sqlc.arg(removed), version = sqlc.arg(version)
+WHERE id = sqlc.arg(id) AND status = 'active'
 RETURNING *;
 
 -- name: ListLedgersOfUser :many
@@ -57,8 +60,16 @@ WHERE ledger_id = sqlc.arg(ledger_id)
 -- Whoever comes back to a Group they left gets their former member back,
 -- with its whole history, instead of a new one.
 UPDATE members
-SET status = 'active', version = ?
+SET status = 'active', removed = FALSE, version = ?
 WHERE id = ? AND status = 'former'
+RETURNING *;
+
+-- name: ReadmitMember :one
+-- Lets a removed User come back through the Invite link. They stay a former
+-- member until they do.
+UPDATE members
+SET removed = FALSE, version = ?
+WHERE id = ? AND status = 'former' AND removed
 RETURNING *;
 
 -- name: GetUserSharingAGroup :one
@@ -90,6 +101,6 @@ LIMIT 1;
 -- name: UpdatePendingMember :one
 -- Only a pending Member: a linked one is whoever their User is.
 UPDATE members
-SET name = ?, email = ?, version = ?
+SET name = ?, email = ?, email_added_by = ?, version = ?
 WHERE id = ? AND user_id IS NULL AND status = 'active'
 RETURNING *;

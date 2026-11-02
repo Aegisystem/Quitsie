@@ -880,6 +880,7 @@ func TestPullChangesAnswersNoDebtsForASettledLedger(t *testing.T) {
 	}
 }
 
+// Even to the User who gave it: a linked Member's email is its User's.
 func TestPullChangesShowsOnlyThePendingMembersEmails(t *testing.T) {
 	a := newRecordsAPI(t)
 	tr := a.seedTrip()
@@ -887,13 +888,13 @@ func TestPullChangesShowsOnlyThePendingMembersEmails(t *testing.T) {
 	pending, linked := uuid.NewString(), uuid.NewString()
 	a.write(func(q *store.Queries, version int64) error {
 		err := q.CreateMember(ctx, store.CreateMemberParams{
-			ID: pending, LedgerID: tr.id, Name: "Gabi", Email: ptr("gabi@example.com"), Version: version, CreatedAt: time.Now(),
+			ID: pending, LedgerID: tr.id, Name: "Gabi", Email: ptr("gabi@example.com"), EmailAddedBy: &tr.ana.user.ID, Version: version, CreatedAt: time.Now(),
 		})
 		if err != nil {
 			return err
 		}
 		return q.CreateMember(ctx, store.CreateMemberParams{
-			ID: linked, LedgerID: tr.id, UserID: &tr.eva.user.ID, Name: "Eva", Email: ptr("eva@example.com"), Version: version, CreatedAt: time.Now(),
+			ID: linked, LedgerID: tr.id, UserID: &tr.eva.user.ID, Name: "Eva", Email: ptr("eva@example.com"), EmailAddedBy: &tr.ana.user.ID, Version: version, CreatedAt: time.Now(),
 		})
 	})
 

@@ -74,14 +74,16 @@ type MailSend struct {
 }
 
 type Member struct {
-	ID        string
-	LedgerID  string
-	UserID    *string
-	Name      string
-	Email     *string
-	Status    string
-	Version   int64
-	CreatedAt time.Time
+	ID           string
+	LedgerID     string
+	UserID       *string
+	Name         string
+	Email        *string
+	Status       string
+	Version      int64
+	CreatedAt    time.Time
+	Removed      bool
+	EmailAddedBy *string
 }
 
 type OwedShare struct {

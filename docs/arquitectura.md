@@ -37,6 +37,7 @@ flowchart LR
 - **Service worker** (`vite-plugin-pwa` / Workbox): precarga la interfaz para que abra sin red. No guarda respuestas de la API en caché; los datos viven en la réplica.
 - **Réplica local** en IndexedDB con Dexie. La interfaz siempre lee de la réplica, con o sin conexión, así que se comporta igual en ambos casos.
 - **Cola de Registros sin sincronizar**: Gastos y Liquidaciones creados sin conexión, también en IndexedDB ([ADR 0001](adr/0001-offline-solo-creacion.md)).
+- **Cuando la sesión termina sola** (caduca, se cierra desde otro dispositivo o se borra la cuenta), el primer 401 borra la réplica y deja la cola. Si entra otro Usuario, la cola del anterior se aparta, oculta, bajo su id, y vuelve cuando su dueño entra de nuevo en ese dispositivo. La réplica guarda quién es su dueño, así que el cambio de manos es una sola transacción.
 - **Motor de sincronización**: trae cambios y vacía la cola al abrir la app, al volver a ella, al recuperar la conexión y después de cada cambio. No usa Background Sync porque Safari en iOS no lo soporta.
 - **Operaciones solo en línea** (editar, borrar y crear Grupos, Miembros o Amigos): llaman directamente a la API con TanStack Query y después sincronizan.
 - **`domain/`**: funciones puras de TypeScript que convierten un Método de reparto en Cuotas, reparten el sobrante y calculan Saldos provisionales ([ADR 0003](adr/0003-cliente-calcula-cuotas.md)). Es el código más probado del cliente.
@@ -127,7 +128,7 @@ Un **libro** (`Ledger`) es el contenedor de Gastos y Liquidaciones. Cada Grupo t
 | `known_devices` | hash del token de un navegador en el que el Usuario ya entró, Usuario, último uso |
 | `mail_sends` | correos con códigos enviados en cada hora del último día |
 | `ledgers` | tipo (`group` o `friendship`), nombre, Moneda del grupo (vacía en Amistades), Simplificación de deudas, contador de generación del Enlace de invitación, versión, fecha de borrado |
-| `members` | libro, Usuario vinculado (vacío si está pendiente), nombre, email, estado (`active` o `former`), versión |
+| `members` | libro, Usuario vinculado (vacío si está pendiente), nombre, email y el Usuario que lo escribió, el único que lo ve, estado (`active` o `former`), si lo sacaron del Grupo (hasta que lo readmitan), versión |
 | `expenses` | identificador del cliente, libro, descripción, fecha, moneda, total, Categoría, Método de reparto (para reeditar), autor, versión, fecha de borrado |
 | `paid_shares` | gasto, miembro, importe (Aportes) |
 | `owed_shares` | gasto, miembro, importe (Cuotas) y, para poder reeditar el Gasto, el valor del Participante en el Método de reparto: porcentaje en centésimas (10000 = 100 %), peso o ajuste en la unidad mínima; vacío en Partes iguales y Montos exactos |

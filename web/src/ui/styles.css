@@ -2074,6 +2074,11 @@ select.input,
   margin: 8px 0 28px;
 }
 
+/* Lets a long email end in an ellipsis instead of widening the page. */
+.profile-main {
+  min-width: 0;
+}
+
 .profile-name {
   margin: 0;
   font-size: 1.25rem;

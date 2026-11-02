@@ -251,14 +251,15 @@ func (s *Server) PullChanges(ctx context.Context, req PullChangesRequestObject) 
 	if err != nil {
 		return nil, err
 	}
-	out, err := pulledChanges(c)
+	out, err := pulledChanges(c, user.ID)
 	if err != nil {
 		return nil, err
 	}
 	return PullChanges200JSONResponse(out), nil
 }
 
-func pulledChanges(c sync.Changes) (Changes, error) {
+// pulledChanges is c as userID's replica gets it.
+func pulledChanges(c sync.Changes, userID string) (Changes, error) {
 	out := Changes{
 		Cursor:           c.Cursor,
 		HasMore:          c.HasMore,
@@ -296,7 +297,7 @@ func pulledChanges(c sync.Changes) (Changes, error) {
 		out.Friendships = append(out.Friendships, Friendship{Id: toUUID(l.ID), CreatedAt: l.CreatedAt, Version: l.Version})
 	}
 	for i, m := range c.Members {
-		out.Members[i] = pulledMember(m)
+		out.Members[i] = pulledMember(m, userID)
 	}
 	for i, e := range c.Expenses {
 		out.Expenses[i] = pulledExpense(e)
@@ -317,16 +318,18 @@ func pulledChanges(c sync.Changes) (Changes, error) {
 	return out, nil
 }
 
-func pulledMember(m store.Member) Member {
+func pulledMember(m store.Member, viewerID string) Member {
 	out := Member{Id: toUUID(m.ID), LedgerId: toUUID(m.LedgerID), Name: m.Name, Status: MemberStatus(m.Status), Version: m.Version}
 	if m.UserID != nil {
 		userID := toUUID(*m.UserID)
 		out.UserId = &userID
+		// The flag only counts on a former member (see migration 00007).
+		if m.Status == "former" && m.Removed {
+			out.Removed = &m.Removed
+		}
 		return out
 	}
-	// Only a pending Member shows the email given when adding them; a linked
-	// User's is private.
-	out.Email = m.Email
+	out.Email = visibleEmail(m, viewerID)
 	return out
 }
 

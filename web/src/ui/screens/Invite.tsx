@@ -53,6 +53,8 @@ function InviteChoice({ token, details, reload }: { token: string; details: Invi
   const [picked, setPicked] = useState<string>()
   const { busy, error, run, reset } = useOperation()
   const isFriendship = details.kind === 'friendship'
+  // Removed from the Group: nothing to pick until a Member readmits them.
+  const shut = !!details.joinedMemberId || !!details.removed
   // The email match comes first, but it is only a suggestion: the User picks.
   const pending = [...details.pendingMembers].sort((a, b) => Number(b.id === details.suggestedMemberId) - Number(a.id === details.suggestedMemberId))
   const onlyJoining = !isFriendship && pending.length === 0
@@ -96,7 +98,7 @@ function InviteChoice({ token, details, reload }: { token: string; details: Invi
       back={{ name: 'home' }}
       title={t('invite.title')}
       dock={
-        !details.joinedMemberId && (
+        !shut && (
           <div className="dock-stack">
             {!online && <p className="dock-note">{t('invite.offline')}</p>}
             <button type="button" className="button button-primary button-block" onClick={confirm} disabled={busy} aria-disabled={!choice || !online}>
@@ -121,7 +123,11 @@ function InviteChoice({ token, details, reload }: { token: string; details: Invi
         )}
       </div>
 
-      {details.joinedMemberId ? (
+      {details.removed ? (
+        <p className="notice" role="status">
+          {t('invite.removed')}
+        </p>
+      ) : details.joinedMemberId ? (
         <div className="notice">
           <p>{isFriendship ? t('invite.alreadyFriend') : t('invite.alreadyMember')}</p>
           <a className="button button-secondary" href={href({ name: 'ledger', ledgerId: details.ledgerId })}>
@@ -175,6 +181,7 @@ function InviteChoice({ token, details, reload }: { token: string; details: Invi
             member_not_pending: t('invite.taken'),
             not_found: t('invite.taken'),
             already_member: t('invite.alreadyHeld'),
+            removed_from_group: t('invite.removed'),
             friendship_exists: t('invite.friendshipExists'),
           })}
         </p>
