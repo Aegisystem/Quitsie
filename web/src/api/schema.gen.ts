@@ -274,7 +274,7 @@ export interface paths {
         get?: never;
         /**
          * Replaces the name and the email of a pending Member.
-         * @description The body replaces both values, so leaving `email` out removes it. Former members are not found, like in the other Member operations.
+         * @description The body replaces both values. Leaving `email` out removes an email the caller gave; one somebody else gave, which the caller cannot see, stays as it was. Sending an email makes the caller the only one who sees it. Former members are not found, like in the other Member operations.
          */
         put: operations["updatePendingMember"];
         post?: never;
@@ -764,11 +764,11 @@ export interface components {
             name: string;
             /**
              * Format: email
-             * @description Used only to suggest this Member when someone with that email opens the Invite link.
+             * @description Used only to suggest this Member when someone with that email opens the Invite link. Only the User who gives it sees it again.
              */
             email?: string;
         };
-        /** @description Both values of a pending Member; without `email`, it has none. */
+        /** @description Both values of a pending Member. Without `email`, see `updatePendingMember`. */
         PendingMemberUpdate: {
             name: string;
             /**
@@ -820,7 +820,7 @@ export interface components {
              */
             userId?: string;
             name: string;
-            /** @description Only for pending Members, the email given when adding them. */
+            /** @description Only for pending Members, and only to the User who gave the email; everyone else reads the name. The server still uses it to suggest the Claim. */
             email?: string;
             status: components["schemas"]["MemberStatus"];
             /** @description True for a former member whose User someone removed from the Group: they cannot come back through the Invite link until a Member readmits them (`readmitMember`). */

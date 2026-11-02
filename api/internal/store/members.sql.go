@@ -14,7 +14,7 @@ const claimMember = `-- name: ClaimMember :one
 UPDATE members
 SET user_id = CAST(?1 AS TEXT), version = ?2
 WHERE id = ?3 AND user_id IS NULL AND status = 'active'
-RETURNING id, ledger_id, user_id, name, email, status, version, created_at, removed
+RETURNING id, ledger_id, user_id, name, email, status, version, created_at, removed, email_added_by
 `
 
 type ClaimMemberParams struct {
@@ -37,26 +37,29 @@ func (q *Queries) ClaimMember(ctx context.Context, arg ClaimMemberParams) (Membe
 		&i.Version,
 		&i.CreatedAt,
 		&i.Removed,
+		&i.EmailAddedBy,
 	)
 	return i, err
 }
 
 const createMember = `-- name: CreateMember :exec
-INSERT INTO members (id, ledger_id, user_id, name, email, version, created_at)
-VALUES (?, ?, ?, ?, ?, ?, ?)
+INSERT INTO members (id, ledger_id, user_id, name, email, email_added_by, version, created_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 `
 
 type CreateMemberParams struct {
-	ID        string
-	LedgerID  string
-	UserID    *string
-	Name      string
-	Email     *string
-	Version   int64
-	CreatedAt time.Time
+	ID           string
+	LedgerID     string
+	UserID       *string
+	Name         string
+	Email        *string
+	EmailAddedBy *string
+	Version      int64
+	CreatedAt    time.Time
 }
 
-// Without a user_id the Member is pending.
+// Without a user_id the Member is pending. email_added_by is who gave its
+// email, the only User who sees it.
 func (q *Queries) CreateMember(ctx context.Context, arg CreateMemberParams) error {
 	_, err := q.db.ExecContext(ctx, createMember,
 		arg.ID,
@@ -64,6 +67,7 @@ func (q *Queries) CreateMember(ctx context.Context, arg CreateMemberParams) erro
 		arg.UserID,
 		arg.Name,
 		arg.Email,
+		arg.EmailAddedBy,
 		arg.Version,
 		arg.CreatedAt,
 	)
@@ -71,7 +75,7 @@ func (q *Queries) CreateMember(ctx context.Context, arg CreateMemberParams) erro
 }
 
 const getActiveMemberOfUser = `-- name: GetActiveMemberOfUser :one
-SELECT id, ledger_id, user_id, name, email, status, version, created_at, removed FROM members
+SELECT id, ledger_id, user_id, name, email, status, version, created_at, removed, email_added_by FROM members
 WHERE ledger_id = ?1
   AND user_id = CAST(?2 AS TEXT)
   AND status = 'active'
@@ -96,6 +100,7 @@ func (q *Queries) GetActiveMemberOfUser(ctx context.Context, arg GetActiveMember
 		&i.Version,
 		&i.CreatedAt,
 		&i.Removed,
+		&i.EmailAddedBy,
 	)
 	return i, err
 }
@@ -210,7 +215,7 @@ func (q *Queries) ListLedgersOfUser(ctx context.Context, userID string) ([]Ledge
 }
 
 const listMembers = `-- name: ListMembers :many
-SELECT id, ledger_id, user_id, name, email, status, version, created_at, removed FROM members
+SELECT id, ledger_id, user_id, name, email, status, version, created_at, removed, email_added_by FROM members
 WHERE ledger_id = ?
 ORDER BY created_at, id
 `
@@ -235,6 +240,7 @@ func (q *Queries) ListMembers(ctx context.Context, ledgerID string) ([]Member, e
 			&i.Version,
 			&i.CreatedAt,
 			&i.Removed,
+			&i.EmailAddedBy,
 		); err != nil {
 			return nil, err
 		}
@@ -253,7 +259,7 @@ const markMemberFormer = `-- name: MarkMemberFormer :one
 UPDATE members
 SET status = 'former', removed = ?1, version = ?2
 WHERE id = ?3 AND status = 'active'
-RETURNING id, ledger_id, user_id, name, email, status, version, created_at, removed
+RETURNING id, ledger_id, user_id, name, email, status, version, created_at, removed, email_added_by
 `
 
 type MarkMemberFormerParams struct {
@@ -278,6 +284,7 @@ func (q *Queries) MarkMemberFormer(ctx context.Context, arg MarkMemberFormerPara
 		&i.Version,
 		&i.CreatedAt,
 		&i.Removed,
+		&i.EmailAddedBy,
 	)
 	return i, err
 }
@@ -286,7 +293,7 @@ const reactivateMember = `-- name: ReactivateMember :one
 UPDATE members
 SET status = 'active', removed = FALSE, version = ?
 WHERE id = ? AND status = 'former'
-RETURNING id, ledger_id, user_id, name, email, status, version, created_at, removed
+RETURNING id, ledger_id, user_id, name, email, status, version, created_at, removed, email_added_by
 `
 
 type ReactivateMemberParams struct {
@@ -309,6 +316,7 @@ func (q *Queries) ReactivateMember(ctx context.Context, arg ReactivateMemberPara
 		&i.Version,
 		&i.CreatedAt,
 		&i.Removed,
+		&i.EmailAddedBy,
 	)
 	return i, err
 }
@@ -317,7 +325,7 @@ const readmitMember = `-- name: ReadmitMember :one
 UPDATE members
 SET removed = FALSE, version = ?
 WHERE id = ? AND status = 'former' AND removed
-RETURNING id, ledger_id, user_id, name, email, status, version, created_at, removed
+RETURNING id, ledger_id, user_id, name, email, status, version, created_at, removed, email_added_by
 `
 
 type ReadmitMemberParams struct {
@@ -340,6 +348,7 @@ func (q *Queries) ReadmitMember(ctx context.Context, arg ReadmitMemberParams) (M
 		&i.Version,
 		&i.CreatedAt,
 		&i.Removed,
+		&i.EmailAddedBy,
 	)
 	return i, err
 }
@@ -348,7 +357,7 @@ const unclaimMember = `-- name: UnclaimMember :one
 UPDATE members
 SET user_id = NULL, version = ?
 WHERE id = ? AND user_id IS NOT NULL
-RETURNING id, ledger_id, user_id, name, email, status, version, created_at, removed
+RETURNING id, ledger_id, user_id, name, email, status, version, created_at, removed, email_added_by
 `
 
 type UnclaimMemberParams struct {
@@ -370,6 +379,7 @@ func (q *Queries) UnclaimMember(ctx context.Context, arg UnclaimMemberParams) (M
 		&i.Version,
 		&i.CreatedAt,
 		&i.Removed,
+		&i.EmailAddedBy,
 	)
 	return i, err
 }
@@ -395,16 +405,17 @@ func (q *Queries) UnlinkMembersOfUser(ctx context.Context, arg UnlinkMembersOfUs
 
 const updatePendingMember = `-- name: UpdatePendingMember :one
 UPDATE members
-SET name = ?, email = ?, version = ?
+SET name = ?, email = ?, email_added_by = ?, version = ?
 WHERE id = ? AND user_id IS NULL AND status = 'active'
-RETURNING id, ledger_id, user_id, name, email, status, version, created_at, removed
+RETURNING id, ledger_id, user_id, name, email, status, version, created_at, removed, email_added_by
 `
 
 type UpdatePendingMemberParams struct {
-	Name    string
-	Email   *string
-	Version int64
-	ID      string
+	Name         string
+	Email        *string
+	EmailAddedBy *string
+	Version      int64
+	ID           string
 }
 
 // Only a pending Member: a linked one is whoever their User is.
@@ -412,6 +423,7 @@ func (q *Queries) UpdatePendingMember(ctx context.Context, arg UpdatePendingMemb
 	row := q.db.QueryRowContext(ctx, updatePendingMember,
 		arg.Name,
 		arg.Email,
+		arg.EmailAddedBy,
 		arg.Version,
 		arg.ID,
 	)
@@ -426,6 +438,7 @@ func (q *Queries) UpdatePendingMember(ctx context.Context, arg UpdatePendingMemb
 		&i.Version,
 		&i.CreatedAt,
 		&i.Removed,
+		&i.EmailAddedBy,
 	)
 	return i, err
 }

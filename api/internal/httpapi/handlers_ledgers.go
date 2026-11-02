@@ -121,6 +121,15 @@ func cleanPendingMember(m NewPendingMember) (pendingMember, error) {
 	return p, nil
 }
 
+// emailAddedBy is who gives p's email, the only User who sees it again:
+// userID, or nobody when there is no email.
+func (p pendingMember) emailAddedBy(userID string) *string {
+	if p.email == nil {
+		return nil
+	}
+	return &userID
+}
+
 // answer turns err into the operation's problem response when it is a
 // failure; any other error goes back to the strict handler, which logs it
 // and answers 500.
@@ -324,12 +333,13 @@ func (s *Server) CreateGroup(ctx context.Context, req CreateGroupRequestObject) 
 		}
 		for _, p := range pending {
 			err := q.CreateMember(ctx, store.CreateMemberParams{
-				ID:        newID(),
-				LedgerID:  ledger.ID,
-				Name:      p.name,
-				Email:     p.email,
-				Version:   version,
-				CreatedAt: now,
+				ID:           newID(),
+				LedgerID:     ledger.ID,
+				Name:         p.name,
+				Email:        p.email,
+				EmailAddedBy: p.emailAddedBy(user.ID),
+				Version:      version,
+				CreatedAt:    now,
 			})
 			if err != nil {
 				return fmt.Errorf("create pending member: %w", err)
@@ -495,7 +505,18 @@ func (s *Server) DeleteGroup(ctx context.Context, req DeleteGroupRequestObject) 
 
 // --- members ---
 
-func memberResponse(m store.Member) Member {
+// visibleEmail is m's email as viewerID may read it: only a pending Member has
+// one to show, and only to the User who gave it. Everyone else reads the name;
+// the email only serves to suggest the Claim, which the server works out.
+func visibleEmail(m store.Member, viewerID string) *string {
+	if m.UserID != nil || m.EmailAddedBy == nil || *m.EmailAddedBy != viewerID {
+		return nil
+	}
+	return m.Email
+}
+
+// memberResponse is m as viewerID sees it.
+func memberResponse(m store.Member, viewerID string) Member {
 	r := Member{
 		Id:       uuid.MustParse(m.ID),
 		LedgerId: uuid.MustParse(m.LedgerID),
@@ -507,10 +528,7 @@ func memberResponse(m store.Member) Member {
 		id := uuid.MustParse(*m.UserID)
 		r.UserId = &id
 	}
-	// Only a pending Member's email is shown: a linked one's belongs to the User.
-	if m.UserID == nil {
-		r.Email = m.Email
-	}
+	r.Email = visibleEmail(m, viewerID)
 	return r
 }
 
@@ -536,21 +554,23 @@ func (s *Server) AddPendingMember(ctx context.Context, req AddPendingMemberReque
 			return errLimitReached
 		}
 		member = store.Member{
-			ID:        newID(),
-			LedgerID:  snap.Ledger.ID,
-			Name:      pending.name,
-			Email:     pending.email,
-			Status:    "active",
-			Version:   version,
-			CreatedAt: time.Now().UTC(),
+			ID:           newID(),
+			LedgerID:     snap.Ledger.ID,
+			Name:         pending.name,
+			Email:        pending.email,
+			EmailAddedBy: pending.emailAddedBy(user.ID),
+			Status:       "active",
+			Version:      version,
+			CreatedAt:    time.Now().UTC(),
 		}
 		err = q.CreateMember(ctx, store.CreateMemberParams{
-			ID:        member.ID,
-			LedgerID:  member.LedgerID,
-			Name:      member.Name,
-			Email:     member.Email,
-			Version:   version,
-			CreatedAt: member.CreatedAt,
+			ID:           member.ID,
+			LedgerID:     member.LedgerID,
+			Name:         member.Name,
+			Email:        member.Email,
+			EmailAddedBy: member.EmailAddedBy,
+			Version:      version,
+			CreatedAt:    member.CreatedAt,
 		})
 		if err != nil {
 			return fmt.Errorf("add pending member: %w", err)
@@ -560,7 +580,7 @@ func (s *Server) AddPendingMember(ctx context.Context, req AddPendingMemberReque
 	if err != nil {
 		return answer(err, respond)
 	}
-	return AddPendingMember201JSONResponse(memberResponse(member)), nil
+	return AddPendingMember201JSONResponse(memberResponse(member, user.ID)), nil
 }
 
 func (s *Server) UpdatePendingMember(ctx context.Context, req UpdatePendingMemberRequestObject) (UpdatePendingMemberResponseObject, error) {
@@ -588,7 +608,14 @@ func (s *Server) UpdatePendingMember(ctx context.Context, req UpdatePendingMembe
 		if m.UserID != nil {
 			return errMemberNotPending
 		}
-		member, err = q.UpdatePendingMember(ctx, store.UpdatePendingMemberParams{ID: m.ID, Name: pending.name, Email: pending.email, Version: version})
+		email, addedBy := pending.email, pending.emailAddedBy(user.ID)
+		// Whoever cannot see the email cannot send it back: leaving it out only
+		// removes an email the User gave. Sending one makes it theirs.
+		if email == nil && visibleEmail(m, user.ID) == nil {
+			email, addedBy = m.Email, m.EmailAddedBy
+		}
+		params := store.UpdatePendingMemberParams{ID: m.ID, Name: pending.name, Email: email, EmailAddedBy: addedBy, Version: version}
+		member, err = q.UpdatePendingMember(ctx, params)
 		if err != nil {
 			return fmt.Errorf("update pending member: %w", err)
 		}
@@ -597,7 +624,7 @@ func (s *Server) UpdatePendingMember(ctx context.Context, req UpdatePendingMembe
 	if err != nil {
 		return answer(err, respond)
 	}
-	return UpdatePendingMember200JSONResponse(memberResponse(member)), nil
+	return UpdatePendingMember200JSONResponse(memberResponse(member, user.ID)), nil
 }
 
 // memberOf finds the Member memberID in snap, in any status.
@@ -1087,7 +1114,7 @@ func (s *Server) CreateFriendship(ctx context.Context, req CreateFriendshipReque
 		if err != nil {
 			return answer(err, respond)
 		}
-		friend.Name, friend.Email = pending.name, pending.email
+		friend.Name, friend.Email, friend.EmailAddedBy = pending.name, pending.email, pending.emailAddedBy(user.ID)
 	}
 
 	now := time.Now().UTC()

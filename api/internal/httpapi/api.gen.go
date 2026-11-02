@@ -789,7 +789,7 @@ type LoginResult struct {
 
 // Member A person's place in a Group, or one of the two sides of a Friendship (the Friend is a Member too). Without `userId` it is a pending Member or a pending Friend.
 type Member struct {
-	// Email Only for pending Members, the email given when adding them.
+	// Email Only for pending Members, and only to the User who gave the email; everyone else reads the name. The server still uses it to suggest the Claim.
 	Email    *string            `json:"email,omitempty"`
 	Id       openapi_types.UUID `json:"id"`
 	LedgerId openapi_types.UUID `json:"ledgerId"`
@@ -874,7 +874,7 @@ type NewGroup struct {
 
 // NewPendingMember defines model for NewPendingMember.
 type NewPendingMember struct {
-	// Email Used only to suggest this Member when someone with that email opens the Invite link.
+	// Email Used only to suggest this Member when someone with that email opens the Invite link. Only the User who gives it sees it again.
 	Email *openapi_types.Email `json:"email,omitempty"`
 	Name  string               `json:"name"`
 }
@@ -923,7 +923,7 @@ type PaidShare struct {
 	MemberId openapi_types.UUID `json:"memberId"`
 }
 
-// PendingMemberUpdate Both values of a pending Member; without `email`, it has none.
+// PendingMemberUpdate Both values of a pending Member. Without `email`, see `updatePendingMember`.
 type PendingMemberUpdate struct {
 	// Email Used only to suggest this Member when someone with that email opens the Invite link.
 	Email *openapi_types.Email `json:"email,omitempty"`

@@ -1,7 +1,8 @@
 -- name: CreateMember :exec
--- Without a user_id the Member is pending.
-INSERT INTO members (id, ledger_id, user_id, name, email, version, created_at)
-VALUES (?, ?, ?, ?, ?, ?, ?);
+-- Without a user_id the Member is pending. email_added_by is who gave its
+-- email, the only User who sees it.
+INSERT INTO members (id, ledger_id, user_id, name, email, email_added_by, version, created_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?);
 
 -- name: ClaimMember :one
 -- Links an active pending Member to a User, who inherits its history.
@@ -100,6 +101,6 @@ LIMIT 1;
 -- name: UpdatePendingMember :one
 -- Only a pending Member: a linked one is whoever their User is.
 UPDATE members
-SET name = ?, email = ?, version = ?
+SET name = ?, email = ?, email_added_by = ?, version = ?
 WHERE id = ? AND user_id IS NULL AND status = 'active'
 RETURNING *;

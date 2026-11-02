@@ -546,7 +546,8 @@ export const es = {
     name: 'Nombre',
     nameRequired: 'Escribe un nombre.',
     email: 'Email (opcional)',
-    emailHint: 'Solo sirve para sugerirle su lugar cuando abra el enlace de invitación. Nunca vincula a nadie solo.',
+    emailHint: 'Solo tú verás este email. Sirve para sugerirle su lugar cuando abra el enlace de invitación, y nunca vincula a nadie solo.',
+    emailHiddenHint: 'Si alguien más le puso un email, solo esa persona lo ve, y sigue ahí si dejas esto vacío. Si escribes uno, reemplaza al anterior y solo lo verás tú.',
     emailInvalid: 'Escribe un email válido o déjalo vacío.',
   },
   newGroup: {

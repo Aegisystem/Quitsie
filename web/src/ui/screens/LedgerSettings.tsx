@@ -357,6 +357,7 @@ function MemberRow({ groupId, member, mine, balances }: { groupId: string; membe
                   setErrors(undefined)
                 }}
                 errors={errors}
+                emailHint={member.email ? undefined : t('person.emailHiddenHint')}
               />
               <div className="button-row">
                 <button type="submit" className="button button-primary button-small" disabled={busy || !online} title={offlineTitle}>

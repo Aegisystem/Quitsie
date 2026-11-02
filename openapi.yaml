@@ -553,8 +553,11 @@ paths:
       operationId: updatePendingMember
       summary: Replaces the name and the email of a pending Member.
       description: >
-        The body replaces both values, so leaving `email` out removes it.
-        Former members are not found, like in the other Member operations.
+        The body replaces both values. Leaving `email` out removes an email
+        the caller gave; one somebody else gave, which the caller cannot see,
+        stays as it was. Sending an email makes the caller the only one who
+        sees it. Former members are not found, like in the other Member
+        operations.
       tags: [groups]
       requestBody:
         required: true
@@ -1594,12 +1597,14 @@ components:
           type: string
           format: email
           maxLength: 254
-          description: Used only to suggest this Member when someone with that email opens the Invite link.
+          description: >
+            Used only to suggest this Member when someone with that email
+            opens the Invite link. Only the User who gives it sees it again.
 
     PendingMemberUpdate:
       type: object
       required: [name]
-      description: Both values of a pending Member; without `email`, it has none.
+      description: Both values of a pending Member. Without `email`, see `updatePendingMember`.
       properties:
         name:
           type: string
@@ -1672,7 +1677,10 @@ components:
           type: string
         email:
           type: string
-          description: Only for pending Members, the email given when adding them.
+          description: >
+            Only for pending Members, and only to the User who gave the
+            email; everyone else reads the name. The server still uses it to
+            suggest the Claim.
         status:
           $ref: "#/components/schemas/MemberStatus"
         removed:
