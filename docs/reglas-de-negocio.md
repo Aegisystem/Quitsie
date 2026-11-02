@@ -31,8 +31,10 @@ Reglas acordadas durante el diseño. El vocabulario sigue [CONTEXT.md](../CONTEX
 - La Simplificación de deudas viene activada por defecto.
 - Nadie puede salir ni ser sacado de un Grupo con Saldo distinto de cero; al salir pasa a ser Antiguo Miembro y pierde el acceso al Grupo, aunque su nombre sigue en los Gastos pasados.
 - Cualquier Miembro vinculado puede sacar a otro Miembro, pendiente o vinculado, si su Saldo es cero.
+- Quien fue sacado de un Grupo no puede volver a entrar con el Enlace de invitación hasta que un Miembro vinculado lo readmita. Quien salió por su cuenta sí puede volver con el enlace.
 - Quien vuelve a un Grupo del que salió recupera su Antiguo Miembro, con todo su historial; no se crea uno nuevo.
 - El nombre y el email de un Miembro pendiente se pueden editar.
+- El email de un Miembro pendiente solo lo ve quien lo añadió; los demás ven su nombre.
 - Un Usuario ocupa como máximo un Miembro por Grupo.
 - Un Grupo solo se puede borrar cuando todos los Saldos están en cero.
 - Un Grupo admite 200 Miembros, contando a los Antiguos Miembros. Quien vuelve a un Grupo lleno recupera su Antiguo Miembro igualmente.
@@ -95,3 +97,4 @@ Reglas acordadas durante el diseño. El vocabulario sigue [CONTEXT.md](../CONTEX
 - Se pueden crear Gastos y Liquidaciones; no Grupos, Miembros ni Amigos (ver [ADR 0001](adr/0001-offline-solo-creacion.md)).
 - Un Registro rechazado nunca se descarta en silencio.
 - Al cerrar sesión se borran del dispositivo la réplica y la cola. Si hay registros sin sincronizar o rechazados, la aplicación avisa antes y permite cancelar.
+- Si la sesión termina sola y entra otro Usuario en el dispositivo, se borra la réplica, pero los registros sin sincronizar del anterior se guardan aparte, ocultos para el nuevo, y se envían cuando su dueño vuelva a entrar.

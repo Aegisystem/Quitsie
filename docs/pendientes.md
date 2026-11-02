@@ -25,9 +25,9 @@ Cada hallazgo tiene su ataque y su arreglo en [revision-seguridad.md](revision-s
 
 | # | Gravedad | Trabajo | Requisito |
 | --- | --- | --- | --- |
-| 9 | Media | Borrar la réplica ante un 401 y conservar solo la cola | Decisión 3 |
-| 8 | Media | Regenerar el enlace al sacar a alguien, o exigir readmisión | Decisión 1 |
-| 11 | Baja | Mostrar el email de un pendiente solo a quien lo añadió, o enmascarado | Decisión 2 |
+| 9 | Media | Borrar la réplica ante un 401 y conservar la cola de cada Usuario, oculta para los demás | Decidido: guardarla por Usuario |
+| 8 | Media | Exigir que un Miembro readmita a quien fue sacado antes de que vuelva por el enlace | Decidido: readmisión |
+| 11 | Baja | Mostrar el email de un pendiente solo a quien lo añadió | Decidido: solo quien lo añadió |
 
 ## 3. Decisiones del dueño
 
@@ -37,9 +37,9 @@ Ningún agente debe tomar estas decisiones por su cuenta.
 
 | # | Decisión | Opciones |
 | --- | --- | --- |
-| 1 | Qué pasa con quien fue sacado de un Grupo | Regenerar el enlace, lo que invalida los ya enviados, o exigir que otro Miembro lo readmita |
-| 2 | Quién ve el email de un Miembro pendiente | Quien lo añadió, enmascarado, o todos, como ahora |
-| 3 | Qué pasa con la cola si la sesión termina sola y entra otro Usuario | Vaciarla sin aviso, como ahora, o conservarla por Usuario |
+| 1 | ~~Qué pasa con quien fue sacado de un Grupo~~ | Decidido el 2026-11-02: exigir readmisión |
+| 2 | ~~Quién ve el email de un Miembro pendiente~~ | Decidido el 2026-11-02: solo quien lo añadió |
+| 3 | ~~Qué pasa con la cola si la sesión termina sola y entra otro Usuario~~ | Decidido el 2026-11-02: guardarla por Usuario |
 | 4 | Dominio principal | El asistente propone `quitsie.com`, y `quitsie.app` redirige |
 | 5 | IP pública de la VM | Aceptar unos 3,65 USD al mes, o cambiar de proveedor con un ADR nuevo. El ADR 0007 dice 0 USD. Hay una tercera vía: una VM con IPv6 externa y sin IPv4 externa, a 0 USD, si R2 y Resend responden por IPv6. Ver [opciones](investigacion/ip-publica.md) |
 | 6 | Retención de respaldos | Hoy son 7 días, y un dato borrado sigue en ellos ese tiempo |
