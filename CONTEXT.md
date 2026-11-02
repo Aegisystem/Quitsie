@@ -44,6 +44,10 @@ Acción por la que un Usuario se vincula a un Miembro pendiente o a un Amigo pen
 _En código_: `Claim`
 _Evitar_: fusionar, aceptar invitación
 
+**Readmitir**:
+Acción por la que un Miembro vinculado deja volver con el Enlace de invitación a quien otro Miembro sacó del Grupo. No lo devuelve al Grupo: vuelve esa persona, y recupera su Antiguo Miembro.
+_En código_: readmit (`readmitMember`; el Miembro sacado lleva `removed`)
+
 **Enlace de invitación**:
 Enlace revocable con el que una persona entra a través de otra. El de un Grupo permite Reclamar uno de sus Miembros pendientes o unirse como Miembro nuevo; el de un Amigo pendiente solo permite Reclamarlo.
 _En código_: `InviteLink`

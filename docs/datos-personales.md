@@ -19,7 +19,7 @@ No es la política de privacidad. Lo que solo puede decidir o firmar el dueño e
 | Códigos de acceso: email, hash del código, hash de la cookie de flujo, intentos | `login_codes` | 10 minutos. La fila caducada se borra con la siguiente petición de código de cualquiera |
 | Códigos equivocados: hash del email o del dispositivo, cuántos y hasta cuándo | `login_failures` | 24 horas, y se borra con la siguiente petición de código |
 | Dispositivos conocidos: hash del token, Usuario, alta y último uso | `known_devices` | Un año sin entrar desde ese navegador. La fila caducada se borra con el siguiente inicio de sesión de cualquiera. Como mucho 20 por Usuario. Se borran con la cuenta |
-| Nombre y email de cada Miembro o Amigo; nombre de cada Grupo | `members`, `ledgers` | Lo que dure el libro. Al borrar una cuenta, sus Miembros vuelven a ser pendientes, conservan el nombre y pierden el email |
+| Nombre y email de cada Miembro o Amigo, y quién escribió ese email; nombre de cada Grupo | `members`, `ledgers` | Lo que dure el libro. El email de un pendiente solo lo ve quien lo escribió. Al borrar una cuenta, sus Miembros vuelven a ser pendientes, conservan el nombre y pierden el email |
 | Gastos (descripción, fecha, importes, Categoría, autor), Liquidaciones y Actividades | `expenses`, `paid_shares`, `owed_shares`, `settlements`, `activities` | Lo que dure el libro. Un Gasto borrado se puede restaurar sin límite de tiempo, así que no desaparece |
 | Correos enviados por hora, sin direcciones | `mail_sends` | 24 horas |
 
@@ -42,8 +42,8 @@ En producción no escribe correos ni códigos: el servidor no arranca con `QUITS
 
 | Dato | Dónde | Cuánto dura |
 | --- | --- | --- |
-| Réplica de todos los libros del Usuario, con nombres, emails de pendientes, Gastos y Actividades | IndexedDB | Hasta cerrar sesión o entrar como otro Usuario. Tras cerrar la sesión desde otro dispositivo sigue allí (hallazgo 9 de la [revisión](revision-seguridad.md), abierto) |
-| Registros sin sincronizar y rechazados | IndexedDB | Hasta que se envían, se corrigen o se descartan |
+| Réplica de todos los libros del Usuario, con nombres, los emails de pendientes que escribió, Gastos y Actividades | IndexedDB | Hasta cerrar sesión, entrar como otro Usuario o que la sesión termine sola (caduca, se cierra desde otro dispositivo o se borra la cuenta). En ese último caso se borra cuando el dispositivo vuelve a tener conexión; mientras no la tenga, sigue allí |
+| Registros sin sincronizar y rechazados | IndexedDB | Hasta que se envían, se corrigen o se descartan. Si la sesión termina sola y entra otro Usuario, quedan apartados y ocultos hasta que su dueño vuelva a entrar en ese dispositivo. Los de una cuenta borrada se quedan allí sin enviarse |
 | El Usuario actual (id, email, nombre, Moneda preferida), para abrir sin conexión | `localStorage` | Hasta cerrar sesión |
 | Cookie de sesión | Cookie `HttpOnly` | 90 días sin uso, o hasta cerrar sesión |
 | Cookie de flujo del código | Cookie `HttpOnly` | 10 minutos |
@@ -76,6 +76,6 @@ No hay forma de **exportar** los datos propios, ni de que una persona sin cuenta
 - Quién es el responsable de los datos y cómo se le contacta.
 - Qué leyes aplican según dónde viva el dueño y dónde estén los Usuarios. En Colombia, la Ley 1581 de 2012; en la Unión Europea, el RGPD si se ofrece allí.
 - La base legal de cada tratamiento y el aviso de que los datos salen del país (Estados Unidos y la red de Cloudflare).
-- Cómo se informa a las personas sin cuenta cuyos datos escribe otro Usuario. Relacionado con la decisión 2 de [pendientes](pendientes.md#3-decisiones-del-dueño).
+- Cómo se informa a las personas sin cuenta cuyos datos escribe otro Usuario. Su email solo lo ve quien lo escribió.
 - El plazo de los respaldos (decisión 6) y si hace falta exportar datos.
 - Los términos de uso: que la app no mueve dinero, y qué pasa con una cuenta que abusa de los límites.

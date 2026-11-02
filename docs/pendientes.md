@@ -1,33 +1,26 @@
 # Pendientes
 
-Este documento dice qué falta para abrir Quitsie al público y en qué orden. Se comprobó contra `main` en `927f7f8` el 2026-11-01. El vocabulario sigue [CONTEXT.md](../CONTEXT.md). Las decisiones tomadas están en [adr/](adr/) y las reglas en [reglas-de-negocio.md](reglas-de-negocio.md).
+Este documento dice qué falta para abrir Quitsie al público y en qué orden. Se comprobó contra `main` en `927f7f8` el 2026-11-01, y la seguridad se actualizó el 2026-11-02. El vocabulario sigue [CONTEXT.md](../CONTEXT.md). Las decisiones tomadas están en [adr/](adr/) y las reglas en [reglas-de-negocio.md](reglas-de-negocio.md).
 
 Borra cada punto de aquí cuando quede terminado. Antes de actuar sobre un punto, compruébalo en el código.
 
 ## Estado actual
 
-- **API:** las 35 operaciones de `openapi.yaml` están implementadas.
+- **API:** las 36 operaciones de `openapi.yaml` están implementadas.
 - **PWA:** usa datos reales: réplica, cola, formularios, Grupos, Amistades, invitaciones y sesiones.
 - **Calidad:** `main` pasa la CI con Go 1.26.10: pruebas de Go, de la web y de punta a punta, `govulncheck`, `shellcheck`, `actionlint` y `systemd-analyze verify`.
-- **Seguridad:** de los 14 hallazgos quedan 3 abiertos (8, 9 y 11), y los tres esperan una decisión del dueño. El detalle está en [revision-seguridad.md](revision-seguridad.md).
+- **Seguridad:** los 14 hallazgos están arreglados. El detalle está en [revision-seguridad.md](revision-seguridad.md).
 - **Producción:** no hay nada desplegado. GitHub no tiene variables ni secretos, y `.quitsie-wizard.env` no existe, así que el asistente de despliegue nunca se ejecutó.
 
 ## Orden de trabajo
 
 1. Obtener del dueño las decisiones que bloquean (sección 3).
-2. Arreglar los hallazgos de seguridad abiertos (sección 2).
-3. Resolver lo que falta fuera del código (sección 5).
-4. Desplegar y comprobar en producción (sección 4).
+2. Resolver lo que falta fuera del código (sección 5).
+3. Desplegar y comprobar en producción (sección 4).
 
-## 2. Seguridad abierta
+## 2. Seguridad
 
-Cada hallazgo tiene su ataque y su arreglo en [revision-seguridad.md](revision-seguridad.md). Al arreglar uno, actualiza allí su estado y lo medido.
-
-| # | Gravedad | Trabajo | Requisito |
-| --- | --- | --- | --- |
-| 9 | Media | Borrar la réplica ante un 401 y conservar la cola de cada Usuario, oculta para los demás | Decidido: guardarla por Usuario |
-| 8 | Media | Exigir que un Miembro readmita a quien fue sacado antes de que vuelva por el enlace | Decidido: readmisión |
-| 11 | Baja | Mostrar el email de un pendiente solo a quien lo añadió | Decidido: solo quien lo añadió |
+Los 14 hallazgos de [revision-seguridad.md](revision-seguridad.md) están arreglados. Quedan las comprobaciones que solo se pueden hacer al desplegar (sección 4).
 
 ## 3. Decisiones del dueño
 
@@ -37,9 +30,6 @@ Ningún agente debe tomar estas decisiones por su cuenta.
 
 | # | Decisión | Opciones |
 | --- | --- | --- |
-| 1 | ~~Qué pasa con quien fue sacado de un Grupo~~ | Decidido el 2026-11-02: exigir readmisión |
-| 2 | ~~Quién ve el email de un Miembro pendiente~~ | Decidido el 2026-11-02: solo quien lo añadió |
-| 3 | ~~Qué pasa con la cola si la sesión termina sola y entra otro Usuario~~ | Decidido el 2026-11-02: guardarla por Usuario |
 | 4 | Dominio principal | El asistente propone `quitsie.com`, y `quitsie.app` redirige |
 | 5 | IP pública de la VM | Aceptar unos 3,65 USD al mes, o cambiar de proveedor con un ADR nuevo. El ADR 0007 dice 0 USD. Hay una tercera vía: una VM con IPv6 externa y sin IPv4 externa, a 0 USD, si R2 y Resend responden por IPv6. Ver [opciones](investigacion/ip-publica.md) |
 | 6 | Retención de respaldos | Hoy son 7 días, y un dato borrado sigue en ellos ese tiempo |
@@ -95,6 +85,7 @@ Nada de `deploy/` se probó en una VM real ni bajo systemd real: las unidades nu
 - Abrir un libro por su dirección antes de que termine la primera sincronización dice «Este grupo ya no está en tu lista». No se comprobó si se corrige solo al terminar.
 - Tras reconstruir la réplica por un `410`, o cuando un pull completo no trae un registro que el servidor había aceptado, ese registro vuelve a la cola pero sale en la siguiente sincronización, no en la misma. Mientras tanto, Registros lo muestra sin sincronizar aunque haya conexión.
 - Dos pestañas abiertas ejecutan dos motores de sincronización sobre la misma IndexedDB sin coordinarse: un pull atrasado de una puede retroceder el cursor o soltar un libro un momento.
+- Si alguien borra su cuenta desde otro dispositivo y en este entra otro Usuario, los registros sin sincronizar de la cuenta borrada quedan apartados y ocultos en IndexedDB para siempre: nadie puede enviarlos ni descartarlos.
 
 **Documentación:**
 
@@ -144,9 +135,11 @@ Los códigos de acceso salen en el log. `curl` no guarda las cookies `Secure` po
 
 **Trampas conocidas:**
 
-- `updatePendingMember` es `PUT`. Con `PATCH` responde 404, lo que en una prueba de permisos parece un acierto.
+- `updatePendingMember` es `PUT`. Con `PATCH` responde 404, lo que en una prueba de permisos parece un acierto. Sin `email`, solo borra el email que dio quien llama: uno que no ve se conserva.
+- El email de un pendiente solo sale en las respuestas para quien lo escribió (`members.email_added_by`). Una prueba que añade Miembros directamente en la base y espera ver su email tiene que rellenar esa columna.
 - sqlc ignora `sqlc.arg()` dentro de `ON CONFLICT ... DO UPDATE` sin avisar.
 - `openapi_types.Email` valida al escribir la respuesta, así que un campo de salida con `format: email` puede romper la respuesta entera.
 - Los archivos de `assets/` son `immutable`, así que una prueba de precache debe exigir `response.fromServiceWorker()`.
+- `npx playwright test --repeat-each` comparte servidor y agota los 40 correos por hora: todo falla a los 10 s. Para repetir la suite, lánzala varias veces seguidas; cada ejecución tiene su servidor y su base.
 - La PWA enruta tras `#`: un libro es `/#/ledgers/<id>`, no `/groups/<id>`.
 - Tras restaurar un respaldo, las versiones de sincronización saltan a unos 1,8·10^15. Siguen siendo enteros exactos en JavaScript hasta el año 2255.

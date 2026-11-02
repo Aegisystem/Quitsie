@@ -1,12 +1,12 @@
 # Revisión de seguridad
 
-Revisión previa a abrir Quitsie al público, hecha el 2026-10-31 sobre el commit `26948a3` de `main`. El vocabulario sigue [CONTEXT.md](../CONTEXT.md). Los hallazgos 1 a 7, 10, 12, 13 y 14 se arreglaron después, y cada uno dice con qué commits y qué se volvió a medir.
+Revisión previa a abrir Quitsie al público, hecha el 2026-10-31 sobre el commit `26948a3` de `main`. El vocabulario sigue [CONTEXT.md](../CONTEXT.md). Los 14 hallazgos se arreglaron después, y cada uno dice con qué commits y qué se volvió a medir.
 
-> **El repositorio es público y este documento explica cómo reproducir ataques.** Los hallazgos 8, 9 y 11 siguen abiertos.
+> **El repositorio es público y este documento explica cómo reproducir ataques.** Todos los hallazgos están arreglados, pero nada está desplegado todavía.
 
 ## Resumen
 
-Hay **14 hallazgos verificados: 1 crítico, 2 altos, 7 medios y 4 bajos**. **Los cuatro que bloqueaban abrir al público (1 a 4) están arreglados**, y también el 5, el 6, el 7, el 10, el 12, el 13 y el 14. Quedan abiertos tres, y los tres esperan una decisión del dueño. El aislamiento entre libros aguantó todo lo que se le probó: sin un enlace válido, nadie leyó ni cambió un libro ajeno. Los problemas graves son de disponibilidad, y el único camino hacia una cuenta ajena es adivinar su código (hallazgo 4).
+Hay **14 hallazgos verificados: 1 crítico, 2 altos, 7 medios y 4 bajos**, y **los 14 están arreglados**: primero los cuatro que bloqueaban abrir al público (1 a 4), después los demás. El 8, el 9 y el 11 esperaron una decisión del dueño, que llegó el 2026-11-02. El aislamiento entre libros aguantó todo lo que se le probó: sin un enlace válido, nadie leyó ni cambió un libro ajeno. Los problemas graves son de disponibilidad, y el único camino hacia una cuenta ajena es adivinar su código (hallazgo 4).
 
 | # | Gravedad | Hallazgo | Estado | Quién puede |
 | --- | --- | --- | --- | --- |
@@ -17,15 +17,15 @@ Hay **14 hallazgos verificados: 1 crítico, 2 altos, 7 medios y 4 bajos**. **Los
 | 5 | Media | Cualquiera impide entrar a otra persona durante un día | **Arreglado** | Cualquiera |
 | 6 | Media | El envío de correos no tiene tope global | **Arreglado** | Cualquiera |
 | 7 | Media | El limitador de códigos crece sin tope en memoria | **Arreglado** | Cualquiera |
-| 8 | Media | Quien fue sacado de un Grupo vuelve con el enlace viejo | Abierto | Antiguo Miembro |
-| 9 | Media | La réplica sigue en el dispositivo tras cerrar la sesión a distancia | Abierto | Quien tenga el dispositivo |
+| 8 | Media | Quien fue sacado de un Grupo vuelve con el enlace viejo | **Arreglado** | Antiguo Miembro |
+| 9 | Media | La réplica sigue en el dispositivo tras cerrar la sesión a distancia | **Arreglado** | Quien tenga el dispositivo |
 | 10 | Media | El email sobrevive al borrado de la cuenta y reaparece | **Arreglado** | Miembros del Grupo |
-| 11 | Baja | Quien entra con el enlace ve los emails de los Miembros pendientes | Abierto | Quien tenga el enlace |
+| 11 | Baja | Quien entra con el enlace ve los emails de los Miembros pendientes | **Arreglado** | Quien tenga el enlace |
 | 12 | Baja | Un enlace falsificado carga el libro entero antes de comprobarse | **Arreglado** | Cualquiera con un id de libro |
 | 13 | Baja | Los Saldos desbordan `int64` e invierten las Deudas | **Arreglado** | Miembro del Grupo |
 | 14 | Baja | Pedir un código recorre toda la tabla con el bloqueo de escritura | **Arreglado** | Cualquiera con más de mil direcciones |
 
-Los hallazgos 8, 9 y 11 necesitan una decisión de producto: las decisiones 1, 3 y 2 de [pendientes.md](pendientes.md#3-decisiones-del-dueño).
+Los hallazgos 8, 9 y 11 necesitaban una decisión de producto. Las reglas que eligió el dueño están en [reglas-de-negocio.md](reglas-de-negocio.md).
 
 **Gravedad.** Crítica: alguien sin cuenta tumba el servicio o lee datos ajenos. Alta: una cuenta normal deja sin servicio a otras personas. Media: daño acotado a una persona o incumplimiento de una regla de privacidad. Baja: efecto pequeño o limitado al propio libro.
 
@@ -238,7 +238,7 @@ La cuota real de Resend no se probó.
 
 ### 8. Quien fue sacado de un Grupo vuelve con el enlace viejo
 
-**Media.** Antiguo Miembro que conserve el enlace.
+**Media. Arreglado en `d23738d` y `5838ccb`.** Antiguo Miembro que conserve el enlace.
 
 **Archivos:** `api/internal/httpapi/handlers_ledgers.go:583` y `:844`, `web/src/ui/screens/LedgerSettings.tsx:304`.
 
@@ -248,11 +248,17 @@ La cuota real de Resend no se probó.
 
 La regla actual dice que quien vuelve recupera su Antiguo Miembro, lo cual tiene sentido para quien salió por su cuenta, pero anula el efecto de sacar a alguien.
 
-**Arreglo.** Regenera el enlace en la misma escritura de `RemoveMember` cuando el Miembro estaba vinculado. Es lo más simple, a costa de invalidar enlaces ya enviados a otras personas. La alternativa es marcar al Miembro como sacado y exigir que otro Miembro lo readmita. Es una decisión de producto, y debe quedar en `docs/reglas-de-negocio.md`.
+**Opciones.** Regenerar el enlace al sacar a alguien era lo más simple, pero invalidaba los enlaces ya enviados a otras personas. La otra era marcar al Miembro como sacado y exigir que otro Miembro lo readmitiera. El dueño eligió la readmisión el 2026-11-02.
+
+**Arreglo.** La migración 00007 añade `members.removed`. `RemoveMember` la marca cuando el Miembro estaba vinculado, y salir por cuenta propia la deja en falso. Con la marca, `joinGroup` y `claimMember` responden `409 removed_from_group`, y `GET /invites/{token}` lo dice antes con `removed: true`. La operación nueva `readmitMember` quita la marca y deja la Actividad `member_readmitted`. Readmitir no devuelve a nadie al Grupo: esa persona vuelve por su cuenta, con el mismo enlace, y recupera su Antiguo Miembro. Deshacer la vinculación de un Miembro sacado responde 404, porque le dejaría entrar como Miembro nuevo. En la PWA, Ajustes muestra a quienes fueron sacados, cada uno con «Readmitir», y la invitación explica por qué no puede entrar.
+
+El binario anterior ignora la columna, así que la migración se puede aplicar aunque haya que volver atrás. Mientras corre ese binario, quien fue sacado vuelve como antes.
+
+**Medido después, contra el binario real.** Tras `DELETE /groups/{id}/members/{id}`, `POST /invites/{token}/join` responde `409 removed_from_group` y `GET /invites/{token}` trae `removed: true`. Tras `readmitMember` (204), el mismo enlace responde 201 con el Antiguo Miembro de antes. El binario de `81b69a6` arrancó sobre la base migrada y atendió pulls, salidas, vueltas y altas sin errores. El binario nuevo, arrancado otra vez sobre esa base, volvió a rechazar la vuelta.
 
 ### 9. La réplica sigue en el dispositivo tras cerrar la sesión a distancia
 
-**Media.** Quien tenga el dispositivo, abriendo el almacenamiento del navegador.
+**Media. Arreglado en `4cb0b36` y `b72df8c`.** Quien tenga el dispositivo, abriendo el almacenamiento del navegador.
 
 **Archivos:** `web/src/session/replica.ts:5`, `web/src/session/session.ts:87` y `:109`.
 
@@ -264,7 +270,9 @@ La regla actual dice que quien vuelve recupera su Antiguo Miembro, lo cual tiene
 - Cuenta borrada desde otro dispositivo: siguen el Grupo y el email de una tercera persona.
 - Cerrar sesión desde la propia app sí borra todo: 8 tablas vacías y `localStorage` vacío. Entrar como otro Usuario también vacía lo anterior.
 
-**Arreglo.** Ante cualquier 401, borra la réplica y conserva solo la cola de registros, que es lo único que no se puede recuperar. Volver a entrar la reconstruye con un pull. Queda un límite que conviene explicar en la pantalla de sesiones: un dispositivo que nunca vuelve a conectarse no se entera.
+**Arreglo.** Ante cualquier 401, la PWA borra la réplica y el cursor y conserva solo la cola de registros, que es lo único que no se puede recuperar. Volver a entrar la reconstruye con un pull. Si entra otro Usuario, la cola del anterior, rechazados incluidos, se aparta en la tabla `parked` de IndexedDB bajo su id: el nuevo no la ve y no la envía. Cuando su dueño vuelve a entrar en ese dispositivo, vuelve a la cola y se envía. Cerrar sesión borra solo lo propio, nunca lo apartado de otros. El dueño de la réplica vive ahora en la propia réplica, así que el cambio de manos es una sola transacción. La pantalla de sesiones explica el límite que queda: un dispositivo que nunca vuelve a conectarse no se entera. Tampoco se envían nunca los registros apartados de una cuenta borrada, que se quedan ocultos en el dispositivo.
+
+**Medido después, en Chromium contra el binario real** (`web/e2e/session-ended.spec.ts`). Con un Gasto creado sin conexión y la sesión cerrada desde otro dispositivo, al reconectar IndexedDB quedó con 0 filas en `ledgers`, `members`, `expenses`, `activities`, `debts` y `meta`, y 1 en la cola. Beto entró en ese dispositivo y no vio el Grupo de Ana: su cola quedó vacía y el registro de Ana apartado. Tras salir Beto, el servidor seguía sin el Gasto. Al volver Ana, el Gasto llegó al servidor y no quedó nada apartado.
 
 ### 10. El email sobrevive al borrado de la cuenta y reaparece
 
@@ -282,7 +290,7 @@ La regla actual dice que quien vuelve recupera su Antiguo Miembro, lo cual tiene
 
 ### 11. Quien entra con el enlace ve los emails de los Miembros pendientes
 
-**Baja.** Quien tenga el enlace y una cuenta.
+**Baja. Arreglado en `21874db`.** Quien tenga el enlace y una cuenta.
 
 **Archivos:** `api/internal/httpapi/handlers_records.go:323`, `handlers_ledgers.go:468`.
 
@@ -290,7 +298,11 @@ La regla actual dice que quien vuelve recupera su Antiguo Miembro, lo cual tiene
 
 **Verificado.** Un Usuario recién unido por enlace recibe `pepa@test.example` en su pull.
 
-**Arreglo.** Muestra el email solo a quien lo añadió, o enmascarado (`p***@test.example`). Afecta a la pantalla de editar un Miembro pendiente, así que es una decisión de producto.
+**Opciones.** Mostrar el email solo a quien lo añadió, o enmascarado (`p***@test.example`). El dueño eligió lo primero el 2026-11-02.
+
+**Arreglo.** La migración 00008 añade `members.email_added_by`, y `GET /sync` y toda respuesta con un Miembro llevan el email solo para ese Usuario. Los demás ven el nombre, y el servidor sigue usando el email para sugerir la Reclamación. Quien no ve el email puede cambiar el nombre: si no envía email, el anterior se conserva; si envía uno, lo reemplaza, y desde entonces solo lo ve quien lo escribió. Los emails guardados antes de la migración no tienen a nadie anotado, así que no los ve nadie.
+
+**Medido después, contra el binario real.** Un Usuario recién unido por enlace recibe a Pepa sin email en su pull, y Ana, que la añadió, la recibe con `pepa@test.example`. Con el binario anterior sobre la base migrada, un email añadido no lo ve nadie después, y uno reemplazado lo sigue viendo quien escribió el anterior.
 
 ### 12. Un enlace falsificado carga el libro entero antes de comprobarse
 
