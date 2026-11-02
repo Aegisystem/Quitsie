@@ -18,7 +18,7 @@ export function Account({ user }: { user: User }) {
       <h1 className="page-title">{t('account.title')}</h1>
       <div className="profile">
         <Figure size={48} />
-        <div>
+        <div className="profile-main">
           <p className="profile-name">{user.name}</p>
           <p className="row-sub">{user.email}</p>
         </div>
