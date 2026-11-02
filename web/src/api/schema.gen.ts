@@ -311,6 +311,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/groups/{groupId}/members/{memberId}/readmit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                groupId: components["parameters"]["GroupId"];
+                memberId: components["parameters"]["MemberId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Lets a User removed from the Group come back through the Invite link.
+         * @description Any Member can do it. Someone removed from a Group cannot use its Invite link until then; someone who left by themselves never needs it. The User stays a former member until they come back, and the change is recorded in the Activity.
+         */
+        post: operations["readmitMember"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/groups/{groupId}/leave": {
         parameters: {
             query?: never;
@@ -628,7 +651,7 @@ export interface components {
          * @description Stable machine-readable error code. New codes may be added; clients treat an unknown code as a generic error for its status.
          * @enum {string}
          */
-        ProblemCode: "validation_failed" | "unauthenticated" | "origin_mismatch" | "not_found" | "rate_limited" | "mail_budget_spent" | "login_code_invalid" | "login_code_expired" | "too_many_attempts" | "invite_link_invalid" | "version_conflict" | "nonzero_balance" | "currency_mismatch" | "currency_precision_loss" | "invalid_amounts" | "invalid_participants" | "member_not_pending" | "member_not_claimed" | "already_member" | "friendship_exists" | "name_required" | "limit_reached" | "body_too_large" | "cursor_invalid" | "internal_error" | "not_implemented";
+        ProblemCode: "validation_failed" | "unauthenticated" | "origin_mismatch" | "not_found" | "rate_limited" | "mail_budget_spent" | "login_code_invalid" | "login_code_expired" | "too_many_attempts" | "invite_link_invalid" | "version_conflict" | "nonzero_balance" | "currency_mismatch" | "currency_precision_loss" | "invalid_amounts" | "invalid_participants" | "member_not_pending" | "member_not_claimed" | "already_member" | "removed_from_group" | "member_not_removed" | "friendship_exists" | "name_required" | "limit_reached" | "body_too_large" | "cursor_invalid" | "internal_error" | "not_implemented";
         /** @description The `currency_precision_loss` problem, with the records the User must fix first. */
         CurrencyPrecisionProblem: components["schemas"]["Problem"] & {
             expenseIds: string[];
@@ -800,6 +823,8 @@ export interface components {
             /** @description Only for pending Members, the email given when adding them. */
             email?: string;
             status: components["schemas"]["MemberStatus"];
+            /** @description True for a former member whose User someone removed from the Group: they cannot come back through the Invite link until a Member readmits them (`readmitMember`). */
+            removed?: boolean;
             version: components["schemas"]["Version"];
         };
         InviteLink: {
@@ -830,6 +855,8 @@ export interface components {
              * @description With a session, the User's Member when they already belong to this ledger.
              */
             joinedMemberId?: string;
+            /** @description With a session, true when the User was removed from this Group and cannot join or claim through the link until a Member readmits them. */
+            removed?: boolean;
         };
         InviteMember: {
             /** Format: uuid */
@@ -1031,7 +1058,7 @@ export interface components {
              * @description What changed. New kinds may be added; clients skip the ones they do not know.
              * @enum {string}
              */
-            kind: "group_created" | "group_deleted" | "group_renamed" | "group_currency_changed" | "debt_simplification_changed" | "member_added" | "member_updated" | "member_joined" | "member_claimed" | "claim_undone" | "member_removed" | "member_left" | "invite_link_regenerated" | "friendship_created" | "expense_created" | "expense_updated" | "expense_deleted" | "expense_restored" | "settlement_created" | "settlement_deleted" | "settlement_restored";
+            kind: "group_created" | "group_deleted" | "group_renamed" | "group_currency_changed" | "debt_simplification_changed" | "member_added" | "member_updated" | "member_joined" | "member_claimed" | "claim_undone" | "member_removed" | "member_left" | "member_readmitted" | "invite_link_regenerated" | "friendship_created" | "expense_created" | "expense_updated" | "expense_deleted" | "expense_restored" | "settlement_created" | "settlement_deleted" | "settlement_restored";
             /** @description Data that depends on `kind`, such as the ids involved and the values before and after. */
             details: {
                 [key: string]: unknown;
@@ -1738,6 +1765,39 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
             /** @description The Member is not linked to a User (`member_not_claimed`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    readmitMember: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                groupId: components["parameters"]["GroupId"];
+                memberId: components["parameters"]["MemberId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The User can come back through the Invite link. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            /** @description The Member was not removed, or is back already (`member_not_removed`). */
             409: {
                 headers: {
                     [name: string]: unknown;

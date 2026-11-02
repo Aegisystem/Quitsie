@@ -82,6 +82,7 @@ type Member struct {
 	Status    string
 	Version   int64
 	CreatedAt time.Time
+	Removed   bool
 }
 
 type OwedShare struct {

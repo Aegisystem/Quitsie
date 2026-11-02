@@ -14,7 +14,7 @@ const claimMember = `-- name: ClaimMember :one
 UPDATE members
 SET user_id = CAST(?1 AS TEXT), version = ?2
 WHERE id = ?3 AND user_id IS NULL AND status = 'active'
-RETURNING id, ledger_id, user_id, name, email, status, version, created_at
+RETURNING id, ledger_id, user_id, name, email, status, version, created_at, removed
 `
 
 type ClaimMemberParams struct {
@@ -36,6 +36,7 @@ func (q *Queries) ClaimMember(ctx context.Context, arg ClaimMemberParams) (Membe
 		&i.Status,
 		&i.Version,
 		&i.CreatedAt,
+		&i.Removed,
 	)
 	return i, err
 }
@@ -70,7 +71,7 @@ func (q *Queries) CreateMember(ctx context.Context, arg CreateMemberParams) erro
 }
 
 const getActiveMemberOfUser = `-- name: GetActiveMemberOfUser :one
-SELECT id, ledger_id, user_id, name, email, status, version, created_at FROM members
+SELECT id, ledger_id, user_id, name, email, status, version, created_at, removed FROM members
 WHERE ledger_id = ?1
   AND user_id = CAST(?2 AS TEXT)
   AND status = 'active'
@@ -94,6 +95,7 @@ func (q *Queries) GetActiveMemberOfUser(ctx context.Context, arg GetActiveMember
 		&i.Status,
 		&i.Version,
 		&i.CreatedAt,
+		&i.Removed,
 	)
 	return i, err
 }
@@ -208,7 +210,7 @@ func (q *Queries) ListLedgersOfUser(ctx context.Context, userID string) ([]Ledge
 }
 
 const listMembers = `-- name: ListMembers :many
-SELECT id, ledger_id, user_id, name, email, status, version, created_at FROM members
+SELECT id, ledger_id, user_id, name, email, status, version, created_at, removed FROM members
 WHERE ledger_id = ?
 ORDER BY created_at, id
 `
@@ -232,6 +234,7 @@ func (q *Queries) ListMembers(ctx context.Context, ledgerID string) ([]Member, e
 			&i.Status,
 			&i.Version,
 			&i.CreatedAt,
+			&i.Removed,
 		); err != nil {
 			return nil, err
 		}
@@ -248,19 +251,22 @@ func (q *Queries) ListMembers(ctx context.Context, ledgerID string) ([]Member, e
 
 const markMemberFormer = `-- name: MarkMemberFormer :one
 UPDATE members
-SET status = 'former', version = ?
-WHERE id = ? AND status = 'active'
-RETURNING id, ledger_id, user_id, name, email, status, version, created_at
+SET status = 'former', removed = ?1, version = ?2
+WHERE id = ?3 AND status = 'active'
+RETURNING id, ledger_id, user_id, name, email, status, version, created_at, removed
 `
 
 type MarkMemberFormerParams struct {
+	Removed bool
 	Version int64
 	ID      string
 }
 
 // A former member keeps appearing in past Expenses but no longer sees the ledger.
+// removed says whether someone else took them out, which keeps them from
+// coming back through the Invite link until they are readmitted.
 func (q *Queries) MarkMemberFormer(ctx context.Context, arg MarkMemberFormerParams) (Member, error) {
-	row := q.db.QueryRowContext(ctx, markMemberFormer, arg.Version, arg.ID)
+	row := q.db.QueryRowContext(ctx, markMemberFormer, arg.Removed, arg.Version, arg.ID)
 	var i Member
 	err := row.Scan(
 		&i.ID,
@@ -271,15 +277,16 @@ func (q *Queries) MarkMemberFormer(ctx context.Context, arg MarkMemberFormerPara
 		&i.Status,
 		&i.Version,
 		&i.CreatedAt,
+		&i.Removed,
 	)
 	return i, err
 }
 
 const reactivateMember = `-- name: ReactivateMember :one
 UPDATE members
-SET status = 'active', version = ?
+SET status = 'active', removed = FALSE, version = ?
 WHERE id = ? AND status = 'former'
-RETURNING id, ledger_id, user_id, name, email, status, version, created_at
+RETURNING id, ledger_id, user_id, name, email, status, version, created_at, removed
 `
 
 type ReactivateMemberParams struct {
@@ -301,6 +308,38 @@ func (q *Queries) ReactivateMember(ctx context.Context, arg ReactivateMemberPara
 		&i.Status,
 		&i.Version,
 		&i.CreatedAt,
+		&i.Removed,
+	)
+	return i, err
+}
+
+const readmitMember = `-- name: ReadmitMember :one
+UPDATE members
+SET removed = FALSE, version = ?
+WHERE id = ? AND status = 'former' AND removed
+RETURNING id, ledger_id, user_id, name, email, status, version, created_at, removed
+`
+
+type ReadmitMemberParams struct {
+	Version int64
+	ID      string
+}
+
+// Lets a removed User come back through the Invite link. They stay a former
+// member until they do.
+func (q *Queries) ReadmitMember(ctx context.Context, arg ReadmitMemberParams) (Member, error) {
+	row := q.db.QueryRowContext(ctx, readmitMember, arg.Version, arg.ID)
+	var i Member
+	err := row.Scan(
+		&i.ID,
+		&i.LedgerID,
+		&i.UserID,
+		&i.Name,
+		&i.Email,
+		&i.Status,
+		&i.Version,
+		&i.CreatedAt,
+		&i.Removed,
 	)
 	return i, err
 }
@@ -309,7 +348,7 @@ const unclaimMember = `-- name: UnclaimMember :one
 UPDATE members
 SET user_id = NULL, version = ?
 WHERE id = ? AND user_id IS NOT NULL
-RETURNING id, ledger_id, user_id, name, email, status, version, created_at
+RETURNING id, ledger_id, user_id, name, email, status, version, created_at, removed
 `
 
 type UnclaimMemberParams struct {
@@ -330,6 +369,7 @@ func (q *Queries) UnclaimMember(ctx context.Context, arg UnclaimMemberParams) (M
 		&i.Status,
 		&i.Version,
 		&i.CreatedAt,
+		&i.Removed,
 	)
 	return i, err
 }
@@ -357,7 +397,7 @@ const updatePendingMember = `-- name: UpdatePendingMember :one
 UPDATE members
 SET name = ?, email = ?, version = ?
 WHERE id = ? AND user_id IS NULL AND status = 'active'
-RETURNING id, ledger_id, user_id, name, email, status, version, created_at
+RETURNING id, ledger_id, user_id, name, email, status, version, created_at, removed
 `
 
 type UpdatePendingMemberParams struct {
@@ -385,6 +425,7 @@ func (q *Queries) UpdatePendingMember(ctx context.Context, arg UpdatePendingMemb
 		&i.Status,
 		&i.Version,
 		&i.CreatedAt,
+		&i.Removed,
 	)
 	return i, err
 }

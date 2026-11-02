@@ -322,6 +322,10 @@ func pulledMember(m store.Member) Member {
 	if m.UserID != nil {
 		userID := toUUID(*m.UserID)
 		out.UserId = &userID
+		// The flag only counts on a former member (see migration 00007).
+		if m.Status == "former" && m.Removed {
+			out.Removed = &m.Removed
+		}
 		return out
 	}
 	// Only a pending Member shows the email given when adding them; a linked

@@ -36,6 +36,7 @@ const (
 	MemberClaimed             ActivityKind = "member_claimed"
 	MemberJoined              ActivityKind = "member_joined"
 	MemberLeft                ActivityKind = "member_left"
+	MemberReadmitted          ActivityKind = "member_readmitted"
 	MemberRemoved             ActivityKind = "member_removed"
 	MemberUpdated             ActivityKind = "member_updated"
 	SettlementCreated         ActivityKind = "settlement_created"
@@ -77,6 +78,8 @@ func (e ActivityKind) Valid() bool {
 	case MemberJoined:
 		return true
 	case MemberLeft:
+		return true
+	case MemberReadmitted:
 		return true
 	case MemberRemoved:
 		return true
@@ -270,12 +273,14 @@ const (
 	ProblemCodeMailBudgetSpent       ProblemCode = "mail_budget_spent"
 	ProblemCodeMemberNotClaimed      ProblemCode = "member_not_claimed"
 	ProblemCodeMemberNotPending      ProblemCode = "member_not_pending"
+	ProblemCodeMemberNotRemoved      ProblemCode = "member_not_removed"
 	ProblemCodeNameRequired          ProblemCode = "name_required"
 	ProblemCodeNonzeroBalance        ProblemCode = "nonzero_balance"
 	ProblemCodeNotFound              ProblemCode = "not_found"
 	ProblemCodeNotImplemented        ProblemCode = "not_implemented"
 	ProblemCodeOriginMismatch        ProblemCode = "origin_mismatch"
 	ProblemCodeRateLimited           ProblemCode = "rate_limited"
+	ProblemCodeRemovedFromGroup      ProblemCode = "removed_from_group"
 	ProblemCodeTooManyAttempts       ProblemCode = "too_many_attempts"
 	ProblemCodeUnauthenticated       ProblemCode = "unauthenticated"
 	ProblemCodeValidationFailed      ProblemCode = "validation_failed"
@@ -317,6 +322,8 @@ func (e ProblemCode) Valid() bool {
 		return true
 	case ProblemCodeMemberNotPending:
 		return true
+	case ProblemCodeMemberNotRemoved:
+		return true
 	case ProblemCodeNameRequired:
 		return true
 	case ProblemCodeNonzeroBalance:
@@ -328,6 +335,8 @@ func (e ProblemCode) Valid() bool {
 	case ProblemCodeOriginMismatch:
 		return true
 	case ProblemCodeRateLimited:
+		return true
+	case ProblemCodeRemovedFromGroup:
 		return true
 	case ProblemCodeTooManyAttempts:
 		return true
@@ -712,6 +721,9 @@ type Invite struct {
 	// PendingMembers The pending Members that can be claimed; for `friendship`, just the pending Friend.
 	PendingMembers []InviteMember `json:"pendingMembers"`
 
+	// Removed With a session, true when the User was removed from this Group and cannot join or claim through the link until a Member readmits them.
+	Removed *bool `json:"removed,omitempty"`
+
 	// SuggestedMemberId With a session, the pending Member whose email matches the User's.
 	SuggestedMemberId *openapi_types.UUID `json:"suggestedMemberId,omitempty"`
 }
@@ -782,6 +794,9 @@ type Member struct {
 	Id       openapi_types.UUID `json:"id"`
 	LedgerId openapi_types.UUID `json:"ledgerId"`
 	Name     string             `json:"name"`
+
+	// Removed True for a former member whose User someone removed from the Group: they cannot come back through the Invite link until a Member readmits them (`readmitMember`).
+	Removed *bool `json:"removed,omitempty"`
 
 	// Status `former` is a former member: still named on past Expenses, out of new ones.
 	Status MemberStatus `json:"status"`
@@ -1219,6 +1234,9 @@ type ServerInterface interface {
 	// UndoClaim Undoes a Claim made by mistake.
 	// (DELETE /groups/{groupId}/members/{memberId}/claim)
 	UndoClaim(w http.ResponseWriter, r *http.Request, groupId GroupId, memberId MemberId)
+	// ReadmitMember Lets a User removed from the Group come back through the Invite link.
+	// (POST /groups/{groupId}/members/{memberId}/readmit)
+	ReadmitMember(w http.ResponseWriter, r *http.Request, groupId GroupId, memberId MemberId)
 	// GetHealth Reports whether the server and its database are up.
 	// (GET /health)
 	GetHealth(w http.ResponseWriter, r *http.Request)
@@ -1870,6 +1888,41 @@ func (siw *ServerInterfaceWrapper) UndoClaim(w http.ResponseWriter, r *http.Requ
 	handler.ServeHTTP(w, r)
 }
 
+// ReadmitMember operation middleware
+func (siw *ServerInterfaceWrapper) ReadmitMember(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "groupId" -------------
+	var groupId GroupId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "groupId", r.PathValue("groupId"), &groupId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "groupId", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "memberId" -------------
+	var memberId MemberId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "memberId", r.PathValue("memberId"), &memberId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "memberId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ReadmitMember(w, r, groupId, memberId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetHealth operation middleware
 func (siw *ServerInterfaceWrapper) GetHealth(w http.ResponseWriter, r *http.Request) {
 
@@ -2242,6 +2295,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/groups/{groupId}/members/{memberId}", wrapper.RemoveMember)
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/groups/{groupId}/members/{memberId}", wrapper.UpdatePendingMember)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/groups/{groupId}/members/{memberId}/claim", wrapper.UndoClaim)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/groups/{groupId}/members/{memberId}/readmit", wrapper.ReadmitMember)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/groups/{groupId}/leave", wrapper.LeaveGroup)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/groups/{groupId}/invite-link", wrapper.GetGroupInviteLink)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/groups/{groupId}/invite-link", wrapper.RegenerateGroupInviteLink)
@@ -4158,6 +4212,86 @@ func (response UndoClaimdefaultApplicationProblemPlusJSONResponse) VisitUndoClai
 	return err
 }
 
+type ReadmitMemberRequestObject struct {
+	GroupId  GroupId  `json:"groupId"`
+	MemberId MemberId `json:"memberId"`
+}
+
+type ReadmitMemberResponseObject interface {
+	VisitReadmitMemberResponse(w http.ResponseWriter) error
+}
+
+type ReadmitMember204Response struct {
+}
+
+func (response ReadmitMember204Response) VisitReadmitMemberResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type ReadmitMember401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response ReadmitMember401ApplicationProblemPlusJSONResponse) VisitReadmitMemberResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReadmitMember404ApplicationProblemPlusJSONResponse struct {
+	NotFoundApplicationProblemPlusJSONResponse
+}
+
+func (response ReadmitMember404ApplicationProblemPlusJSONResponse) VisitReadmitMemberResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReadmitMember409ApplicationProblemPlusJSONResponse Problem
+
+func (response ReadmitMember409ApplicationProblemPlusJSONResponse) VisitReadmitMemberResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReadmitMemberdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response ReadmitMemberdefaultApplicationProblemPlusJSONResponse) VisitReadmitMemberResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type GetHealthRequestObject struct {
 }
 
@@ -5052,6 +5186,9 @@ type StrictServerInterface interface {
 	// UndoClaim Undoes a Claim made by mistake.
 	// (DELETE /groups/{groupId}/members/{memberId}/claim)
 	UndoClaim(ctx context.Context, request UndoClaimRequestObject) (UndoClaimResponseObject, error)
+	// ReadmitMember Lets a User removed from the Group come back through the Invite link.
+	// (POST /groups/{groupId}/members/{memberId}/readmit)
+	ReadmitMember(ctx context.Context, request ReadmitMemberRequestObject) (ReadmitMemberResponseObject, error)
 	// GetHealth Reports whether the server and its database are up.
 	// (GET /health)
 	GetHealth(ctx context.Context, request GetHealthRequestObject) (GetHealthResponseObject, error)
@@ -5788,6 +5925,33 @@ func (sh *strictHandler) UndoClaim(w http.ResponseWriter, r *http.Request, group
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(UndoClaimResponseObject); ok {
 		if err := validResponse.VisitUndoClaimResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ReadmitMember operation middleware
+func (sh *strictHandler) ReadmitMember(w http.ResponseWriter, r *http.Request, groupId GroupId, memberId MemberId) {
+	var request ReadmitMemberRequestObject
+
+	request.GroupId = groupId
+	request.MemberId = memberId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ReadmitMember(ctx, request.(ReadmitMemberRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ReadmitMember")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ReadmitMemberResponseObject); ok {
+		if err := validResponse.VisitReadmitMemberResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

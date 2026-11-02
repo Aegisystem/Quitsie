@@ -162,7 +162,7 @@ func (q *Queries) ChangedLedgers(ctx context.Context, arg ChangedLedgersParams) 
 }
 
 const changedMembers = `-- name: ChangedMembers :many
-SELECT members.id, members.ledger_id, members.user_id, members.name, members.email, members.status, members.version, members.created_at FROM members
+SELECT members.id, members.ledger_id, members.user_id, members.name, members.email, members.status, members.version, members.created_at, members.removed FROM members
 JOIN members me ON me.ledger_id = members.ledger_id
 WHERE me.user_id = CAST(?1 AS TEXT) AND me.status = 'active'
   AND (members.version > ?2 OR me.version > ?2)
@@ -195,6 +195,7 @@ func (q *Queries) ChangedMembers(ctx context.Context, arg ChangedMembersParams) 
 			&i.Status,
 			&i.Version,
 			&i.CreatedAt,
+			&i.Removed,
 		); err != nil {
 			return nil, err
 		}

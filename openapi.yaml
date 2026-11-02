@@ -635,6 +635,35 @@ paths:
         default:
           $ref: "#/components/responses/Problem"
 
+  /groups/{groupId}/members/{memberId}/readmit:
+    parameters:
+      - $ref: "#/components/parameters/GroupId"
+      - $ref: "#/components/parameters/MemberId"
+    post:
+      operationId: readmitMember
+      summary: Lets a User removed from the Group come back through the Invite link.
+      description: >
+        Any Member can do it. Someone removed from a Group cannot use its
+        Invite link until then; someone who left by themselves never needs
+        it. The User stays a former member until they come back, and the
+        change is recorded in the Activity.
+      tags: [groups]
+      responses:
+        "204":
+          description: The User can come back through the Invite link.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: The Member was not removed, or is back already (`member_not_removed`).
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+
   /groups/{groupId}/leave:
     parameters:
       - $ref: "#/components/parameters/GroupId"
@@ -1326,6 +1355,8 @@ components:
         - member_not_pending
         - member_not_claimed
         - already_member
+        - removed_from_group
+        - member_not_removed
         - friendship_exists
         - name_required
         - limit_reached
@@ -1644,6 +1675,12 @@ components:
           description: Only for pending Members, the email given when adding them.
         status:
           $ref: "#/components/schemas/MemberStatus"
+        removed:
+          type: boolean
+          description: >
+            True for a former member whose User someone removed from the
+            Group: they cannot come back through the Invite link until a
+            Member readmits them (`readmitMember`).
         version:
           $ref: "#/components/schemas/Version"
 
@@ -1689,6 +1726,11 @@ components:
           type: string
           format: uuid
           description: With a session, the User's Member when they already belong to this ledger.
+        removed:
+          type: boolean
+          description: >
+            With a session, true when the User was removed from this Group and
+            cannot join or claim through the link until a Member readmits them.
 
     InviteMember:
       type: object
@@ -2089,6 +2131,7 @@ components:
             - claim_undone
             - member_removed
             - member_left
+            - member_readmitted
             - invite_link_regenerated
             - friendship_created
             - expense_created

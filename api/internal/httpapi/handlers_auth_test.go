@@ -173,6 +173,7 @@ var everyOperation = []operationRequest{
 	{"RemoveMember", http.MethodDelete, "/api/v1/groups/" + someID + "/members/" + someID, ""},
 	{"UndoClaim", http.MethodDelete, "/api/v1/groups/" + someID + "/members/" + someID + "/claim", ""},
 	{"LeaveGroup", http.MethodPost, "/api/v1/groups/" + someID + "/leave", ""},
+	{"ReadmitMember", http.MethodPost, "/api/v1/groups/" + someID + "/members/" + someID + "/readmit", ""},
 	{"GetGroupInviteLink", http.MethodGet, "/api/v1/groups/" + someID + "/invite-link", ""},
 	{"RegenerateGroupInviteLink", http.MethodPost, "/api/v1/groups/" + someID + "/invite-link", ""},
 	{"GetInvite", http.MethodGet, "/api/v1/invites/k3J9xQ2mV7pL8wR4tY6u", ""},
