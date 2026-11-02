@@ -502,7 +502,7 @@ export const es = {
     saved: 'Cambios guardados.',
     saveFailed: 'No pudimos guardar los cambios. Inténtalo de nuevo.',
     sessionsTitle: 'Sesiones abiertas',
-    sessionsHint: 'Una por dispositivo. Cierra las que no reconozcas.',
+    sessionsHint: 'Una por dispositivo. Cierra las que no reconozcas: ese dispositivo borra tus datos en cuanto vuelva a tener conexión. Mientras no la tenga, siguen allí.',
     sessionsLoading: 'Buscando tus sesiones…',
     sessionsFailed: 'No pudimos cargar tus sesiones.',
     retry: 'Reintentar',
