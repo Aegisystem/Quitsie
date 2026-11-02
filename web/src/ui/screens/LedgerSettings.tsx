@@ -65,6 +65,7 @@ function GroupSettings({ group, summary, user }: { group: Group; summary: Ledger
   const active = summary.members.filter((member) => member.status === 'active').sort((a, b) => Number(b.userId === user.id) - Number(a.userId === user.id))
   const balancesOf = (memberId: string) => summary.balances.filter((balance) => balance.participantId === memberId)
   const me = active.find((member) => member.userId === user.id)
+  const removed = summary.members.filter((member) => member.status === 'former' && member.removed)
 
   return (
     <>
@@ -80,6 +81,19 @@ function GroupSettings({ group, summary, user }: { group: Group; summary: Ledger
         </ul>
         <AddPendingMember groupId={group.id} />
       </section>
+      {removed.length > 0 && (
+        <section className="section" aria-labelledby="removed-title">
+          <h2 id="removed-title" className="section-title">
+            {t('ledgerSettings.removedTitle')}
+          </h2>
+          <p className="hint">{t('ledgerSettings.removedHint')}</p>
+          <ul className="rows">
+            {removed.map((member) => (
+              <RemovedRow key={member.id} groupId={group.id} member={member} />
+            ))}
+          </ul>
+        </section>
+      )}
       {me && <LeaveOrDelete group={group} me={me} members={active} myBalances={balancesOf(me.id)} settled={summary.balances.length === 0} />}
     </>
   )
@@ -417,6 +431,73 @@ function MemberRow({ groupId, member, mine, balances }: { groupId: string; membe
           )}
         </div>
       )}
+    </li>
+  )
+}
+
+// Someone removed from the Group, who cannot come back through the Invite link
+// until a Member readmits them. Readmitting does not put them back: they do it.
+function RemovedRow({ groupId, member }: { groupId: string; member: Member }) {
+  const { t } = useTranslation()
+  const online = useOnline()
+  const [confirming, setConfirming] = useState(false)
+  const { busy, error, run, reset } = useOperation()
+  const name = member.name
+  const offlineTitle = online ? undefined : t('common.onlineOnly')
+
+  const readmit = () =>
+    void run(
+      () => ledgers.readmitMember(groupId, member.id),
+      () => toast(t('ledgerSettings.readmitted', { name })),
+    )
+
+  return (
+    <li>
+      <div className="row">
+        <span className="row-glyph">
+          <Figure />
+        </span>
+        <span className="row-main">
+          <span className="row-title">{name}</span>
+        </span>
+      </div>
+      <div style={underTheName}>
+        {confirming ? (
+          <div className="confirm" role="group" aria-label={name}>
+            <p>{t('ledgerSettings.readmitConfirm', { name })}</p>
+            <p className="hint">{t('ledgerSettings.readmitHint')}</p>
+            <div className="button-row">
+              <button type="button" className="button button-primary button-small" disabled={busy || !online} title={offlineTitle} onClick={readmit}>
+                {t('ledgerSettings.readmit')}
+              </button>
+              <button type="button" className="button button-quiet button-small" disabled={busy} onClick={() => setConfirming(false)}>
+                {t('common.cancel')}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="button-row">
+            <button
+              type="button"
+              className="button button-quiet button-small"
+              disabled={!online}
+              title={offlineTitle}
+              aria-label={t('ledgerSettings.readmitLabel', { name })}
+              onClick={() => {
+                reset()
+                setConfirming(true)
+              }}
+            >
+              {t('ledgerSettings.readmit')}
+            </button>
+          </div>
+        )}
+        {error && (
+          <p className="notice notice-problem" role="alert">
+            {problemText(t, error, { member_not_removed: t('ledgerSettings.readmitted', { name }) })}
+          </p>
+        )}
+      </div>
     </li>
   )
 }

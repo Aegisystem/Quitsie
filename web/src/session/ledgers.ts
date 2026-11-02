@@ -56,6 +56,10 @@ export function createLedgerCalls({ client, sync }: { client: ApiClient; sync: (
     undoClaim: (groupId: string, memberId: string): Promise<CallResult<void>> =>
       change(() => call(() => client.DELETE('/groups/{groupId}/members/{memberId}/claim', member(groupId, memberId)))),
 
+    // Lets someone removed come back through the Invite link; it does not put them back.
+    readmitMember: (groupId: string, memberId: string): Promise<CallResult<void>> =>
+      change(() => call(() => client.POST('/groups/{groupId}/members/{memberId}/readmit', member(groupId, memberId)))),
+
     createFriendship: (body: NewFriendship): Promise<CallResult<Friendship>> => change(() => call(() => client.POST('/friendships', { body }))),
 
     // Showing the link changes nothing, so it does not sync.

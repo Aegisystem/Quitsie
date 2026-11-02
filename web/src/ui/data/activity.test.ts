@@ -24,6 +24,7 @@ describe('describeActivity', () => {
 
   it('names the Member an Activity is about', () => {
     expect(describeActivity(activity('member_removed', { memberId: 'beto' }), names)?.values).toEqual({ name: 'BETO' })
+    expect(describeActivity(activity('member_readmitted', { memberId: 'beto' }), names)).toEqual({ sentence: 'member_readmitted', values: { name: 'BETO' } })
   })
 
   it('shows who gave what back to whom in a Settlement', () => {

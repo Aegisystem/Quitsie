@@ -19,6 +19,7 @@ export type ActivitySentence =
   | 'claim_undone'
   | 'member_removed'
   | 'member_left'
+  | 'member_readmitted'
   | 'invite_link_regenerated'
   | 'friendship_created'
   | 'expense_created'
@@ -57,6 +58,7 @@ export function describeActivity({ kind, details }: Activity, nameOf: (memberId:
       return { sentence: kind, values: { name: text(details.name) } }
     case 'claim_undone':
     case 'member_removed':
+    case 'member_readmitted':
     case 'friendship_created':
       return { sentence: kind, values: { name: member() } }
     case 'expense_created':
