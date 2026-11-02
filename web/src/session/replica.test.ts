@@ -4,7 +4,7 @@ import type { NewExpense } from '../api/client'
 import { openReplica, type QueuedRecord, type Replica } from '../local'
 import type { SyncEngine, SyncStatus } from '../sync'
 import { createDeviceData } from './replica'
-import type { KeyValueStorage } from './session'
+import type { DeviceData, KeyValueStorage } from './session'
 
 let databases = 0
 
@@ -52,18 +52,36 @@ const queued = (id: string, status: 'unsynced' | 'accepted' | 'rejected'): Queue
   ...(status === 'rejected' ? { status, reason: 'currency_mismatch' as const } : { status }),
 })
 
+// A ledger, a cursor and an UnsyncedRecord.
+async function fill(replica: Replica) {
+  await replica.ledgers.put({ id: 'ledger', kind: 'friendship', createdAt: '2026-10-31T12:00:00Z', version: 1 })
+  await replica.meta.put({ key: 'cursor', value: 7 })
+  await replica.queue.put(queued('record', 'unsynced'))
+}
+
 async function setup(onSync?: () => void) {
   const replica: Replica = openReplica(`device-test-${++databases}`)
   const { engine, setStatus } = fakeEngine(onSync)
   const storage = memoryStorage()
-  await replica.ledgers.put({ id: 'ledger', kind: 'friendship', createdAt: '2026-10-31T12:00:00Z', version: 1 })
-  await replica.meta.put({ key: 'cursor', value: 7 })
-  await replica.queue.put(queued('record', 'unsynced'))
+  await fill(replica)
   return { replica, engine, setStatus, storage, device: createDeviceData({ replica, engine, storage }) }
+}
+
+// Ana signs in on the device and leaves what fill puts there.
+async function usedByAna(replica: Replica, device: DeviceData) {
+  await device.admit('ana')
+  await fill(replica)
 }
 
 async function isEmpty(replica: Replica) {
   const counts = await Promise.all(replica.tables.map((table) => table.count()))
+  return counts.every((count) => count === 0)
+}
+
+// What the screens and the sync engine read: the replica and the queue.
+async function showsNothing(replica: Replica) {
+  const shown = [replica.ledgers, replica.members, replica.expenses, replica.settlements, replica.activities, replica.debts, replica.meta, replica.queue]
+  const counts = await Promise.all(shown.map((table) => table.count()))
   return counts.every((count) => count === 0)
 }
 
@@ -94,24 +112,86 @@ describe('device data', () => {
   })
 
   it('never shows another User what the last one left on the device', async () => {
-    const { replica, device, storage } = await setup()
+    const { replica, device } = await setup()
     await device.admit('ana')
     await replica.queue.put(queued('anas', 'unsynced'))
     await device.admit('beto')
-    expect(await isEmpty(replica)).toBe(true)
-    expect(storage.data.get('quitsie.replica.owner')).toBe('beto')
+    expect(await showsNothing(replica)).toBe(true)
   })
 
   it('tries the wipe again at the next sign-in if it failed', async () => {
-    const { replica, device, storage } = await setup()
+    const { replica, device } = await setup()
     await device.admit('ana')
     const clear = replica.transaction.bind(replica)
     replica.transaction = (() => Promise.reject(new Error('blocked'))) as unknown as Replica['transaction']
     await device.admit('beto')
-    expect(storage.data.get('quitsie.replica.owner')).toBe('ana')
     replica.transaction = clear
     await device.admit('beto')
-    expect(await isEmpty(replica)).toBe(true)
+    expect(await showsNothing(replica)).toBe(true)
+  })
+
+  it('loses the replica when the session ends by itself, and keeps the queue', async () => {
+    const { replica, device, engine } = await setup()
+    await usedByAna(replica, device)
+    engine.stops = 0
+    await device.release()
+    expect(await replica.ledgers.count()).toBe(0)
+    expect(await replica.meta.get('cursor')).toBeUndefined()
+    expect(await replica.queue.get('record')).toMatchObject({ status: 'unsynced' })
+    expect(engine.stops).toBe(1)
+  })
+
+  it('sets aside the records of a User whose session ended, and gives them back when they sign in again', async () => {
+    const { replica, device } = await setup()
+    await usedByAna(replica, device)
+    await replica.queue.put(queued('rejected', 'rejected'))
+    await device.release()
+
+    await device.admit('beto')
+    expect(await showsNothing(replica)).toBe(true)
+    await replica.queue.put(queued('betos', 'unsynced'))
+    // Beto signing out does not take Ana's records with his.
+    await device.clear()
+
+    await device.admit('ana')
+    expect(await replica.queue.toCollection().primaryKeys()).toEqual(['record', 'rejected'])
+    expect(await replica.queue.get('rejected')).toMatchObject({ status: 'rejected', reason: 'currency_mismatch' })
+  })
+
+  it('keeps setting aside whoever was here, through more than one change of hands', async () => {
+    const { replica, device } = await setup()
+    await usedByAna(replica, device)
+    await device.release()
+    await device.admit('beto')
+    await replica.queue.put(queued('betos', 'unsynced'))
+    await device.release()
+    await device.admit('carla')
+    expect(await showsNothing(replica)).toBe(true)
+
+    await device.admit('beto')
+    expect(await replica.queue.toCollection().primaryKeys()).toEqual(['betos'])
+    await device.admit('ana')
+    expect(await replica.queue.toCollection().primaryKeys()).toEqual(['record'])
+  })
+
+  it('reads the owner where an earlier version of the app kept it', async () => {
+    const { replica, device, storage } = await setup()
+    storage.setItem('quitsie.replica.owner', 'ana')
+    await device.admit('ana')
+    expect(await replica.queue.get('record')).toBeDefined()
+    expect(storage.data.size).toBe(0)
+    await device.admit('beto')
+    await device.admit('ana')
+    expect(await replica.queue.get('record')).toBeDefined()
+  })
+
+  it('loses nothing when a sign-in overtakes the release before it', async () => {
+    const { replica, device } = await setup()
+    await usedByAna(replica, device)
+    await Promise.all([device.release(), device.admit('beto')])
+    expect(await showsNothing(replica)).toBe(true)
+    await device.admit('ana')
+    expect(await replica.queue.toCollection().primaryKeys()).toEqual(['record'])
   })
 
   it('counts what could not be sent, after trying to send it', async () => {

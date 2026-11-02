@@ -23,8 +23,11 @@ export interface DeviceRecords {
 
 // What the device keeps between sessions: the replica and the queue.
 export interface DeviceData {
-  // Before `userId` sees the app: what another User left here goes.
+  // Before `userId` sees the app: what another User left here goes, except
+  // their queue, which waits hidden for them; userId's own comes back.
   admit(userId: string): Promise<void>
+  // The session ended by itself: the replica goes, the queue stays for its owner.
+  release(): Promise<void>
   // The User left on purpose, so nothing of theirs stays.
   clear(): Promise<void>
   // After trying to send them, so only those that could not be sent count.
@@ -33,6 +36,7 @@ export interface DeviceData {
 
 const nothingOnDevice: DeviceData = {
   admit: async () => {},
+  release: async () => {},
   clear: async () => {},
   records: async () => ({ unsynced: 0, rejected: 0 }),
 }
@@ -75,8 +79,16 @@ export function createSession({ client, storage, notice: firstNotice, device = n
     set({ status: 'signedOut', notice })
   }
 
-  // Any 401, from these calls or from the sync engine's, means the session is
-  // gone: expired, closed from another device or the account was deleted.
+  // The server has no session for this device: expired, closed from another
+  // device or the account was deleted. Whoever holds the device next must not
+  // read the replica; the queue waits for its owner.
+  function ended(notice?: SignedOutNotice) {
+    if (state.status === 'signedOut') return
+    void device.release()
+    leave(notice)
+  }
+
+  // Any 401, from these calls or from the sync engine's, means the session is gone.
   const sentIn = new WeakMap<Request, number>()
   client.use({
     onRequest({ request }) {
@@ -84,7 +96,7 @@ export function createSession({ client, storage, notice: firstNotice, device = n
     },
     onResponse({ request, response }) {
       if (response.status === 401 && state.status === 'signedIn' && (sentIn.get(request) ?? generation) === generation) {
-        leave('sessionEnded')
+        ended('sessionEnded')
       }
     },
   })
@@ -106,7 +118,7 @@ export function createSession({ client, storage, notice: firstNotice, device = n
       writeUser(storage, me.value)
       set(signedIn(me.value, state.needsProfile))
     } else if (me.error.kind === 'problem' && me.error.status === 401) {
-      if (state.status !== 'signedOut') leave(state.status === 'loading' ? firstNotice : 'sessionEnded')
+      ended(state.status === 'loading' ? firstNotice : 'sessionEnded')
     } else if (state.status === 'loading') {
       // Nobody to fall back on, and signing in needs the network anyway.
       set({ status: 'signedOut', notice: firstNotice })
