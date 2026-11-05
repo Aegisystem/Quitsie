@@ -11,7 +11,6 @@ import (
 	"net/http/cookiejar"
 	"net/http/httptest"
 	"net/url"
-	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
@@ -25,6 +24,7 @@ import (
 	"github.com/Aegisystem/Quitsie/api/internal/httpapi"
 	"github.com/Aegisystem/Quitsie/api/internal/mail"
 	"github.com/Aegisystem/Quitsie/api/internal/store"
+	"github.com/Aegisystem/Quitsie/api/internal/storetest"
 )
 
 // testAPI is the whole server on an HTTPS test server, with a real database
@@ -40,15 +40,7 @@ type testAPI struct {
 
 func newTestAPI(t *testing.T, options ...func(*testAPI, *auth.Config)) *testAPI {
 	t.Helper()
-	ctx := context.Background()
-	db, err := store.Open(ctx, filepath.Join(t.TempDir(), "quitsie.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { db.Close() })
-	if err := store.Migrate(ctx, db); err != nil {
-		t.Fatal(err)
-	}
+	db := storetest.Open(t)
 
 	// The listener exists before the server starts, so everything can be
 	// built with the server's own origin.
@@ -62,6 +54,7 @@ func newTestAPI(t *testing.T, options ...func(*testAPI, *auth.Config)) *testAPI 
 	for _, option := range options {
 		option(a, &cfg)
 	}
+	var err error
 	if a.auth, err = auth.New(cfg); err != nil {
 		t.Fatal(err)
 	}

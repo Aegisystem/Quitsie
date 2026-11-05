@@ -9,7 +9,6 @@ import (
 	"maps"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"reflect"
 	"regexp"
 	"slices"
@@ -25,6 +24,7 @@ import (
 	"github.com/Aegisystem/Quitsie/api/internal/httpapi"
 	"github.com/Aegisystem/Quitsie/api/internal/mail"
 	"github.com/Aegisystem/Quitsie/api/internal/store"
+	"github.com/Aegisystem/Quitsie/api/internal/storetest"
 )
 
 // recordsAPI is the whole API on a real SQLite database, behind the real
@@ -39,21 +39,12 @@ type recordsAPI struct {
 
 func newRecordsAPI(t *testing.T) *recordsAPI {
 	t.Helper()
-	return openRecordsAPI(t, filepath.Join(t.TempDir(), "quitsie.db"))
+	return recordsAPIOn(t, storetest.Open(t))
 }
 
-// openRecordsAPI serves the database at path, as the server does on start.
-func openRecordsAPI(t *testing.T, path string) *recordsAPI {
+// recordsAPIOn serves db, as the server does on start.
+func recordsAPIOn(t *testing.T, db *sql.DB) *recordsAPI {
 	t.Helper()
-	ctx := context.Background()
-	db, err := store.Open(ctx, path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { db.Close() })
-	if err := store.Migrate(ctx, db); err != nil {
-		t.Fatal(err)
-	}
 	box := &codeBox{}
 	svc, err := auth.New(auth.Config{DB: db, Mail: box, DefaultCurrency: "USD"})
 	if err != nil {
@@ -646,21 +637,17 @@ func TestPullChangesRefusesACursorAheadOfTheServer(t *testing.T) {
 	decodeProblem(t, a.do(tr.ana, http.MethodGet, fmt.Sprintf("/api/v1/sync?since=%d", cursor+1), nil), http.StatusGone, httpapi.ProblemCodeCursorInvalid)
 }
 
-// backup copies the database to a new file, as Litestream keeps it in R2.
-func (a *recordsAPI) backup() string {
+// backup copies the database, as a backup keeps it.
+func (a *recordsAPI) backup() *sql.DB {
 	a.t.Helper()
-	path := filepath.Join(a.t.TempDir(), "backup.db")
-	if _, err := a.db.Exec(`VACUUM INTO ?`, path); err != nil {
-		a.t.Fatal(err)
-	}
-	return path
+	return storetest.Copy(a.t, a.db)
 }
 
 // restoredRecordsAPI serves a backup as the server does on its first start
 // after a restore: it records the restore before answering anyone.
-func restoredRecordsAPI(t *testing.T, backup string) *recordsAPI {
+func restoredRecordsAPI(t *testing.T, backup *sql.DB) *recordsAPI {
 	t.Helper()
-	a := openRecordsAPI(t, backup)
+	a := recordsAPIOn(t, backup)
 	if _, err := store.RecordRestore(context.Background(), a.db, time.Now()); err != nil {
 		t.Fatal(err)
 	}

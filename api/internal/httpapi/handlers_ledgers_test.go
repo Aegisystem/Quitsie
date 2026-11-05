@@ -8,7 +8,6 @@ import (
 	"maps"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
@@ -22,6 +21,7 @@ import (
 	"github.com/Aegisystem/Quitsie/api/internal/invites"
 	"github.com/Aegisystem/Quitsie/api/internal/mail"
 	"github.com/Aegisystem/Quitsie/api/internal/store"
+	"github.com/Aegisystem/Quitsie/api/internal/storetest"
 )
 
 // world is the API over a real database, with real sessions: the handler is
@@ -38,16 +38,9 @@ type world struct {
 
 func newWorld(t *testing.T) *world {
 	t.Helper()
-	ctx := context.Background()
-	db, err := store.Open(ctx, filepath.Join(t.TempDir(), "quitsie.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { db.Close() })
-	if err := store.Migrate(ctx, db); err != nil {
-		t.Fatal(err)
-	}
+	db := storetest.Open(t)
 	w := &world{t: t, db: db, mail: &outbox{}}
+	var err error
 	w.auth, err = auth.New(auth.Config{DB: db, Mail: w.mail, DefaultCurrency: "COP"})
 	if err != nil {
 		t.Fatal(err)

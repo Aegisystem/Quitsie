@@ -3,24 +3,16 @@ package store_test
 import (
 	"context"
 	"database/sql"
-	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/Aegisystem/Quitsie/api/internal/store"
+	"github.com/Aegisystem/Quitsie/api/internal/storetest"
 )
 
 func openMigrated(t *testing.T) *sql.DB {
 	t.Helper()
-	ctx := context.Background()
-	db, err := store.Open(ctx, filepath.Join(t.TempDir(), "quitsie.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { db.Close() })
-	if err := store.Migrate(ctx, db); err != nil {
-		t.Fatal(err)
-	}
+	db := storetest.Open(t)
 	return db
 }
 

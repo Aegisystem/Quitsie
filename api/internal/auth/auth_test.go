@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
@@ -14,7 +13,7 @@ import (
 
 	"github.com/Aegisystem/Quitsie/api/internal/auth"
 	"github.com/Aegisystem/Quitsie/api/internal/mail"
-	"github.com/Aegisystem/Quitsie/api/internal/store"
+	"github.com/Aegisystem/Quitsie/api/internal/storetest"
 )
 
 // outbox is a mail.Sender that keeps the emails instead of sending them.
@@ -126,15 +125,7 @@ func (b *browser) verifyOn(email, code, device string) (auth.SignIn, error) {
 
 func newFixture(t *testing.T, options ...func(*auth.Config)) *fixture {
 	t.Helper()
-	ctx := context.Background()
-	db, err := store.Open(ctx, filepath.Join(t.TempDir(), "quitsie.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { db.Close() })
-	if err := store.Migrate(ctx, db); err != nil {
-		t.Fatal(err)
-	}
+	db := storetest.Open(t)
 
 	f := &fixture{
 		db:    db,
@@ -150,6 +141,7 @@ func newFixture(t *testing.T, options ...func(*auth.Config)) *fixture {
 	for _, option := range options {
 		option(&cfg)
 	}
+	var err error
 	f.svc, err = auth.New(cfg)
 	if err != nil {
 		t.Fatal(err)
