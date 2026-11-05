@@ -8,9 +8,9 @@ Borra cada punto de aquí cuando quede terminado. Antes de actuar sobre un punto
 
 - **API:** las 36 operaciones de `openapi.yaml` están implementadas.
 - **PWA:** usa datos reales: réplica, cola, formularios, Grupos, Amistades, invitaciones y sesiones.
-- **Calidad:** `main` pasa la CI con Go 1.26.10: pruebas de Go, de la web y de punta a punta, `govulncheck`, `shellcheck`, `actionlint` y `systemd-analyze verify`.
+- **Calidad:** la CI corre con Go 1.26.10 las pruebas de Go contra PostgreSQL, las de la web y las de punta a punta, `govulncheck`, `actionlint` y la compilación de la imagen de Railway.
 - **Seguridad:** los 14 hallazgos están arreglados. El detalle está en [revision-seguridad.md](revision-seguridad.md).
-- **Producción:** no hay nada desplegado. GitHub no tiene variables ni secretos, y `.quitsie-wizard.env` no existe, así que el asistente de despliegue nunca se ejecutó.
+- **Producción:** Quitsie se despliega en Railway con PostgreSQL ([ADR 0012](adr/0012-postgres-en-railway.md), [despliegue.md](despliegue.md)). Las comprobaciones de la sección 4 están sin hacer.
 
 ## Orden de trabajo
 
@@ -22,6 +22,8 @@ Borra cada punto de aquí cuando quede terminado. Antes de actuar sobre un punto
 
 Los 14 hallazgos de [revision-seguridad.md](revision-seguridad.md) están arreglados. Quedan las comprobaciones que solo se pueden hacer al desplegar (sección 4).
 
+- **Límites por IP detrás del proxy de Railway.** El servidor solo cree la IP del visitante en `CF-Connecting-IP`, y solo si la conexión llega por loopback ([limits.go](../api/internal/httpapi/limits.go)). En Railway todas las conexiones llegan desde su proxy, así que todos los visitantes comparten los límites por IP: 300 peticiones por minuto, 10 códigos por hora y 60 verificaciones por hora. Arreglarlo exige saber qué encabezado escribe el proxy de Railway con la IP real y en qué conexiones se puede creer.
+
 ## 3. Decisiones del dueño
 
 Ningún agente debe tomar estas decisiones por su cuenta.
@@ -30,9 +32,8 @@ Ningún agente debe tomar estas decisiones por su cuenta.
 
 | # | Decisión | Opciones |
 | --- | --- | --- |
-| 4 | Dominio principal | El asistente propone `quitsie.com`, y `quitsie.app` redirige |
-| 5 | IP pública de la VM | Aceptar unos 3,65 USD al mes, o cambiar de proveedor con un ADR nuevo. El ADR 0007 dice 0 USD. Hay una tercera vía: una VM con IPv6 externa y sin IPv4 externa, a 0 USD, si R2 y Resend responden por IPv6. Ver [opciones](investigacion/ip-publica.md) |
-| 6 | Retención de respaldos | Hoy son 7 días, y un dato borrado sigue en ellos ese tiempo |
+| 4 | Dominio principal | Propuesta: `quitsie.com`, y `quitsie.app` redirige |
+| 6 | Retención de respaldos | La dan los respaldos de la base en Railway. Un dato borrado sigue en ellos ese tiempo |
 | 7 | Inicio de sesión con Google | Crear el cliente OAuth y configurarlo, o no hacerlo. Sin configurar, el botón ya no aparece |
 
 **Pueden esperar:**
@@ -53,29 +54,19 @@ Ningún agente debe tomar estas decisiones por su cuenta.
 
 ## 4. Despliegue
 
-Lo tiene que hacer el dueño, porque exige comprar el dominio, abrir cuentas y pagar. La guía es `bash deploy/first-deploy-wizard.sh`, y [despliegue.md](despliegue.md) explica sus 14 etapas. Pide `gh` con sesión iniciada y `gcloud`. La etapa 9 pide ahora el email que recibe las alertas, y la 14 envía un correo de prueba.
+Lo tiene que hacer el dueño, porque exige abrir cuentas, comprar el dominio y pagar. Los pasos y las variables están en [despliegue.md](despliegue.md).
 
-Durante la instalación:
+Después de desplegar, comprueba:
 
-- Activa «Always Use HTTPS» en Cloudflare. El servidor ya redirige a HTTPS y envía HSTS en producción, así que es una segunda capa.
-- Crea la regla de límite para `/api/v1/auth/*`. Los documentos citan un límite de Cloudflare que nada crea.
-- Opcional: un monitor externo gratuito sobre `/api/v1/health`. Una VM caída no puede avisar de sí misma ([despliegue](despliegue.md#alertas)).
-
-Después de instalar, comprueba:
-
-- Que dos visitantes tengan límites distintos y que un `CF-Connecting-IP` enviado por el cliente se sobrescriba.
-- Que `http://` responda 301 a través del túnel real, y que una visita por `https://` no se redirija.
-- Que `sudo quitsie-restore-test` termine en `OK`, y que `systemctl list-timers` muestre la prueba semanal y la comprobación de alertas.
-- Un correo real de Resend, el correo de prueba de las alertas y, si se activa, un inicio de sesión real con Google.
-- La memoria y el tiempo de `GET /sync` en la VM, con `GOMEMLIMIT=700MiB`.
+- Que `http://` redirija a `https://` y que `https://` traiga `strict-transport-security` ([HTTPS](despliegue.md#https)).
+- Que los respaldos de la base estén activos, y una restauración de prueba con `record-restore` en una base aparte.
+- Un correo real de Resend y, si se activa, un inicio de sesión real con Google.
+- La memoria y el tiempo de `GET /sync` en el plan de Railway elegido.
 - La PWA instalada en Safari de iOS.
-
-Nada de `deploy/` se probó en una VM real ni bajo systemd real: las unidades nuevas, el script de alertas y el marcador de restauración solo se probaron con sustitutos. La imagen `debian-13` no está confirmada, y `QUITSIE_IMAGE_FAMILY=debian-12` es la alternativa.
 
 ## 5. Falta fuera del código
 
 - **Política de privacidad y términos.** La app no tiene ninguno. Maneja emails e importes, también de personas sin cuenta, y debe decir cuánto duran los respaldos. Qué se guarda, dónde y cuánto dura está en [datos-personales.md](datos-personales.md), con lo que solo el dueño puede decidir. La cookie de dispositivo conocido dura un año y sobrevive a cerrar sesión.
-- **Respaldo que deja de subir.** Si Litestream sigue activo pero no puede escribir en R2 mientras R2 se puede leer, nada avisa, y la prueba semanal restaura datos viejos y pasa. Comparar en la prueba la versión del respaldo con la de la base viva lo cerraría, pero antes hay que medir en la VM cuánto se retrasa el respaldo de forma normal.
 
 ## 6. Deuda menor
 
@@ -89,20 +80,20 @@ Nada de `deploy/` se probó en una VM real ni bajo systemd real: las unidades nu
 
 **Documentación:**
 
-- `docs/arquitectura.md`, `docs/despliegue.md` y `api/internal/httpapi/limits.go` citan el límite de Cloudflare. Corrígelos si la regla no se crea.
+- `api/internal/httpapi/limits.go`, `headers.go` y sus comentarios hablan de `cloudflared` y del túnel, que ya no existen. Se corrigen con el arreglo de los límites por IP (sección 2).
 
 **Limpieza:** en la máquina del dueño, los worktrees `api-endurecer-48a67d`, `web-escritura-c04f34`, `web-grupos-25864f` y `web-lectura-59f6a4` ya están integrados en `main`.
 
 ## 7. Sin verificar
 
-- Cloudflare, Google, Resend y la VM reales.
+- Railway, su PostgreSQL, Google y Resend reales.
 - Safari, Firefox y dos dispositivos reales a la vez. Las pruebas de punta a punta solo cubren Chromium. En desarrollo, Safari puede rechazar las cookies `Secure` por `http://localhost`.
 - Copiar y compartir el enlace con el portapapeles real, sin el permiso que concede Playwright.
 - La caché HTTP del navegador tras cerrar sesión, aunque la API ya responde `no-store`.
 
 ## Cómo trabajar aquí
 
-**Comprobaciones.** Son las de la CI: `go vet ./...`, `go test ./...` y `govulncheck` en `api/`; `npm run typecheck`, `npm test` y `npm run build` en `web/`; y el trabajo `lint`, que pasa `shellcheck`, `actionlint`, `deploy/alert-check.test.sh` y `systemd-analyze verify`. Tras cambiar `openapi.yaml` o las consultas, ejecuta `go generate ./...` en `api/` y `npm run generate` en `web/`.
+**Comprobaciones.** Son las de la CI: `go vet ./...`, `go test ./...` y `govulncheck` en `api/`; `npm run typecheck`, `npm test` y `npm run build` en `web/`; el trabajo `lint`, que pasa `actionlint`, y el trabajo `image`, que compila el `Dockerfile`. Las pruebas de Go y las de punta a punta necesitan el PostgreSQL de `compose.yaml` (`docker compose up -d`). Tras cambiar `openapi.yaml` o las consultas, ejecuta `go generate ./...` en `api/` y `npm run generate` en `web/`.
 
 **Integración.** El proyecto es trunk-based: commits pequeños y en verde, y ramas de horas. El historial usa commits `Merge …`. Hacer push a `main` exige confirmarlo con el dueño cada vez. Cuando `main` está abierta en la carpeta principal, desde un worktree se crea el merge con `git commit-tree`, se sube con `git push origin "${M}:refs/heads/main"` y la carpeta principal se actualiza con `git merge --ff-only origin/main`. En zsh las llaves son necesarias, porque `$M:r` es un modificador.
 
@@ -112,11 +103,11 @@ Nada de `deploy/` se probó en una VM real ni bajo systemd real: las unidades nu
 QUITSIE_ENV=development QUITSIE_MAIL=log QUITSIE_ADDR=127.0.0.1:18731 QUITSIE_PUBLIC_ORIGIN=http://prueba.localhost:18731 ./quitsie
 ```
 
-Los códigos de acceso salen en el log. `curl` no guarda las cookies `Secure` por `http`, así que léelas de `Set-Cookie` y reenvíalas: un código solo se comprueba con la cookie de flujo que dejó su petición. Por loopback puedes rotar `CF-Connecting-IP` en las pruebas para no chocar con el límite por IP.
+Los códigos de acceso salen en el log. `curl` no guarda las cookies `Secure` por `http`, así que léelas de `Set-Cookie` y reenvíalas: un código solo se comprueba con la cookie de flujo que dejó su petición. Por loopback puedes rotar `CF-Connecting-IP` en las pruebas para no chocar con el límite por IP. Sin `QUITSIE_DATABASE_URL`, el modo de desarrollo usa la base de `compose.yaml`.
 
 **Migraciones.** Solo avanzan, y cada una debe ser compatible con la versión anterior del binario, porque un despliegue puede revertir el binario.
 
-**Errores para el dueño.** Lo que necesite su atención se registra en nivel `ERROR`: las alertas de la VM saltan con esas líneas del journal.
+**Errores para el dueño.** Lo que necesite su atención se registra en nivel `ERROR`, en los logs de Railway.
 
 **Dónde están los límites:**
 
@@ -131,7 +122,6 @@ Los códigos de acceso salen en el log. `curl` no guarda las cookies `Secure` po
 | Envíos y verificaciones por IP | `api/internal/auth/ratelimit.go` |
 | Correos por hora y por día | `api/internal/auth/mailbudget.go` |
 | Dispositivos conocidos | `api/internal/auth/knowndevice.go` |
-| Correos de alerta al día | `deploy/alert-check.sh` |
 
 **Trampas conocidas:**
 

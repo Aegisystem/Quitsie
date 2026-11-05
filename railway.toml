@@ -1,0 +1,16 @@
+# Railway reads this file from the repository (docs/despliegue.md). The
+# service's variables, its PostgreSQL and its domain are set in Railway.
+
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+# Deploy only what changes the binary.
+watchPatterns = ["api/**", "web/**", "openapi.yaml", "Dockerfile", "railway.toml"]
+
+[deploy]
+# A deploy goes live only once the new binary answers here; until then the
+# previous one keeps serving.
+healthcheckPath = "/api/v1/health"
+healthcheckTimeout = 60
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 5

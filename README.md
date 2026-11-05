@@ -43,10 +43,4 @@ Las migraciones son archivos `api/migrations/NNNNN_descripcion.sql` con seccione
 
 ## Despliegue
 
-Quitsie corre en una VM gratuita de Google Cloud detrás de Cloudflare ([ADR 0007](docs/adr/0007-go-nativo-en-vm-gratuita.md)). El primer despliegue, con los pasos que solo puede hacer su dueño (dominio, cuentas, tokens), lo guía un asistente interactivo:
-
-```bash
-bash deploy/first-deploy-wizard.sh
-```
-
-Después, cada push a `main` que pase la CI se despliega solo (`.github/workflows/deploy.yml`). Los secretos solo viven en la VM, en `/etc/quitsie/*.env`, y en los secretos de GitHub Actions. La instalación, el despliegue continuo, la operación y la prueba de restauración del respaldo están en [docs/despliegue.md](docs/despliegue.md).
+Quitsie corre en Railway, con la base en PostgreSQL ([ADR 0012](docs/adr/0012-postgres-en-railway.md)). Railway compila la imagen del `Dockerfile` y despliega cada push a `main` que pase la CI. Los pasos, las variables y cómo restaurar un respaldo están en [docs/despliegue.md](docs/despliegue.md).

@@ -1,0 +1,10 @@
+.git
+.claude
+**/node_modules
+**/.DS_Store
+api/bin
+api/cmd/server/dist/*
+!api/cmd/server/dist/.gitkeep
+web/e2e/results
+web/dev-dist
+docs

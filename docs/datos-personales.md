@@ -8,9 +8,9 @@ No es la política de privacidad. Lo que solo puede decidir o firmar el dueño e
 
 - **Usuarios:** quienes tienen cuenta.
 - **Personas sin cuenta:** los Miembros pendientes y los Amigos pendientes. Otro Usuario escribe su nombre y, si quiere, su email. Esa persona nunca aceptó nada.
-- **El dueño:** su email recibe las alertas de la VM.
+- **El dueño:** su email recibe los avisos de Railway.
 
-## En el servidor (SQLite en la VM)
+## En el servidor (PostgreSQL en Railway)
 
 | Dato | Tabla | Cuánto dura |
 | --- | --- | --- |
@@ -27,16 +27,16 @@ Los Gastos y Liquidaciones son de todos los Miembros del libro. Borrar una cuent
 
 ## Respaldos
 
-Litestream copia la base a Cloudflare R2 de forma continua y guarda **7 días** de puntos de restauración (`deploy/litestream.yml`). Un dato borrado o una cuenta borrada siguen en los respaldos ese tiempo. Cambiar ese plazo es la decisión 6 de [pendientes](pendientes.md#3-decisiones-del-dueño).
+Los respaldos son los de la base de Railway. Un dato borrado o una cuenta borrada siguen en ellos hasta que el respaldo caduca. El plazo depende de cómo se configuren en Railway, y es la decisión 6 de [pendientes](pendientes.md#3-decisiones-del-dueño).
 
-## En el log de la VM
+## En el log del servidor
 
-El binario no registra cada petición. Escribe en el journal de systemd:
+El binario no registra cada petición. Escribe en los logs de Railway:
 
 - Los errores 500, con el método y la ruta. Una ruta puede llevar el id de un libro o el token de un Enlace de invitación.
 - Los fallos al entrar con Google y el agotamiento del presupuesto de correos, sin el email.
 
-En producción no escribe correos ni códigos: el servidor no arranca con `QUITSIE_MAIL=log`. El journal no tiene un plazo configurado; systemd lo limita por tamaño. Las alertas copian al email del dueño solo el mensaje de cada línea de error ([despliegue](despliegue.md#alertas)).
+En producción no escribe correos ni códigos: el servidor no arranca con `QUITSIE_MAIL=log`. Railway guarda los logs según el plan; el plazo está en su panel.
 
 ## En el navegador
 
@@ -56,10 +56,8 @@ Todas las cookies son propias y necesarias para entrar. No hay analítica, publi
 
 | Servicio | Para qué | Qué ve | Dónde |
 | --- | --- | --- | --- |
-| Google Cloud | La VM y su disco | Todo lo que guarda el servidor | `us-east1`, Estados Unidos |
-| Cloudflare | DNS, CDN y túnel | Cada petición: IP, navegador, rutas y el tráfico descifrado, porque Cloudflare termina el TLS | Red global |
-| Cloudflare R2 | Respaldos | La base entera | Según la cuenta de R2 |
-| Resend | Enviar los códigos y las alertas | El email de destino y el contenido, código incluido | Estados Unidos (comprobar en su panel) |
+| Railway | El servidor, la base y sus respaldos | Todo lo que guarda el servidor, y cada petición descifrada, porque Railway termina el TLS | La región del proyecto (comprobar en su panel) |
+| Resend | Enviar los códigos | El email de destino y el contenido, código incluido | Estados Unidos (comprobar en su panel) |
 | Google | Entrar con Google, si se activa | Que esa persona usa Quitsie | Global |
 | GitHub | Código y despliegue | Ningún dato de Usuarios | Global |
 
@@ -75,7 +73,7 @@ No hay forma de **exportar** los datos propios, ni de que una persona sin cuenta
 
 - Quién es el responsable de los datos y cómo se le contacta.
 - Qué leyes aplican según dónde viva el dueño y dónde estén los Usuarios. En Colombia, la Ley 1581 de 2012; en la Unión Europea, el RGPD si se ofrece allí.
-- La base legal de cada tratamiento y el aviso de que los datos salen del país (Estados Unidos y la red de Cloudflare).
+- La base legal de cada tratamiento y el aviso de que los datos salen del país (la región de Railway y Estados Unidos).
 - Cómo se informa a las personas sin cuenta cuyos datos escribe otro Usuario. Su email solo lo ve quien lo escribió.
 - El plazo de los respaldos (decisión 6) y si hace falta exportar datos.
 - Los términos de uso: que la app no mueve dinero, y qué pasa con una cuenta que abusa de los límites.
