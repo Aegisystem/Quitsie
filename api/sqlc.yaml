@@ -1,6 +1,6 @@
 version: "2"
 sql:
-  - engine: sqlite
+  - engine: postgresql
     # sqlc reads the goose migrations as the schema and ignores their Down sections.
     schema: migrations
     queries: internal/store/queries
@@ -8,4 +8,21 @@ sql:
       go:
         package: store
         out: internal/store
-        emit_pointers_for_null_types: true
+        # With database/sql, sqlc only writes pointers for nullable columns
+        # through these overrides; without them it writes sql.Null* types.
+        overrides:
+          - db_type: text
+            nullable: true
+            go_type: {type: string, pointer: true}
+          - db_type: pg_catalog.int8
+            nullable: true
+            go_type: {type: int64, pointer: true}
+          - db_type: pg_catalog.bool
+            nullable: true
+            go_type: {type: bool, pointer: true}
+          - db_type: timestamptz
+            nullable: true
+            go_type: {import: time, type: Time, pointer: true}
+          - db_type: date
+            nullable: true
+            go_type: {import: time, type: Time, pointer: true}

@@ -16,10 +16,9 @@ import (
 // in between (docs/arquitectura.md, "Restaurar un respaldo").
 
 // minRestoreJump is the least a restore moves the counter: more versions than
-// the lost copy can have handed out after the backup. Litestream trails by
-// about a second, but R2 may have been unreachable for hours before the
-// failure; a billion versions is 11 days at a thousand writes a second, far
-// more than this server sustains.
+// the lost copy can have handed out after the backup. A backup of the hosted
+// database may be a day or more old; a billion versions is 11 days at a
+// thousand writes a second, far more than this server sustains.
 const minRestoreJump = 1_000_000_000
 
 // maxVersion is the largest integer a JavaScript number holds exactly, and the
@@ -41,7 +40,7 @@ const maxVersion = 1<<53 - 1
 // every cursor a device holds is then at most the current counter, so the new
 // gap holds none of them.
 func RecordRestore(ctx context.Context, db *sql.DB, now time.Time) (RestoreGap, error) {
-	tx, err := db.BeginTx(ctx, nil)
+	tx, err := BeginWrite(ctx, db)
 	if err != nil {
 		return RestoreGap{}, fmt.Errorf("begin restore: %w", err)
 	}

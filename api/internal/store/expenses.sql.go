@@ -12,8 +12,8 @@ import (
 
 const deleteExpense = `-- name: DeleteExpense :one
 UPDATE expenses
-SET deleted_at = ?, version = ?
-WHERE id = ? AND deleted_at IS NULL
+SET deleted_at = $1, version = $2
+WHERE id = $3 AND deleted_at IS NULL
 RETURNING id, ledger_id, description, date, currency, total, category, split_method, created_by, version, created_at, deleted_at
 `
 
@@ -46,7 +46,7 @@ func (q *Queries) DeleteExpense(ctx context.Context, arg DeleteExpenseParams) (E
 
 const deleteOwedSharesOfExpense = `-- name: DeleteOwedSharesOfExpense :exec
 DELETE FROM owed_shares
-WHERE expense_id = ?
+WHERE expense_id = $1
 `
 
 func (q *Queries) DeleteOwedSharesOfExpense(ctx context.Context, expenseID string) error {
@@ -56,7 +56,7 @@ func (q *Queries) DeleteOwedSharesOfExpense(ctx context.Context, expenseID strin
 
 const deletePaidSharesOfExpense = `-- name: DeletePaidSharesOfExpense :exec
 DELETE FROM paid_shares
-WHERE expense_id = ?
+WHERE expense_id = $1
 `
 
 func (q *Queries) DeletePaidSharesOfExpense(ctx context.Context, expenseID string) error {
@@ -66,7 +66,7 @@ func (q *Queries) DeletePaidSharesOfExpense(ctx context.Context, expenseID strin
 
 const getExpense = `-- name: GetExpense :one
 SELECT id, ledger_id, description, date, currency, total, category, split_method, created_by, version, created_at, deleted_at FROM expenses
-WHERE id = ?
+WHERE id = $1
 `
 
 func (q *Queries) GetExpense(ctx context.Context, id string) (Expense, error) {
@@ -91,7 +91,7 @@ func (q *Queries) GetExpense(ctx context.Context, id string) (Expense, error) {
 
 const insertExpense = `-- name: InsertExpense :execrows
 INSERT INTO expenses (id, ledger_id, description, date, currency, total, category, split_method, created_by, version, created_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 ON CONFLICT (id) DO NOTHING
 `
 
@@ -133,7 +133,7 @@ func (q *Queries) InsertExpense(ctx context.Context, arg InsertExpenseParams) (i
 
 const insertOwedShare = `-- name: InsertOwedShare :exec
 INSERT INTO owed_shares (expense_id, member_id, amount, split_value)
-VALUES (?, ?, ?, ?)
+VALUES ($1, $2, $3, $4)
 `
 
 type InsertOwedShareParams struct {
@@ -155,7 +155,7 @@ func (q *Queries) InsertOwedShare(ctx context.Context, arg InsertOwedShareParams
 
 const insertPaidShare = `-- name: InsertPaidShare :exec
 INSERT INTO paid_shares (expense_id, member_id, amount)
-VALUES (?, ?, ?)
+VALUES ($1, $2, $3)
 `
 
 type InsertPaidShareParams struct {
@@ -171,7 +171,7 @@ func (q *Queries) InsertPaidShare(ctx context.Context, arg InsertPaidShareParams
 
 const listOwedSharesOfExpense = `-- name: ListOwedSharesOfExpense :many
 SELECT expense_id, member_id, amount, split_value FROM owed_shares
-WHERE expense_id = ?
+WHERE expense_id = $1
 ORDER BY member_id
 `
 
@@ -205,7 +205,7 @@ func (q *Queries) ListOwedSharesOfExpense(ctx context.Context, expenseID string)
 
 const listPaidSharesOfExpense = `-- name: ListPaidSharesOfExpense :many
 SELECT expense_id, member_id, amount FROM paid_shares
-WHERE expense_id = ?
+WHERE expense_id = $1
 ORDER BY member_id
 `
 
@@ -234,8 +234,8 @@ func (q *Queries) ListPaidSharesOfExpense(ctx context.Context, expenseID string)
 
 const restoreExpense = `-- name: RestoreExpense :one
 UPDATE expenses
-SET deleted_at = NULL, version = ?
-WHERE id = ? AND deleted_at IS NOT NULL
+SET deleted_at = NULL, version = $1
+WHERE id = $2 AND deleted_at IS NOT NULL
 RETURNING id, ledger_id, description, date, currency, total, category, split_method, created_by, version, created_at, deleted_at
 `
 
@@ -266,14 +266,14 @@ func (q *Queries) RestoreExpense(ctx context.Context, arg RestoreExpenseParams) 
 
 const updateExpenseAtVersion = `-- name: UpdateExpenseAtVersion :one
 UPDATE expenses
-SET description = ?1,
-    date = ?2,
-    currency = ?3,
-    total = ?4,
-    category = ?5,
-    split_method = ?6,
-    version = ?7
-WHERE id = ?8 AND version = ?9 AND deleted_at IS NULL
+SET description = $1,
+    date = $2,
+    currency = $3,
+    total = $4,
+    category = $5,
+    split_method = $6,
+    version = $7
+WHERE id = $8 AND version = $9 AND deleted_at IS NULL
 RETURNING id, ledger_id, description, date, currency, total, category, split_method, created_by, version, created_at, deleted_at
 `
 

@@ -12,7 +12,7 @@ import (
 
 const createRestoreGap = `-- name: CreateRestoreGap :exec
 INSERT INTO restore_gaps (restored_version, jumped_version, restored_at)
-VALUES (?, ?, ?)
+VALUES ($1, $2, $3)
 `
 
 type CreateRestoreGapParams struct {
@@ -42,7 +42,7 @@ func (q *Queries) CurrentVersion(ctx context.Context) (int64, error) {
 const inRestoreGap = `-- name: InRestoreGap :one
 SELECT CAST(EXISTS (
     SELECT 1 FROM restore_gaps
-    WHERE restored_version < ?1 AND ?1 < jumped_version
+    WHERE restored_version < $1 AND $1 < jumped_version
 ) AS BOOLEAN) AS in_gap
 `
 
@@ -56,7 +56,7 @@ func (q *Queries) InRestoreGap(ctx context.Context, cursor int64) (bool, error) 
 
 const jumpVersion = `-- name: JumpVersion :exec
 UPDATE version_counter
-SET value = ?1
+SET value = $1
 WHERE id = 1
 `
 

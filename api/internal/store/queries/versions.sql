@@ -18,7 +18,7 @@ WHERE id = 1;
 
 -- name: CreateRestoreGap :exec
 INSERT INTO restore_gaps (restored_version, jumped_version, restored_at)
-VALUES (?, ?, ?);
+VALUES ($1, $2, $3);
 
 -- name: InRestoreGap :one
 -- Whether a cursor lies strictly between the two ends of a restore's gap.

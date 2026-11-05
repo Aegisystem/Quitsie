@@ -12,7 +12,7 @@ import (
 
 const createUser = `-- name: CreateUser :exec
 INSERT INTO users (id, email, name, preferred_currency, created_at)
-VALUES (?, ?, ?, ?, ?)
+VALUES ($1, $2, $3, $4, $5)
 `
 
 type CreateUserParams struct {
@@ -36,8 +36,8 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) error {
 
 const deleteUser = `-- name: DeleteUser :exec
 UPDATE users
-SET email = '', name = '', google_sub = NULL, deleted_at = ?1
-WHERE id = ?2 AND deleted_at IS NULL
+SET email = '', name = '', google_sub = NULL, deleted_at = $1
+WHERE id = $2 AND deleted_at IS NULL
 `
 
 type DeleteUserParams struct {
@@ -54,7 +54,7 @@ func (q *Queries) DeleteUser(ctx context.Context, arg DeleteUserParams) error {
 
 const getUserByEmail = `-- name: GetUserByEmail :one
 SELECT id, email, name, preferred_currency, google_sub, created_at, deleted_at FROM users
-WHERE email = ? AND deleted_at IS NULL
+WHERE email = $1 AND deleted_at IS NULL
 `
 
 func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error) {
@@ -74,7 +74,7 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error
 
 const getUserByGoogleSub = `-- name: GetUserByGoogleSub :one
 SELECT id, email, name, preferred_currency, google_sub, created_at, deleted_at FROM users
-WHERE google_sub = ?1 AND deleted_at IS NULL
+WHERE google_sub = $1 AND deleted_at IS NULL
 `
 
 func (q *Queries) GetUserByGoogleSub(ctx context.Context, googleSub *string) (User, error) {
@@ -94,8 +94,8 @@ func (q *Queries) GetUserByGoogleSub(ctx context.Context, googleSub *string) (Us
 
 const setUserGoogleSub = `-- name: SetUserGoogleSub :exec
 UPDATE users
-SET google_sub = ?1
-WHERE id = ?2
+SET google_sub = $1
+WHERE id = $2
 `
 
 type SetUserGoogleSubParams struct {
@@ -110,9 +110,9 @@ func (q *Queries) SetUserGoogleSub(ctx context.Context, arg SetUserGoogleSubPara
 
 const updateUser = `-- name: UpdateUser :one
 UPDATE users
-SET name = coalesce(?1, name),
-    preferred_currency = coalesce(?2, preferred_currency)
-WHERE id = ?3 AND deleted_at IS NULL
+SET name = coalesce($1, name),
+    preferred_currency = coalesce($2, preferred_currency)
+WHERE id = $3 AND deleted_at IS NULL
 RETURNING id, email, name, preferred_currency, google_sub, created_at, deleted_at
 `
 

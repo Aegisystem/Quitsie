@@ -12,11 +12,11 @@ import (
 
 const countLedgerRows = `-- name: CountLedgerRows :one
 SELECT CAST(
-    (SELECT count(*) FROM expenses WHERE expenses.ledger_id = ?1)
-    + (SELECT count(*) FROM settlements WHERE settlements.ledger_id = ?1)
-    + (SELECT count(*) FROM activities WHERE activities.ledger_id = ?1)
-    + (SELECT count(*) FROM paid_shares JOIN expenses ON expenses.id = paid_shares.expense_id WHERE expenses.ledger_id = ?1)
-    + (SELECT count(*) FROM owed_shares JOIN expenses ON expenses.id = owed_shares.expense_id WHERE expenses.ledger_id = ?1)
+    (SELECT count(*) FROM expenses WHERE expenses.ledger_id = $1)
+    + (SELECT count(*) FROM settlements WHERE settlements.ledger_id = $1)
+    + (SELECT count(*) FROM activities WHERE activities.ledger_id = $1)
+    + (SELECT count(*) FROM paid_shares JOIN expenses ON expenses.id = paid_shares.expense_id WHERE expenses.ledger_id = $1)
+    + (SELECT count(*) FROM owed_shares JOIN expenses ON expenses.id = owed_shares.expense_id WHERE expenses.ledger_id = $1)
 AS BIGINT) AS row_count
 `
 
@@ -30,7 +30,7 @@ func (q *Queries) CountLedgerRows(ctx context.Context, ledgerID string) (int64, 
 
 const createLedger = `-- name: CreateLedger :exec
 INSERT INTO ledgers (id, kind, name, currency, simplify_debts, version, created_at)
-VALUES (?, ?, ?, ?, ?, ?, ?)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
 `
 
 type CreateLedgerParams struct {
@@ -58,8 +58,8 @@ func (q *Queries) CreateLedger(ctx context.Context, arg CreateLedgerParams) erro
 
 const deleteLedger = `-- name: DeleteLedger :one
 UPDATE ledgers
-SET deleted_at = ?, version = ?
-WHERE id = ? AND deleted_at IS NULL
+SET deleted_at = $1, version = $2
+WHERE id = $3 AND deleted_at IS NULL
 RETURNING id, kind, name, currency, simplify_debts, invite_link_generation, version, created_at, deleted_at
 `
 
@@ -89,7 +89,7 @@ func (q *Queries) DeleteLedger(ctx context.Context, arg DeleteLedgerParams) (Led
 
 const getLedger = `-- name: GetLedger :one
 SELECT id, kind, name, currency, simplify_debts, invite_link_generation, version, created_at, deleted_at FROM ledgers
-WHERE id = ?
+WHERE id = $1
 `
 
 func (q *Queries) GetLedger(ctx context.Context, id string) (Ledger, error) {
@@ -111,8 +111,8 @@ func (q *Queries) GetLedger(ctx context.Context, id string) (Ledger, error) {
 
 const regenerateInviteLink = `-- name: RegenerateInviteLink :one
 UPDATE ledgers
-SET invite_link_generation = invite_link_generation + 1, version = ?
-WHERE id = ? AND deleted_at IS NULL
+SET invite_link_generation = invite_link_generation + 1, version = $1
+WHERE id = $2 AND deleted_at IS NULL
 RETURNING id, kind, name, currency, simplify_debts, invite_link_generation, version, created_at, deleted_at
 `
 
@@ -142,8 +142,8 @@ func (q *Queries) RegenerateInviteLink(ctx context.Context, arg RegenerateInvite
 
 const scaleLedgerExpenseTotals = `-- name: ScaleLedgerExpenseTotals :exec
 UPDATE expenses
-SET total = total * ?1 / ?2
-WHERE ledger_id = ?3
+SET total = total * $1 / $2
+WHERE ledger_id = $3
 `
 
 type ScaleLedgerExpenseTotalsParams struct {
@@ -160,13 +160,13 @@ func (q *Queries) ScaleLedgerExpenseTotals(ctx context.Context, arg ScaleLedgerE
 
 const scaleLedgerOwedShares = `-- name: ScaleLedgerOwedShares :exec
 UPDATE owed_shares
-SET amount = amount * ?1 / ?2,
+SET amount = amount * $1 / $2,
     split_value = CASE
-        WHEN expense_id IN (SELECT expenses.id FROM expenses WHERE expenses.ledger_id = ?3 AND split_method = 'adjustment')
-        THEN split_value * ?1 / ?2
+        WHEN expense_id IN (SELECT expenses.id FROM expenses WHERE expenses.ledger_id = $3 AND split_method = 'adjustment')
+        THEN split_value * $1 / $2
         ELSE split_value
     END
-WHERE expense_id IN (SELECT expenses.id FROM expenses WHERE expenses.ledger_id = ?3)
+WHERE expense_id IN (SELECT expenses.id FROM expenses WHERE expenses.ledger_id = $3)
 `
 
 type ScaleLedgerOwedSharesParams struct {
@@ -184,8 +184,8 @@ func (q *Queries) ScaleLedgerOwedShares(ctx context.Context, arg ScaleLedgerOwed
 
 const scaleLedgerPaidShares = `-- name: ScaleLedgerPaidShares :exec
 UPDATE paid_shares
-SET amount = amount * ?1 / ?2
-WHERE expense_id IN (SELECT expenses.id FROM expenses WHERE expenses.ledger_id = ?3)
+SET amount = amount * $1 / $2
+WHERE expense_id IN (SELECT expenses.id FROM expenses WHERE expenses.ledger_id = $3)
 `
 
 type ScaleLedgerPaidSharesParams struct {
@@ -202,8 +202,8 @@ func (q *Queries) ScaleLedgerPaidShares(ctx context.Context, arg ScaleLedgerPaid
 
 const scaleLedgerSettlements = `-- name: ScaleLedgerSettlements :exec
 UPDATE settlements
-SET amount = amount * ?1 / ?2
-WHERE ledger_id = ?3
+SET amount = amount * $1 / $2
+WHERE ledger_id = $3
 `
 
 type ScaleLedgerSettlementsParams struct {
@@ -220,8 +220,8 @@ func (q *Queries) ScaleLedgerSettlements(ctx context.Context, arg ScaleLedgerSet
 
 const updateLedger = `-- name: UpdateLedger :one
 UPDATE ledgers
-SET name = ?, simplify_debts = ?, version = ?
-WHERE id = ? AND deleted_at IS NULL
+SET name = $1, simplify_debts = $2, version = $3
+WHERE id = $4 AND deleted_at IS NULL
 RETURNING id, kind, name, currency, simplify_debts, invite_link_generation, version, created_at, deleted_at
 `
 

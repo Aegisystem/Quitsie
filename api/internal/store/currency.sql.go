@@ -11,8 +11,8 @@ import (
 
 const relabelExpenses = `-- name: RelabelExpenses :exec
 UPDATE expenses
-SET currency = ?, version = ?
-WHERE ledger_id = ?
+SET currency = $1, version = $2
+WHERE ledger_id = $3
 `
 
 type RelabelExpensesParams struct {
@@ -30,8 +30,8 @@ func (q *Queries) RelabelExpenses(ctx context.Context, arg RelabelExpensesParams
 
 const relabelSettlements = `-- name: RelabelSettlements :exec
 UPDATE settlements
-SET currency = ?, version = ?
-WHERE ledger_id = ?
+SET currency = $1, version = $2
+WHERE ledger_id = $3
 `
 
 type RelabelSettlementsParams struct {
@@ -48,8 +48,8 @@ func (q *Queries) RelabelSettlements(ctx context.Context, arg RelabelSettlements
 
 const setGroupCurrency = `-- name: SetGroupCurrency :one
 UPDATE ledgers
-SET currency = CAST(?1 AS TEXT), version = ?2
-WHERE id = ?3 AND kind = 'group' AND deleted_at IS NULL
+SET currency = CAST($1 AS TEXT), version = $2
+WHERE id = $3 AND kind = 'group' AND deleted_at IS NULL
 RETURNING id, kind, name, currency, simplify_debts, invite_link_generation, version, created_at, deleted_at
 `
 

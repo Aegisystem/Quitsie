@@ -100,11 +100,10 @@ type SignIn struct {
 	ReturnTo string
 }
 
-// inTx runs fn in a write transaction. The store opens SQLite with
-// _txlock=immediate, so transactions take the write lock when they begin
-// and concurrent sign-ins run one after the other.
+// inTx runs fn in a write transaction. store.BeginWrite runs write
+// transactions one after the other, so concurrent sign-ins never race.
 func (s *Service) inTx(ctx context.Context, fn func(q *store.Queries) error) error {
-	tx, err := s.db.BeginTx(ctx, nil)
+	tx, err := store.BeginWrite(ctx, s.db)
 	if err != nil {
 		return fmt.Errorf("auth: %w", err)
 	}

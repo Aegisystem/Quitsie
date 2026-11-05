@@ -27,7 +27,7 @@ import (
 	"github.com/Aegisystem/Quitsie/api/internal/storetest"
 )
 
-// recordsAPI is the whole API on a real SQLite database, behind the real
+// recordsAPI is the whole API on a real PostgreSQL database, behind the real
 // session middleware, as the router will serve it.
 type recordsAPI struct {
 	t       *testing.T

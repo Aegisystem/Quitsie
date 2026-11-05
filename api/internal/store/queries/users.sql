@@ -1,10 +1,10 @@
 -- name: CreateUser :exec
 INSERT INTO users (id, email, name, preferred_currency, created_at)
-VALUES (?, ?, ?, ?, ?);
+VALUES ($1, $2, $3, $4, $5);
 
 -- name: GetUserByEmail :one
 SELECT * FROM users
-WHERE email = ? AND deleted_at IS NULL;
+WHERE email = $1 AND deleted_at IS NULL;
 
 -- name: GetUserByGoogleSub :one
 SELECT * FROM users

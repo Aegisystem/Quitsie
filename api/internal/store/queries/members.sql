@@ -2,7 +2,7 @@
 -- Without a user_id the Member is pending. email_added_by is who gave its
 -- email, the only User who sees it.
 INSERT INTO members (id, ledger_id, user_id, name, email, email_added_by, version, created_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8);
 
 -- name: ClaimMember :one
 -- Links an active pending Member to a User, who inherits its history.
@@ -14,8 +14,8 @@ RETURNING *;
 -- name: UnclaimMember :one
 -- Undoes a Claim made by mistake: the Member is pending again and keeps its name.
 UPDATE members
-SET user_id = NULL, version = ?
-WHERE id = ? AND user_id IS NOT NULL
+SET user_id = NULL, version = $1
+WHERE id = $2 AND user_id IS NOT NULL
 RETURNING *;
 
 -- name: UnlinkMembersOfUser :exec
@@ -29,7 +29,7 @@ WHERE user_id = CAST(sqlc.arg(user_id) AS TEXT);
 -- name: ListMembers :many
 -- Includes former members, who still appear in past Expenses.
 SELECT * FROM members
-WHERE ledger_id = ?
+WHERE ledger_id = $1
 ORDER BY created_at, id;
 
 -- name: MarkMemberFormer :one
@@ -60,16 +60,16 @@ WHERE ledger_id = sqlc.arg(ledger_id)
 -- Whoever comes back to a Group they left gets their former member back,
 -- with its whole history, instead of a new one.
 UPDATE members
-SET status = 'active', removed = FALSE, version = ?
-WHERE id = ? AND status = 'former'
+SET status = 'active', removed = FALSE, version = $1
+WHERE id = $2 AND status = 'former'
 RETURNING *;
 
 -- name: ReadmitMember :one
 -- Lets a removed User come back through the Invite link. They stay a former
 -- member until they do.
 UPDATE members
-SET removed = FALSE, version = ?
-WHERE id = ? AND status = 'former' AND removed
+SET removed = FALSE, version = $1
+WHERE id = $2 AND status = 'former' AND removed
 RETURNING *;
 
 -- name: GetUserSharingAGroup :one
@@ -101,6 +101,6 @@ LIMIT 1;
 -- name: UpdatePendingMember :one
 -- Only a pending Member: a linked one is whoever their User is.
 UPDATE members
-SET name = ?, email = ?, email_added_by = ?, version = ?
-WHERE id = ? AND user_id IS NULL AND status = 'active'
+SET name = $1, email = $2, email_added_by = $3, version = $4
+WHERE id = $5 AND user_id IS NULL AND status = 'active'
 RETURNING *;

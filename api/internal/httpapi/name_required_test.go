@@ -12,7 +12,7 @@ import (
 func (w *world) nameless(email string) *person {
 	w.t.Helper()
 	p := w.signIn(email)
-	if _, err := w.db.Exec(`UPDATE users SET name = '' WHERE id = ?`, p.id); err != nil {
+	if _, err := w.db.Exec(`UPDATE users SET name = '' WHERE id = $1`, p.id); err != nil {
 		w.t.Fatal(err)
 	}
 	p.name = ""

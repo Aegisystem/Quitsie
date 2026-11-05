@@ -1,51 +1,56 @@
-package store
+package store_test
 
 import (
 	"context"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/Aegisystem/Quitsie/api/internal/store"
+	"github.com/Aegisystem/Quitsie/api/internal/storetest"
 )
 
-// Sign-in deletes the expired rows of these tables inside its write, with the
-// write lock held. A scan of a large table there makes every other write wait.
+// Sign-in deletes the expired rows of these tables inside its write, while
+// other writes wait (store.BeginWrite). A scan of a large table there makes
+// every other write wait longer.
 func TestTheDeletesOfExpiredRowsUseAnIndex(t *testing.T) {
 	ctx := context.Background()
-	db, err := Open(ctx, filepath.Join(t.TempDir(), "quitsie.db"))
+	conn, err := storetest.Open(t).Conn(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { db.Close() })
-	if err := Migrate(ctx, db); err != nil {
+	defer conn.Close()
+	// The tables are empty, and for an empty table a scan is the cheapest
+	// plan. Making scans expensive shows whether an index could serve.
+	if _, err := conn.ExecContext(ctx, `SET enable_seqscan = off`); err != nil {
 		t.Fatal(err)
 	}
 
 	for query, index := range map[string]string{
-		deleteExpiredLoginCodes:  "login_codes_expires_at",
-		deleteExpiredSessions:    "sessions_last_used_at",
-		deleteEndedLoginFailures: "login_failures_resets_at",
-		deleteStaleKnownDevices:  "known_devices_last_used_at",
+		store.DeleteExpiredLoginCodes:  "login_codes_expires_at",
+		store.DeleteExpiredSessions:    "sessions_last_used_at",
+		store.DeleteEndedLoginFailures: "login_failures_resets_at",
+		store.DeleteStaleKnownDevices:  "known_devices_last_used_at",
 	} {
 		name := strings.Fields(query)[2]
-		rows, err := db.QueryContext(ctx, "EXPLAIN QUERY PLAN "+query, time.Now())
+		rows, err := conn.QueryContext(ctx, "EXPLAIN "+query, time.Now())
 		if err != nil {
 			t.Fatalf("%s: %v", name, err)
 		}
 		var plan []string
 		for rows.Next() {
-			var id, parent, unused int
-			var detail string
-			if err := rows.Scan(&id, &parent, &unused, &detail); err != nil {
+			var line string
+			if err := rows.Scan(&line); err != nil {
 				t.Fatal(err)
 			}
-			plan = append(plan, detail)
+			plan = append(plan, line)
 		}
 		if err := rows.Close(); err != nil {
 			t.Fatal(err)
 		}
-		if len(plan) != 1 || !strings.HasPrefix(plan[0], "SEARCH ") || !strings.Contains(plan[0], " INDEX "+index+" ") {
-			t.Errorf("%s: plan = %q, want a search with %s", name, plan, index)
+		all := strings.Join(plan, "\n")
+		if strings.Contains(all, "Seq Scan") || !strings.Contains(all, " on "+index) {
+			t.Errorf("%s: plan =\n%s\nwant a scan of %s", name, all, index)
 		}
 	}
 }

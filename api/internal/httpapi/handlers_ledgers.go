@@ -173,12 +173,7 @@ var errNonzeroBalance = &failure{status: http.StatusConflict, code: ProblemCodeN
 // read runs fn in a read-only transaction, so everything it loads comes from
 // the same snapshot.
 func (s *Server) read(ctx context.Context, fn func(q *store.Queries) error) error {
-	tx, err := s.deps.DB.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
-	if err != nil {
-		return fmt.Errorf("begin read: %w", err)
-	}
-	defer tx.Rollback()
-	return fn(store.New(tx))
+	return store.Read(ctx, s.deps.DB, fn)
 }
 
 // currentUser is the signed-in User, or errUnauthenticated.

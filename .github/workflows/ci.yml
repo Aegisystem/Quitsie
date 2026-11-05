@@ -44,6 +44,11 @@ jobs:
         working-directory: web
         run: npm run build
 
+      # The same PostgreSQL as in development, from compose.yaml: the Go tests
+      # and the end-to-end tests each make their own databases in it.
+      - name: Start PostgreSQL
+        run: docker compose up -d --wait
+
       - name: Vet Go
         working-directory: api
         run: go vet ./...

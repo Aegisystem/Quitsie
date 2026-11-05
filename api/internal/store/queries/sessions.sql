@@ -1,21 +1,21 @@
 -- name: CreateSession :exec
 INSERT INTO sessions (id, user_id, token_hash, device, created_at, last_used_at)
-VALUES (?, ?, ?, ?, ?, ?);
+VALUES ($1, $2, $3, $4, $5, $6);
 
 -- name: GetSessionByTokenHash :one
 SELECT sqlc.embed(sessions), sqlc.embed(users)
 FROM sessions
 JOIN users ON users.id = sessions.user_id
-WHERE sessions.token_hash = ? AND users.deleted_at IS NULL;
+WHERE sessions.token_hash = $1 AND users.deleted_at IS NULL;
 
 -- name: TouchSession :exec
 UPDATE sessions
-SET last_used_at = ?
-WHERE id = ?;
+SET last_used_at = $1
+WHERE id = $2;
 
 -- name: DeleteSession :execrows
 DELETE FROM sessions
-WHERE id = ? AND user_id = ?;
+WHERE id = $1 AND user_id = $2;
 
 -- name: ListSessions :many
 SELECT * FROM sessions
@@ -24,8 +24,8 @@ ORDER BY last_used_at DESC, id DESC;
 
 -- name: DeleteExpiredSessions :exec
 DELETE FROM sessions
-WHERE last_used_at <= ?;
+WHERE last_used_at <= $1;
 
 -- name: DeleteSessionsOfUser :exec
 DELETE FROM sessions
-WHERE user_id = ?;
+WHERE user_id = $1;

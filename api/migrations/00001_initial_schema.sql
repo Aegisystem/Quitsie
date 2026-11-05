@@ -1,11 +1,12 @@
--- Initial schema for the data model in docs/arquitectura.md.
+-- Initial schema for the data model in docs/arquitectura.md (ADR 0012).
 --
--- Conventions (kept portable to PostgreSQL, see ADR 0006):
+-- Conventions:
 --   * ids are TEXT UUIDv7; expenses and settlements get theirs from the client,
 --     so resending an offline batch never duplicates anything (ADR 0001).
 --   * amounts are BIGINT in the currency's minor unit (cents); never floats.
+--   * every integer is BIGINT, so the Go code reads them all as int64.
 --   * currencies are ISO 4217 codes: three upper-case letters.
---   * timestamps are TIMESTAMP in UTC; calendar dates are DATE.
+--   * instants are TIMESTAMPTZ; calendar dates are DATE.
 --   * version comes from version_counter; sync pulls rows by version, and
 --     deleted_at turns deletions into versioned changes.
 
@@ -13,14 +14,30 @@
 
 -- Global counter for sync. Each write transaction increments it once and stamps
 -- every row it creates or changes with the new value. Incrementing the single
--- row locks out other writers, so versions follow commit order and a pull never
--- skips a change (a PostgreSQL sequence would not guarantee that).
+-- row locks out other writers until the transaction ends, so versions follow
+-- commit order and a pull never skips a change. A sequence would not: a
+-- transaction can take a number and commit after another took a higher one.
 CREATE TABLE version_counter (
-    id    INTEGER PRIMARY KEY CHECK (id = 1),
+    id    BIGINT PRIMARY KEY CHECK (id = 1),
     value BIGINT NOT NULL
 );
 
 INSERT INTO version_counter (id, value) VALUES (1, 0);
+
+-- The versions each restore of a backup skipped, so that GET /sync can tell a
+-- cursor that may point at lost rows (docs/arquitectura.md, "Restaurar un
+-- respaldo"). One row per restore. restored_version is version_counter as the
+-- backup had it, and jumped_version is where `quitsie record-restore` moved
+-- it. The database that was lost may have handed out the versions in between,
+-- and a device whose cursor is among them may hold rows that no longer exist,
+-- so GET /sync refuses those cursors. Both ends are cursors this database
+-- hands out.
+CREATE TABLE restore_gaps (
+    restored_version BIGINT PRIMARY KEY,
+    jumped_version   BIGINT NOT NULL,
+    restored_at      TIMESTAMPTZ NOT NULL,
+    CHECK (jumped_version > restored_version)
+);
 
 -- A deleted User keeps its row, which past Expenses and Activities point to,
 -- but loses its email, name and Google account, so the person can sign up
@@ -31,8 +48,8 @@ CREATE TABLE users (
     name               TEXT NOT NULL,
     preferred_currency TEXT NOT NULL CHECK (length(preferred_currency) = 3 AND preferred_currency = upper(preferred_currency)),
     google_sub         TEXT UNIQUE,
-    created_at         TIMESTAMP NOT NULL,
-    deleted_at         TIMESTAMP,
+    created_at         TIMESTAMPTZ NOT NULL,
+    deleted_at         TIMESTAMPTZ,
     CHECK (deleted_at IS NOT NULL OR email <> '')
 );
 
@@ -44,23 +61,67 @@ CREATE TABLE sessions (
     user_id      TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
     token_hash   TEXT NOT NULL UNIQUE,
     device       TEXT NOT NULL,
-    created_at   TIMESTAMP NOT NULL,
-    last_used_at TIMESTAMP NOT NULL
+    created_at   TIMESTAMPTZ NOT NULL,
+    last_used_at TIMESTAMPTZ NOT NULL
 );
 
 CREATE INDEX sessions_user_id ON sessions (user_id);
 
--- A login code is requested by email, possibly before the User exists.
+-- A login code is requested by email, possibly before the User exists. Each
+-- code belongs to the browser that asked for it, through the hash of its flow
+-- cookie, so nobody else can spend its attempts (finding 5, ADR 0011).
 CREATE TABLE login_codes (
     id         TEXT PRIMARY KEY,
     email      TEXT NOT NULL,
     code_hash  TEXT NOT NULL,
-    expires_at TIMESTAMP NOT NULL,
-    attempts   INTEGER NOT NULL DEFAULT 0,
-    created_at TIMESTAMP NOT NULL
+    expires_at TIMESTAMPTZ NOT NULL,
+    attempts   BIGINT NOT NULL DEFAULT 0,
+    created_at TIMESTAMPTZ NOT NULL,
+    flow_hash  TEXT
 );
 
 CREATE INDEX login_codes_email ON login_codes (email);
+CREATE UNIQUE INDEX login_codes_flow_hash ON login_codes (flow_hash);
+
+-- Wrong guesses at login codes per email, across codes, so that a new code buys
+-- no more guesses and a restart forgets none. The hash and not the email: this
+-- row outlives the code, and can outlive the account, and the rule is that a
+-- deleted account leaves no email behind.
+CREATE TABLE login_failures (
+    email_hash TEXT PRIMARY KEY,
+    failures   BIGINT NOT NULL,
+    resets_at  TIMESTAMPTZ NOT NULL
+);
+
+-- Login-code emails sent per clock hour, so the server stops sending before it
+-- spends the free quota of its email provider (finding 6 of
+-- docs/revision-seguridad.md). Rows older than a day are deleted.
+CREATE TABLE mail_sends (
+    hour TIMESTAMPTZ PRIMARY KEY,
+    sent BIGINT NOT NULL
+);
+
+-- Browsers that signed in to a User before, by the hash of a token in their
+-- known-device cookie (ADR 0011). Their requests skip the limits per email,
+-- which anybody can spend, and have limits of their own instead: the wrong
+-- guesses of each one count in login_failures, under the hash of its
+-- token_hash instead of an email's.
+CREATE TABLE known_devices (
+    token_hash   TEXT PRIMARY KEY,
+    user_id      TEXT NOT NULL REFERENCES users (id),
+    created_at   TIMESTAMPTZ NOT NULL,
+    last_used_at TIMESTAMPTZ NOT NULL
+);
+
+CREATE INDEX known_devices_user_id ON known_devices (user_id, last_used_at);
+
+-- Indexes for the deletes of expired rows that run inside sign-in writes, so
+-- they never scan a whole table while other writes wait (finding 14 of
+-- docs/revision-seguridad.md).
+CREATE INDEX login_codes_expires_at ON login_codes (expires_at);
+CREATE INDEX sessions_last_used_at ON sessions (last_used_at);
+CREATE INDEX login_failures_resets_at ON login_failures (resets_at);
+CREATE INDEX known_devices_last_used_at ON known_devices (last_used_at);
 
 -- A ledger holds the Expenses and Settlements of a Group or a Friendship (ADR 0008).
 CREATE TABLE ledgers (
@@ -73,22 +134,31 @@ CREATE TABLE ledgers (
     -- link increments it, which revokes the previous token.
     invite_link_generation BIGINT NOT NULL DEFAULT 0,
     version                BIGINT NOT NULL,
-    created_at             TIMESTAMP NOT NULL,
-    deleted_at             TIMESTAMP,
+    created_at             TIMESTAMPTZ NOT NULL,
+    deleted_at             TIMESTAMPTZ,
     -- A Group always has a currency; a Friendship never does (each Expense carries its own).
     CHECK ((kind = 'group' AND currency IS NOT NULL) OR (kind = 'friendship' AND currency IS NULL))
 );
 
 -- A Member with no user_id is a pending member (or a pending friend in a Friendship).
 CREATE TABLE members (
-    id         TEXT PRIMARY KEY,
-    ledger_id  TEXT NOT NULL REFERENCES ledgers (id),
-    user_id    TEXT REFERENCES users (id),
-    name       TEXT NOT NULL,
-    email      TEXT,
-    status     TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'former')),
-    version    BIGINT NOT NULL,
-    created_at TIMESTAMP NOT NULL,
+    id             TEXT PRIMARY KEY,
+    ledger_id      TEXT NOT NULL REFERENCES ledgers (id),
+    user_id        TEXT REFERENCES users (id),
+    name           TEXT NOT NULL,
+    email          TEXT,
+    status         TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'former')),
+    version        BIGINT NOT NULL,
+    created_at     TIMESTAMPTZ NOT NULL,
+    -- Who was removed from a Group, as opposed to who left: they cannot come
+    -- back through the Invite link until a linked Member readmits them
+    -- (finding 8 of docs/revision-seguridad.md). It only counts on a former
+    -- Member.
+    removed        BOOLEAN NOT NULL DEFAULT FALSE,
+    -- The User who gave a pending Member's email, the only one who sees it
+    -- again (finding 11 of docs/revision-seguridad.md). Everyone else reads
+    -- the name; the server still compares the email to suggest the Claim.
+    email_added_by TEXT REFERENCES users (id),
     -- A User holds at most one Member per ledger.
     UNIQUE (ledger_id, user_id)
 );
@@ -108,8 +178,8 @@ CREATE TABLE expenses (
     split_method TEXT NOT NULL CHECK (split_method IN ('equal', 'exact', 'percentage', 'weights', 'adjustment')),
     created_by   TEXT NOT NULL REFERENCES users (id),
     version      BIGINT NOT NULL,
-    created_at   TIMESTAMP NOT NULL,
-    deleted_at   TIMESTAMP
+    created_at   TIMESTAMPTZ NOT NULL,
+    deleted_at   TIMESTAMPTZ
 );
 
 CREATE INDEX expenses_ledger_version ON expenses (ledger_id, version);
@@ -146,8 +216,8 @@ CREATE TABLE settlements (
     date           DATE NOT NULL,
     created_by     TEXT NOT NULL REFERENCES users (id),
     version        BIGINT NOT NULL,
-    created_at     TIMESTAMP NOT NULL,
-    deleted_at     TIMESTAMP,
+    created_at     TIMESTAMPTZ NOT NULL,
+    deleted_at     TIMESTAMPTZ,
     CHECK (from_member_id <> to_member_id)
 );
 
@@ -161,7 +231,7 @@ CREATE TABLE activities (
     kind       TEXT NOT NULL,
     details    TEXT NOT NULL DEFAULT '{}',
     version    BIGINT NOT NULL,
-    created_at TIMESTAMP NOT NULL
+    created_at TIMESTAMPTZ NOT NULL
 );
 
 CREATE INDEX activities_ledger_version ON activities (ledger_id, version);
@@ -175,7 +245,11 @@ DROP TABLE paid_shares;
 DROP TABLE expenses;
 DROP TABLE members;
 DROP TABLE ledgers;
+DROP TABLE known_devices;
+DROP TABLE mail_sends;
+DROP TABLE login_failures;
 DROP TABLE login_codes;
 DROP TABLE sessions;
 DROP TABLE users;
+DROP TABLE restore_gaps;
 DROP TABLE version_counter;

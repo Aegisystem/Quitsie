@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { defineConfig, devices } from '@playwright/test'
+import { createDatabase, databaseURL } from './e2e/database'
 
 function freePort(): Promise<number> {
   return new Promise((resolve, reject) => {
@@ -20,6 +21,7 @@ function freePort(): Promise<number> {
 // every worker, which inherit these variables and so agree with the first load.
 process.env.QUITSIE_E2E_PORT ??= String(await freePort())
 process.env.QUITSIE_E2E_DIR ??= mkdtempSync(join(tmpdir(), 'quitsie-e2e-'))
+process.env.QUITSIE_E2E_DATABASE ??= await createDatabase()
 const port = process.env.QUITSIE_E2E_PORT
 const dir = process.env.QUITSIE_E2E_DIR
 
@@ -59,7 +61,7 @@ export default defineConfig({
       QUITSIE_MAIL: 'log',
       QUITSIE_ADDR: `127.0.0.1:${port}`,
       QUITSIE_PUBLIC_ORIGIN: origin,
-      QUITSIE_DB_PATH: join(dir, 'quitsie.db'),
+      QUITSIE_DATABASE_URL: databaseURL(process.env.QUITSIE_E2E_DATABASE),
     },
   },
 })

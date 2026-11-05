@@ -20,9 +20,9 @@ import (
 func fillLedger(t *testing.T, db *sql.DB, ledgerID, userID string) {
 	t.Helper()
 	_, err := db.Exec(`
-		WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < ?)
+		WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < $1)
 		INSERT INTO activities (id, ledger_id, user_id, kind, details, version, created_at)
-		SELECT 'filler-' || i, ?, ?, 'group_renamed', '{}', 0, '2026-10-31 00:00:00+00:00' FROM n`,
+		SELECT 'filler-' || i, $2, $3, 'group_renamed', '{}', 0, '2026-10-31 00:00:00+00:00' FROM n`,
 		ledgers.MaxRows, ledgerID, userID)
 	if err != nil {
 		t.Fatal(err)

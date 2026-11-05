@@ -1,11 +1,12 @@
 // Command server runs Quitsie from a single binary: the API under /api/v1,
-// the embedded PWA, and the SQLite database it migrates at startup.
+// the embedded PWA, and the PostgreSQL database it migrates at startup.
 //
 // Configuration comes from the environment. Production needs the variables
 // marked as required, and the server refuses to start without them:
 //
 //	QUITSIE_ADDR                  address to listen on (default 127.0.0.1:8080; cloudflared connects to it)
-//	QUITSIE_DB_PATH               SQLite file (default quitsie.db)
+//	QUITSIE_DATABASE_URL          required: the PostgreSQL database, such as postgres://user:password@host:5432/quitsie
+//	                              (development defaults to the one in compose.yaml)
 //	QUITSIE_ENV                   production (default) or development; production also sends HSTS and
 //	                              redirects visitors Cloudflare saw on plain HTTP to QUITSIE_PUBLIC_ORIGIN
 //	QUITSIE_PUBLIC_ORIGIN         required: the app's base URL, such as https://quitsie.app (development defaults to http://localhost:8080)
@@ -21,12 +22,15 @@
 //	                              (development generates one on each start if it is missing)
 //
 // To run it locally: QUITSIE_ENV=development QUITSIE_MAIL=log go run ./cmd/server
+//
+// After restoring a backup of the database, and before the server serves it,
+// run `quitsie record-restore` once with the same environment
+// (docs/despliegue.md).
 package main
 
 import (
 	"context"
 	"crypto/rand"
-	"database/sql"
 	"embed"
 	"errors"
 	"fmt"
@@ -59,7 +63,11 @@ var version = "dev"
 func main() {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
 	slog.SetDefault(logger)
-	if err := run(logger); err != nil {
+	start := run
+	if len(os.Args) > 1 && os.Args[1] == "record-restore" {
+		start = recordRestore
+	}
+	if err := start(logger); err != nil {
 		logger.Error("server stopped", "err", err)
 		os.Exit(1)
 	}
@@ -84,15 +92,12 @@ func run(logger *slog.Logger) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	db, err := store.Open(ctx, cfg.dbPath)
+	db, err := store.Open(ctx, cfg.databaseURL)
 	if err != nil {
 		return err
 	}
 	defer db.Close()
 	if err := store.Migrate(ctx, db); err != nil {
-		return err
-	}
-	if err := recordRestore(ctx, logger, db, restoredMarker(cfg.dbPath)); err != nil {
 		return err
 	}
 
@@ -122,7 +127,7 @@ func run(logger *slog.Logger) error {
 	srv := newHTTPServer(cfg.addr, httpapi.NewHandler(api, pwa), logger)
 	serveErr := make(chan error, 1)
 	go func() { serveErr <- srv.ListenAndServe() }()
-	logger.Info("listening", "url", "http://"+cfg.addr, "version", version, "db", cfg.dbPath)
+	logger.Info("listening", "url", "http://"+cfg.addr, "version", version)
 
 	select {
 	case err := <-serveErr:
@@ -140,30 +145,31 @@ func run(logger *slog.Logger) error {
 	return nil
 }
 
-// restoredMarker is the file that says the database came back from a backup
-// and the server has not recorded it yet. deploy/quitsie-restore.sh leaves it
-// next to the database when `litestream restore` brings one back, and the
-// operator does the same after a restore by hand (docs/despliegue.md).
-func restoredMarker(dbPath string) string { return dbPath + ".restored" }
-
-// recordRestore records the restore that marker announces, before the server
-// hands out any version, and then removes the marker. If the server stops in
-// between, the next start records the restore again, which is harmless.
-func recordRestore(ctx context.Context, logger *slog.Logger, db *sql.DB, marker string) error {
-	if _, err := os.Stat(marker); errors.Is(err, fs.ErrNotExist) {
-		return nil
-	} else if err != nil {
-		return fmt.Errorf("restore marker: %w", err)
+// recordRestore is `quitsie record-restore`: it records that the database
+// came back from a backup, so the sync versions jump past any the lost copy
+// handed out and devices that synced after the backup rebuild their replicas
+// (store.RecordRestore). Run it once after a restore, before the server serves
+// the database; running it again, or without a restore, is harmless.
+func recordRestore(logger *slog.Logger) error {
+	url, err := databaseURL(os.Getenv)
+	if err != nil {
+		return err
+	}
+	ctx := context.Background()
+	db, err := store.Open(ctx, url)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	if err := store.Migrate(ctx, db); err != nil {
+		return err
 	}
 	gap, err := store.RecordRestore(ctx, db, time.Now())
 	if err != nil {
 		return err
 	}
-	logger.Warn("the database came from a backup: sync versions jumped, and devices that synced after the backup will rebuild their replicas",
+	logger.Warn("recorded the restore: sync versions jumped, and devices that synced after the backup will rebuild their replicas",
 		"restored_version", gap.RestoredVersion, "jumped_version", gap.JumpedVersion)
-	if err := os.Remove(marker); err != nil {
-		return fmt.Errorf("the restore is recorded, but the next start would record it again: %w", err)
-	}
 	return nil
 }
 
@@ -189,8 +195,8 @@ func newHTTPServer(addr string, handler http.Handler, logger *slog.Logger) *http
 
 // config is the server's configuration, read from the environment.
 type config struct {
-	addr   string
-	dbPath string
+	addr        string
+	databaseURL string
 	// origins are the app's own origins; requests that change data must
 	// come from one of them.
 	origins []string
@@ -229,7 +235,6 @@ func loadConfig(getenv func(string) string) (config, error) {
 	}
 	cfg := config{
 		addr:            or("QUITSIE_ADDR", "127.0.0.1:8080"),
-		dbPath:          or("QUITSIE_DB_PATH", "quitsie.db"),
 		defaultCurrency: or("QUITSIE_DEFAULT_CURRENCY", "USD"),
 	}
 
@@ -240,6 +245,11 @@ func loadConfig(getenv func(string) string) (config, error) {
 		development = true
 	default:
 		return config{}, fmt.Errorf("QUITSIE_ENV must be production or development, not %q", env)
+	}
+
+	var err error
+	if cfg.databaseURL, err = databaseURL(getenv); err != nil {
+		return config{}, err
 	}
 
 	origin := getenv("QUITSIE_PUBLIC_ORIGIN")
@@ -282,7 +292,6 @@ func loadConfig(getenv func(string) string) (config, error) {
 		return config{}, fmt.Errorf("QUITSIE_MAIL must be resend or log, not %q", sender)
 	}
 
-	var err error
 	if cfg.mailPerHour, err = positive(getenv, "QUITSIE_MAIL_MAX_PER_HOUR", auth.DefaultMailPerHour); err != nil {
 		return config{}, err
 	}
@@ -314,6 +323,20 @@ func loadConfig(getenv func(string) string) (config, error) {
 		return config{}, fmt.Errorf("QUITSIE_INVITE_SECRET must have at least %d bytes", invites.MinSecretLength)
 	}
 	return cfg, nil
+}
+
+// developmentDatabase is the PostgreSQL of compose.yaml.
+const developmentDatabase = "postgres://quitsie:quitsie@127.0.0.1:5433/quitsie?sslmode=disable"
+
+// databaseURL is QUITSIE_DATABASE_URL, which production requires.
+func databaseURL(getenv func(string) string) (string, error) {
+	if url := getenv("QUITSIE_DATABASE_URL"); url != "" {
+		return url, nil
+	}
+	if getenv("QUITSIE_ENV") == "development" {
+		return developmentDatabase, nil
+	}
+	return "", errors.New("QUITSIE_DATABASE_URL is required (" + runLocally + ", and start the database with docker compose up -d)")
 }
 
 // positive reads the variable key as a whole number of at least 1, or

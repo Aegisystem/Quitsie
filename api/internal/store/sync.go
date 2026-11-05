@@ -32,9 +32,9 @@ type Changes struct {
 }
 
 // Read runs fn in a read-only transaction, so everything it reads comes from
-// the same snapshot. It does not block the writer.
+// the same snapshot (BeginRead). It does not block the writer.
 func Read(ctx context.Context, db *sql.DB, fn func(q *Queries) error) error {
-	tx, err := db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	tx, err := BeginRead(ctx, db)
 	if err != nil {
 		return fmt.Errorf("begin read: %w", err)
 	}

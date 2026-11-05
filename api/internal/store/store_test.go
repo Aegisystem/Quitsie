@@ -12,19 +12,35 @@ import (
 
 func openMigrated(t *testing.T) *sql.DB {
 	t.Helper()
-	db := storetest.Open(t)
-	return db
+	return storetest.Open(t)
 }
 
-func TestOpenUsesWAL(t *testing.T) {
+// A pull reads its rows and its new cursor in one transaction. If a write
+// that commits in between showed in some of its queries and not in others,
+// the cursor could move past a change the pull did not bring.
+func TestReadSeesOneSnapshot(t *testing.T) {
+	ctx := context.Background()
 	db := openMigrated(t)
 
-	var mode string
-	if err := db.QueryRow("PRAGMA journal_mode").Scan(&mode); err != nil {
+	err := store.Read(ctx, db, func(q *store.Queries) error {
+		before, err := q.CurrentVersion(ctx)
+		if err != nil {
+			return err
+		}
+		if _, err := store.Write(ctx, db, func(*store.Queries, int64) error { return nil }); err != nil {
+			return err
+		}
+		after, err := q.CurrentVersion(ctx)
+		if err != nil {
+			return err
+		}
+		if after != before {
+			t.Errorf("the version moved from %d to %d inside one read", before, after)
+		}
+		return nil
+	})
+	if err != nil {
 		t.Fatal(err)
-	}
-	if mode != "wal" {
-		t.Errorf("journal_mode = %q, want wal", mode)
 	}
 }
 

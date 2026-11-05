@@ -156,14 +156,14 @@ func TestALongHistoryArrivesInPages(t *testing.T) {
 	groupID := ana.createGroup(`{"name":"Casa","currency":"COP"}`)
 	const history = 25_000
 	_, err := w.db.Exec(`
-		WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < ?)
+		WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < $1)
 		INSERT INTO activities (id, ledger_id, user_id, kind, details, version, created_at)
-		SELECT printf('00000000-0000-7000-8000-%012d', i), ?, ?, 'group_renamed', '{}', 1000 + i, '2026-10-31 00:00:00+00:00' FROM n`,
+		SELECT '00000000-0000-7000-8000-' || lpad(i::text, 12, '0'), $2, $3, 'group_renamed', '{}', 1000 + i, '2026-10-31 00:00:00+00:00' FROM n`,
 		history, groupID, ana.id)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := w.db.Exec(`UPDATE version_counter SET value = ?`, 1000+history); err != nil {
+	if _, err := w.db.Exec(`UPDATE version_counter SET value = $1`, 1000+history); err != nil {
 		t.Fatal(err)
 	}
 

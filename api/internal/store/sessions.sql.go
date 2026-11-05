@@ -12,7 +12,7 @@ import (
 
 const createSession = `-- name: CreateSession :exec
 INSERT INTO sessions (id, user_id, token_hash, device, created_at, last_used_at)
-VALUES (?, ?, ?, ?, ?, ?)
+VALUES ($1, $2, $3, $4, $5, $6)
 `
 
 type CreateSessionParams struct {
@@ -38,7 +38,7 @@ func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) er
 
 const deleteExpiredSessions = `-- name: DeleteExpiredSessions :exec
 DELETE FROM sessions
-WHERE last_used_at <= ?
+WHERE last_used_at <= $1
 `
 
 func (q *Queries) DeleteExpiredSessions(ctx context.Context, lastUsedAt time.Time) error {
@@ -48,7 +48,7 @@ func (q *Queries) DeleteExpiredSessions(ctx context.Context, lastUsedAt time.Tim
 
 const deleteSession = `-- name: DeleteSession :execrows
 DELETE FROM sessions
-WHERE id = ? AND user_id = ?
+WHERE id = $1 AND user_id = $2
 `
 
 type DeleteSessionParams struct {
@@ -66,7 +66,7 @@ func (q *Queries) DeleteSession(ctx context.Context, arg DeleteSessionParams) (i
 
 const deleteSessionsOfUser = `-- name: DeleteSessionsOfUser :exec
 DELETE FROM sessions
-WHERE user_id = ?
+WHERE user_id = $1
 `
 
 func (q *Queries) DeleteSessionsOfUser(ctx context.Context, userID string) error {
@@ -78,7 +78,7 @@ const getSessionByTokenHash = `-- name: GetSessionByTokenHash :one
 SELECT sessions.id, sessions.user_id, sessions.token_hash, sessions.device, sessions.created_at, sessions.last_used_at, users.id, users.email, users.name, users.preferred_currency, users.google_sub, users.created_at, users.deleted_at
 FROM sessions
 JOIN users ON users.id = sessions.user_id
-WHERE sessions.token_hash = ? AND users.deleted_at IS NULL
+WHERE sessions.token_hash = $1 AND users.deleted_at IS NULL
 `
 
 type GetSessionByTokenHashRow struct {
@@ -109,7 +109,7 @@ func (q *Queries) GetSessionByTokenHash(ctx context.Context, tokenHash string) (
 
 const listSessions = `-- name: ListSessions :many
 SELECT id, user_id, token_hash, device, created_at, last_used_at FROM sessions
-WHERE user_id = ?1 AND last_used_at > ?2
+WHERE user_id = $1 AND last_used_at > $2
 ORDER BY last_used_at DESC, id DESC
 `
 
@@ -150,8 +150,8 @@ func (q *Queries) ListSessions(ctx context.Context, arg ListSessionsParams) ([]S
 
 const touchSession = `-- name: TouchSession :exec
 UPDATE sessions
-SET last_used_at = ?
-WHERE id = ?
+SET last_used_at = $1
+WHERE id = $2
 `
 
 type TouchSessionParams struct {

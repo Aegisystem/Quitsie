@@ -12,8 +12,8 @@ import (
 
 const deleteSettlement = `-- name: DeleteSettlement :one
 UPDATE settlements
-SET deleted_at = ?, version = ?
-WHERE id = ? AND deleted_at IS NULL
+SET deleted_at = $1, version = $2
+WHERE id = $3 AND deleted_at IS NULL
 RETURNING id, ledger_id, from_member_id, to_member_id, amount, currency, date, created_by, version, created_at, deleted_at
 `
 
@@ -44,7 +44,7 @@ func (q *Queries) DeleteSettlement(ctx context.Context, arg DeleteSettlementPara
 
 const getSettlement = `-- name: GetSettlement :one
 SELECT id, ledger_id, from_member_id, to_member_id, amount, currency, date, created_by, version, created_at, deleted_at FROM settlements
-WHERE id = ?
+WHERE id = $1
 `
 
 func (q *Queries) GetSettlement(ctx context.Context, id string) (Settlement, error) {
@@ -68,7 +68,7 @@ func (q *Queries) GetSettlement(ctx context.Context, id string) (Settlement, err
 
 const insertSettlement = `-- name: InsertSettlement :execrows
 INSERT INTO settlements (id, ledger_id, from_member_id, to_member_id, amount, currency, date, created_by, version, created_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 ON CONFLICT (id) DO NOTHING
 `
 
@@ -108,8 +108,8 @@ func (q *Queries) InsertSettlement(ctx context.Context, arg InsertSettlementPara
 
 const restoreSettlement = `-- name: RestoreSettlement :one
 UPDATE settlements
-SET deleted_at = NULL, version = ?
-WHERE id = ? AND deleted_at IS NOT NULL
+SET deleted_at = NULL, version = $1
+WHERE id = $2 AND deleted_at IS NOT NULL
 RETURNING id, ledger_id, from_member_id, to_member_id, amount, currency, date, created_by, version, created_at, deleted_at
 `
 

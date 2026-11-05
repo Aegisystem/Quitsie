@@ -82,7 +82,7 @@ func (w *world) signIn(name string) *person {
 		w.t.Fatal(err)
 	}
 	// The profile endpoint that sets the name belongs to another area.
-	if _, err := w.db.Exec(`UPDATE users SET name = ? WHERE id = ?`, name, signIn.User.ID); err != nil {
+	if _, err := w.db.Exec(`UPDATE users SET name = $1 WHERE id = $2`, name, signIn.User.ID); err != nil {
 		w.t.Fatal(err)
 	}
 	return &person{w: w, id: signIn.User.ID, name: name, email: email, token: signIn.Token}
@@ -227,7 +227,7 @@ func TestAForgedLinkDoesNotLoadTheLedger(t *testing.T) {
 	groupID := ana.createGroup(`{"name":"Casa","currency":"COP"}`)
 	me := ana.memberID(groupID, "Ana")
 	ana.expense(groupID, "COP", me, map[string]int64{me: 1000})
-	if _, err := w.db.Exec(`UPDATE expenses SET total = 'not a number'`); err != nil {
+	if _, err := w.db.Exec(`ALTER TABLE expenses RENAME COLUMN total TO lost`); err != nil {
 		t.Fatal(err)
 	}
 	forged, err := invites.Token([]byte(strings.Repeat("f", invites.MinSecretLength)), groupID, 0)

@@ -12,7 +12,7 @@ import (
 
 const countLiveLoginCodes = `-- name: CountLiveLoginCodes :one
 SELECT count(*) FROM login_codes
-WHERE email = ? AND expires_at > ?
+WHERE email = $1 AND expires_at > $2
 `
 
 type CountLiveLoginCodesParams struct {
@@ -30,7 +30,7 @@ func (q *Queries) CountLiveLoginCodes(ctx context.Context, arg CountLiveLoginCod
 const countLoginCodeAttempt = `-- name: CountLoginCodeAttempt :exec
 UPDATE login_codes
 SET attempts = attempts + 1
-WHERE id = ?
+WHERE id = $1
 `
 
 func (q *Queries) CountLoginCodeAttempt(ctx context.Context, id string) error {
@@ -40,7 +40,7 @@ func (q *Queries) CountLoginCodeAttempt(ctx context.Context, id string) error {
 
 const createLoginCode = `-- name: CreateLoginCode :exec
 INSERT INTO login_codes (id, email, code_hash, flow_hash, expires_at, created_at)
-VALUES (?, ?, ?, ?, ?, ?)
+VALUES ($1, $2, $3, $4, $5, $6)
 `
 
 type CreateLoginCodeParams struct {
@@ -66,7 +66,7 @@ func (q *Queries) CreateLoginCode(ctx context.Context, arg CreateLoginCodeParams
 
 const deleteEndedLoginFailures = `-- name: DeleteEndedLoginFailures :exec
 DELETE FROM login_failures
-WHERE resets_at <= ?
+WHERE resets_at <= $1
 `
 
 func (q *Queries) DeleteEndedLoginFailures(ctx context.Context, resetsAt time.Time) error {
@@ -76,7 +76,7 @@ func (q *Queries) DeleteEndedLoginFailures(ctx context.Context, resetsAt time.Ti
 
 const deleteExpiredLoginCodes = `-- name: DeleteExpiredLoginCodes :exec
 DELETE FROM login_codes
-WHERE expires_at <= ?
+WHERE expires_at <= $1
 `
 
 func (q *Queries) DeleteExpiredLoginCodes(ctx context.Context, expiresAt time.Time) error {
@@ -86,7 +86,7 @@ func (q *Queries) DeleteExpiredLoginCodes(ctx context.Context, expiresAt time.Ti
 
 const deleteLoginCodeOfFlow = `-- name: DeleteLoginCodeOfFlow :exec
 DELETE FROM login_codes
-WHERE flow_hash = ?
+WHERE flow_hash = $1
 `
 
 func (q *Queries) DeleteLoginCodeOfFlow(ctx context.Context, flowHash *string) error {
@@ -96,7 +96,7 @@ func (q *Queries) DeleteLoginCodeOfFlow(ctx context.Context, flowHash *string) e
 
 const deleteLoginCodes = `-- name: DeleteLoginCodes :exec
 DELETE FROM login_codes
-WHERE email = ?
+WHERE email = $1
 `
 
 func (q *Queries) DeleteLoginCodes(ctx context.Context, email string) error {
@@ -106,7 +106,7 @@ func (q *Queries) DeleteLoginCodes(ctx context.Context, email string) error {
 
 const getLoginCodeOfFlow = `-- name: GetLoginCodeOfFlow :one
 SELECT id, email, code_hash, expires_at, attempts, created_at, flow_hash FROM login_codes
-WHERE flow_hash = ?
+WHERE flow_hash = $1
 `
 
 func (q *Queries) GetLoginCodeOfFlow(ctx context.Context, flowHash *string) (LoginCode, error) {
@@ -126,7 +126,7 @@ func (q *Queries) GetLoginCodeOfFlow(ctx context.Context, flowHash *string) (Log
 
 const getLoginFailures = `-- name: GetLoginFailures :one
 SELECT email_hash, failures, resets_at FROM login_failures
-WHERE email_hash = ?
+WHERE email_hash = $1
 `
 
 func (q *Queries) GetLoginFailures(ctx context.Context, emailHash string) (LoginFailure, error) {
@@ -138,7 +138,7 @@ func (q *Queries) GetLoginFailures(ctx context.Context, emailHash string) (Login
 
 const setLoginFailures = `-- name: SetLoginFailures :exec
 INSERT INTO login_failures (email_hash, failures, resets_at)
-VALUES (?, ?, ?)
+VALUES ($1, $2, $3)
 ON CONFLICT (email_hash) DO UPDATE
 SET failures = excluded.failures, resets_at = excluded.resets_at
 `

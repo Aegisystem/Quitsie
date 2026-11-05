@@ -9,11 +9,11 @@ RETURNING *;
 -- Use RelabelCurrency, which runs SetGroupCurrency, RelabelExpenses and RelabelSettlements together.
 -- Deleted Expenses too, so restoring one never brings back the old currency.
 UPDATE expenses
-SET currency = ?, version = ?
-WHERE ledger_id = ?;
+SET currency = $1, version = $2
+WHERE ledger_id = $3;
 
 -- name: RelabelSettlements :exec
 -- Use RelabelCurrency, which runs SetGroupCurrency, RelabelExpenses and RelabelSettlements together.
 UPDATE settlements
-SET currency = ?, version = ?
-WHERE ledger_id = ?;
+SET currency = $1, version = $2
+WHERE ledger_id = $3;

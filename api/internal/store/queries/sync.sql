@@ -50,7 +50,7 @@ SELECT CAST(pending.version AS BIGINT) FROM (
       AND (activities.version > sqlc.arg(since) OR me.version > sqlc.arg(since))
 ) AS pending
 ORDER BY pending.version
-LIMIT 1 OFFSET sqlc.arg(max_rows);
+LIMIT 1 OFFSET sqlc.arg(max_rows)::BIGINT;
 
 -- name: ChangedLedgers :many
 -- Use ChangesSince. Like every Changed* query, it returns, from the ledgers

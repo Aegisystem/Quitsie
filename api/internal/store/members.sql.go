@@ -12,8 +12,8 @@ import (
 
 const claimMember = `-- name: ClaimMember :one
 UPDATE members
-SET user_id = CAST(?1 AS TEXT), version = ?2
-WHERE id = ?3 AND user_id IS NULL AND status = 'active'
+SET user_id = CAST($1 AS TEXT), version = $2
+WHERE id = $3 AND user_id IS NULL AND status = 'active'
 RETURNING id, ledger_id, user_id, name, email, status, version, created_at, removed, email_added_by
 `
 
@@ -44,7 +44,7 @@ func (q *Queries) ClaimMember(ctx context.Context, arg ClaimMemberParams) (Membe
 
 const createMember = `-- name: CreateMember :exec
 INSERT INTO members (id, ledger_id, user_id, name, email, email_added_by, version, created_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 `
 
 type CreateMemberParams struct {
@@ -76,8 +76,8 @@ func (q *Queries) CreateMember(ctx context.Context, arg CreateMemberParams) erro
 
 const getActiveMemberOfUser = `-- name: GetActiveMemberOfUser :one
 SELECT id, ledger_id, user_id, name, email, status, version, created_at, removed, email_added_by FROM members
-WHERE ledger_id = ?1
-  AND user_id = CAST(?2 AS TEXT)
+WHERE ledger_id = $1
+  AND user_id = CAST($2 AS TEXT)
   AND status = 'active'
 `
 
@@ -109,8 +109,8 @@ const getFriendshipBetween = `-- name: GetFriendshipBetween :one
 SELECT ledgers.id, ledgers.kind, ledgers.name, ledgers.currency, ledgers.simplify_debts, ledgers.invite_link_generation, ledgers.version, ledgers.created_at, ledgers.deleted_at FROM ledgers
 JOIN members mine ON mine.ledger_id = ledgers.id
 JOIN members theirs ON theirs.ledger_id = ledgers.id
-WHERE mine.user_id = CAST(?1 AS TEXT)
-  AND theirs.user_id = CAST(?2 AS TEXT)
+WHERE mine.user_id = CAST($1 AS TEXT)
+  AND theirs.user_id = CAST($2 AS TEXT)
   AND ledgers.kind = 'friendship'
   AND ledgers.deleted_at IS NULL
 LIMIT 1
@@ -144,8 +144,8 @@ SELECT users.id, CAST(coalesce(nullif(users.name, ''), theirs.name) AS TEXT) AS 
 JOIN members theirs ON theirs.user_id = users.id AND theirs.status = 'active'
 JOIN members mine ON mine.ledger_id = theirs.ledger_id AND mine.status = 'active'
 JOIN ledgers ON ledgers.id = mine.ledger_id
-WHERE users.id = CAST(?1 AS TEXT)
-  AND mine.user_id = CAST(?2 AS TEXT)
+WHERE users.id = CAST($1 AS TEXT)
+  AND mine.user_id = CAST($2 AS TEXT)
   AND ledgers.kind = 'group'
   AND ledgers.deleted_at IS NULL
 LIMIT 1
@@ -175,7 +175,7 @@ func (q *Queries) GetUserSharingAGroup(ctx context.Context, arg GetUserSharingAG
 const listLedgersOfUser = `-- name: ListLedgersOfUser :many
 SELECT ledgers.id, ledgers.kind, ledgers.name, ledgers.currency, ledgers.simplify_debts, ledgers.invite_link_generation, ledgers.version, ledgers.created_at, ledgers.deleted_at FROM ledgers
 JOIN members ON members.ledger_id = ledgers.id
-WHERE members.user_id = CAST(?1 AS TEXT)
+WHERE members.user_id = CAST($1 AS TEXT)
   AND members.status = 'active'
   AND ledgers.deleted_at IS NULL
 ORDER BY ledgers.created_at, ledgers.id
@@ -216,7 +216,7 @@ func (q *Queries) ListLedgersOfUser(ctx context.Context, userID string) ([]Ledge
 
 const listMembers = `-- name: ListMembers :many
 SELECT id, ledger_id, user_id, name, email, status, version, created_at, removed, email_added_by FROM members
-WHERE ledger_id = ?
+WHERE ledger_id = $1
 ORDER BY created_at, id
 `
 
@@ -257,8 +257,8 @@ func (q *Queries) ListMembers(ctx context.Context, ledgerID string) ([]Member, e
 
 const markMemberFormer = `-- name: MarkMemberFormer :one
 UPDATE members
-SET status = 'former', removed = ?1, version = ?2
-WHERE id = ?3 AND status = 'active'
+SET status = 'former', removed = $1, version = $2
+WHERE id = $3 AND status = 'active'
 RETURNING id, ledger_id, user_id, name, email, status, version, created_at, removed, email_added_by
 `
 
@@ -291,8 +291,8 @@ func (q *Queries) MarkMemberFormer(ctx context.Context, arg MarkMemberFormerPara
 
 const reactivateMember = `-- name: ReactivateMember :one
 UPDATE members
-SET status = 'active', removed = FALSE, version = ?
-WHERE id = ? AND status = 'former'
+SET status = 'active', removed = FALSE, version = $1
+WHERE id = $2 AND status = 'former'
 RETURNING id, ledger_id, user_id, name, email, status, version, created_at, removed, email_added_by
 `
 
@@ -323,8 +323,8 @@ func (q *Queries) ReactivateMember(ctx context.Context, arg ReactivateMemberPara
 
 const readmitMember = `-- name: ReadmitMember :one
 UPDATE members
-SET removed = FALSE, version = ?
-WHERE id = ? AND status = 'former' AND removed
+SET removed = FALSE, version = $1
+WHERE id = $2 AND status = 'former' AND removed
 RETURNING id, ledger_id, user_id, name, email, status, version, created_at, removed, email_added_by
 `
 
@@ -355,8 +355,8 @@ func (q *Queries) ReadmitMember(ctx context.Context, arg ReadmitMemberParams) (M
 
 const unclaimMember = `-- name: UnclaimMember :one
 UPDATE members
-SET user_id = NULL, version = ?
-WHERE id = ? AND user_id IS NOT NULL
+SET user_id = NULL, version = $1
+WHERE id = $2 AND user_id IS NOT NULL
 RETURNING id, ledger_id, user_id, name, email, status, version, created_at, removed, email_added_by
 `
 
@@ -386,8 +386,8 @@ func (q *Queries) UnclaimMember(ctx context.Context, arg UnclaimMemberParams) (M
 
 const unlinkMembersOfUser = `-- name: UnlinkMembersOfUser :exec
 UPDATE members
-SET user_id = NULL, email = NULL, version = ?1
-WHERE user_id = CAST(?2 AS TEXT)
+SET user_id = NULL, email = NULL, version = $1
+WHERE user_id = CAST($2 AS TEXT)
 `
 
 type UnlinkMembersOfUserParams struct {
@@ -405,8 +405,8 @@ func (q *Queries) UnlinkMembersOfUser(ctx context.Context, arg UnlinkMembersOfUs
 
 const updatePendingMember = `-- name: UpdatePendingMember :one
 UPDATE members
-SET name = ?, email = ?, email_added_by = ?, version = ?
-WHERE id = ? AND user_id IS NULL AND status = 'active'
+SET name = $1, email = $2, email_added_by = $3, version = $4
+WHERE id = $5 AND user_id IS NULL AND status = 'active'
 RETURNING id, ledger_id, user_id, name, email, status, version, created_at, removed, email_added_by
 `
 

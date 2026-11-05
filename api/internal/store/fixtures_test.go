@@ -40,7 +40,7 @@ func newGroup(id string, version int64) store.CreateLedgerParams {
 // auth queries in users.sql.
 func insertUser(t *testing.T, db *sql.DB, id string) {
 	t.Helper()
-	_, err := db.Exec(`INSERT INTO users (id, email, name, preferred_currency, created_at) VALUES (?, ?, ?, 'COP', ?)`,
+	_, err := db.Exec(`INSERT INTO users (id, email, name, preferred_currency, created_at) VALUES ($1, $2, $3, 'COP', $4)`,
 		id, id+"@example.com", id, now)
 	if err != nil {
 		t.Fatal(err)

@@ -9,18 +9,19 @@ Aplicación para registrar gastos compartidos y saber quién le debe cuánto a q
 
 ## Desarrollo
 
-Requisitos: Go 1.26 y Node 22.
+Requisitos: Go 1.26, Node 22 y Docker.
 
 ```bash
+docker compose up -d                     # PostgreSQL en 127.0.0.1:5433, para el servidor y las pruebas
 cd web && npm install && npm run build   # compila la PWA en api/cmd/server/dist
 cd api && QUITSIE_ENV=development QUITSIE_MAIL=log go run ./cmd/server   # http://127.0.0.1:8080; los códigos de acceso salen en el log
 ```
 
 Para trabajar en la interfaz con recarga en caliente, deja el servidor Go corriendo y en otra terminal ejecuta `cd web && npm run dev`. Vite reenvía `/api` al puerto 8080.
 
-Pruebas: `cd api && go test ./...`, `cd web && npm test` y `cd web && npm run typecheck`.
+Pruebas (con el PostgreSQL de `compose.yaml` levantado; cada prueba crea su propia base): `cd api && go test ./...`, `cd web && npm test` y `cd web && npm run typecheck`.
 
-Las pruebas de punta a punta (`web/e2e/`) usan Playwright con Chromium contra el binario real, con la PWA embebida. Cada ejecución arranca su propio servidor en un puerto libre de `quitsie-e2e.localhost`, con una base de SQLite temporal, así que no chocan con otro servidor que esté corriendo:
+Las pruebas de punta a punta (`web/e2e/`) usan Playwright con Chromium contra el binario real, con la PWA embebida. Cada ejecución arranca su propio servidor en un puerto libre de `quitsie-e2e.localhost`, con una base de PostgreSQL propia, así que no chocan con otro servidor que esté corriendo:
 
 ```bash
 cd web && npx playwright install --only-shell chromium   # solo la primera vez

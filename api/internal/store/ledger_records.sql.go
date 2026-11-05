@@ -11,7 +11,7 @@ import (
 
 const listLedgerExpenses = `-- name: ListLedgerExpenses :many
 SELECT id, ledger_id, description, date, currency, total, category, split_method, created_by, version, created_at, deleted_at FROM expenses
-WHERE ledger_id = ?
+WHERE ledger_id = $1
 ORDER BY id
 `
 
@@ -56,7 +56,7 @@ func (q *Queries) ListLedgerExpenses(ctx context.Context, ledgerID string) ([]Ex
 const listLedgerOwedShares = `-- name: ListLedgerOwedShares :many
 SELECT owed_shares.expense_id, owed_shares.member_id, owed_shares.amount, owed_shares.split_value FROM owed_shares
 JOIN expenses ON expenses.id = owed_shares.expense_id
-WHERE expenses.ledger_id = ?
+WHERE expenses.ledger_id = $1
 ORDER BY owed_shares.expense_id, owed_shares.member_id
 `
 
@@ -92,7 +92,7 @@ func (q *Queries) ListLedgerOwedShares(ctx context.Context, ledgerID string) ([]
 const listLedgerPaidShares = `-- name: ListLedgerPaidShares :many
 SELECT paid_shares.expense_id, paid_shares.member_id, paid_shares.amount FROM paid_shares
 JOIN expenses ON expenses.id = paid_shares.expense_id
-WHERE expenses.ledger_id = ?
+WHERE expenses.ledger_id = $1
 ORDER BY paid_shares.expense_id, paid_shares.member_id
 `
 
@@ -122,7 +122,7 @@ func (q *Queries) ListLedgerPaidShares(ctx context.Context, ledgerID string) ([]
 
 const listLedgerSettlements = `-- name: ListLedgerSettlements :many
 SELECT id, ledger_id, from_member_id, to_member_id, amount, currency, date, created_by, version, created_at, deleted_at FROM settlements
-WHERE ledger_id = ?
+WHERE ledger_id = $1
 ORDER BY id
 `
 

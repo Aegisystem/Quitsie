@@ -12,7 +12,7 @@ import (
 // creates or changes, so sync can pull them (docs/arquitectura.md). If fn
 // fails, nothing is written and the version is not spent.
 func Write(ctx context.Context, db *sql.DB, fn func(q *Queries, version int64) error) (int64, error) {
-	tx, err := db.BeginTx(ctx, nil)
+	tx, err := BeginWrite(ctx, db)
 	if err != nil {
 		return 0, fmt.Errorf("begin write: %w", err)
 	}

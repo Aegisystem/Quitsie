@@ -12,9 +12,9 @@ import (
 const changedActivities = `-- name: ChangedActivities :many
 SELECT activities.id, activities.ledger_id, activities.user_id, activities.kind, activities.details, activities.version, activities.created_at FROM activities
 JOIN members me ON me.ledger_id = activities.ledger_id
-WHERE me.user_id = CAST(?1 AS TEXT) AND me.status = 'active'
-  AND (activities.version > ?2 OR me.version > ?2)
-  AND activities.version <= ?3 AND me.version <= ?3
+WHERE me.user_id = CAST($1 AS TEXT) AND me.status = 'active'
+  AND (activities.version > $2 OR me.version > $2)
+  AND activities.version <= $3 AND me.version <= $3
 ORDER BY activities.version, activities.id
 `
 
@@ -59,9 +59,9 @@ func (q *Queries) ChangedActivities(ctx context.Context, arg ChangedActivitiesPa
 const changedExpenses = `-- name: ChangedExpenses :many
 SELECT expenses.id, expenses.ledger_id, expenses.description, expenses.date, expenses.currency, expenses.total, expenses.category, expenses.split_method, expenses.created_by, expenses.version, expenses.created_at, expenses.deleted_at FROM expenses
 JOIN members me ON me.ledger_id = expenses.ledger_id
-WHERE me.user_id = CAST(?1 AS TEXT) AND me.status = 'active'
-  AND (expenses.version > ?2 OR me.version > ?2)
-  AND expenses.version <= ?3 AND me.version <= ?3
+WHERE me.user_id = CAST($1 AS TEXT) AND me.status = 'active'
+  AND (expenses.version > $2 OR me.version > $2)
+  AND expenses.version <= $3 AND me.version <= $3
 ORDER BY expenses.version, expenses.id
 `
 
@@ -111,9 +111,9 @@ func (q *Queries) ChangedExpenses(ctx context.Context, arg ChangedExpensesParams
 const changedLedgers = `-- name: ChangedLedgers :many
 SELECT ledgers.id, ledgers.kind, ledgers.name, ledgers.currency, ledgers.simplify_debts, ledgers.invite_link_generation, ledgers.version, ledgers.created_at, ledgers.deleted_at FROM ledgers
 JOIN members me ON me.ledger_id = ledgers.id
-WHERE me.user_id = CAST(?1 AS TEXT) AND me.status = 'active'
-  AND (ledgers.version > ?2 OR me.version > ?2)
-  AND ledgers.version <= ?3 AND me.version <= ?3
+WHERE me.user_id = CAST($1 AS TEXT) AND me.status = 'active'
+  AND (ledgers.version > $2 OR me.version > $2)
+  AND ledgers.version <= $3 AND me.version <= $3
 ORDER BY ledgers.version, ledgers.id
 `
 
@@ -164,9 +164,9 @@ func (q *Queries) ChangedLedgers(ctx context.Context, arg ChangedLedgersParams) 
 const changedMembers = `-- name: ChangedMembers :many
 SELECT members.id, members.ledger_id, members.user_id, members.name, members.email, members.status, members.version, members.created_at, members.removed, members.email_added_by FROM members
 JOIN members me ON me.ledger_id = members.ledger_id
-WHERE me.user_id = CAST(?1 AS TEXT) AND me.status = 'active'
-  AND (members.version > ?2 OR me.version > ?2)
-  AND members.version <= ?3 AND me.version <= ?3
+WHERE me.user_id = CAST($1 AS TEXT) AND me.status = 'active'
+  AND (members.version > $2 OR me.version > $2)
+  AND members.version <= $3 AND me.version <= $3
 ORDER BY members.version, members.id
 `
 
@@ -215,9 +215,9 @@ const changedOwedShares = `-- name: ChangedOwedShares :many
 SELECT owed_shares.expense_id, owed_shares.member_id, owed_shares.amount, owed_shares.split_value FROM owed_shares
 JOIN expenses ON expenses.id = owed_shares.expense_id
 JOIN members me ON me.ledger_id = expenses.ledger_id
-WHERE me.user_id = CAST(?1 AS TEXT) AND me.status = 'active'
-  AND (expenses.version > ?2 OR me.version > ?2)
-  AND expenses.version <= ?3 AND me.version <= ?3
+WHERE me.user_id = CAST($1 AS TEXT) AND me.status = 'active'
+  AND (expenses.version > $2 OR me.version > $2)
+  AND expenses.version <= $3 AND me.version <= $3
 ORDER BY owed_shares.expense_id, owed_shares.member_id
 `
 
@@ -260,9 +260,9 @@ const changedPaidShares = `-- name: ChangedPaidShares :many
 SELECT paid_shares.expense_id, paid_shares.member_id, paid_shares.amount FROM paid_shares
 JOIN expenses ON expenses.id = paid_shares.expense_id
 JOIN members me ON me.ledger_id = expenses.ledger_id
-WHERE me.user_id = CAST(?1 AS TEXT) AND me.status = 'active'
-  AND (expenses.version > ?2 OR me.version > ?2)
-  AND expenses.version <= ?3 AND me.version <= ?3
+WHERE me.user_id = CAST($1 AS TEXT) AND me.status = 'active'
+  AND (expenses.version > $2 OR me.version > $2)
+  AND expenses.version <= $3 AND me.version <= $3
 ORDER BY paid_shares.expense_id, paid_shares.member_id
 `
 
@@ -299,9 +299,9 @@ func (q *Queries) ChangedPaidShares(ctx context.Context, arg ChangedPaidSharesPa
 const changedSettlements = `-- name: ChangedSettlements :many
 SELECT settlements.id, settlements.ledger_id, settlements.from_member_id, settlements.to_member_id, settlements.amount, settlements.currency, settlements.date, settlements.created_by, settlements.version, settlements.created_at, settlements.deleted_at FROM settlements
 JOIN members me ON me.ledger_id = settlements.ledger_id
-WHERE me.user_id = CAST(?1 AS TEXT) AND me.status = 'active'
-  AND (settlements.version > ?2 OR me.version > ?2)
-  AND settlements.version <= ?3 AND me.version <= ?3
+WHERE me.user_id = CAST($1 AS TEXT) AND me.status = 'active'
+  AND (settlements.version > $2 OR me.version > $2)
+  AND settlements.version <= $3 AND me.version <= $3
 ORDER BY settlements.version, settlements.id
 `
 
@@ -349,8 +349,8 @@ func (q *Queries) ChangedSettlements(ctx context.Context, arg ChangedSettlements
 
 const droppedLedgers = `-- name: DroppedLedgers :many
 SELECT ledger_id FROM members
-WHERE user_id = CAST(?1 AS TEXT) AND status = 'former'
-  AND version > ?2
+WHERE user_id = CAST($1 AS TEXT) AND status = 'former'
+  AND version > $2
 ORDER BY ledger_id
 `
 
@@ -389,49 +389,49 @@ SELECT CAST(pending.version AS BIGINT) FROM (
     SELECT CASE WHEN ledgers.version > me.version THEN ledgers.version ELSE me.version END AS version
     FROM ledgers
     JOIN members me ON me.ledger_id = ledgers.id
-    WHERE me.user_id = CAST(?1 AS TEXT) AND me.status = 'active'
-      AND (ledgers.version > ?2 OR me.version > ?2)
+    WHERE me.user_id = CAST($1 AS TEXT) AND me.status = 'active'
+      AND (ledgers.version > $2 OR me.version > $2)
     UNION ALL
     SELECT CASE WHEN members.version > me.version THEN members.version ELSE me.version END
     FROM members
     JOIN members me ON me.ledger_id = members.ledger_id
-    WHERE me.user_id = CAST(?1 AS TEXT) AND me.status = 'active'
-      AND (members.version > ?2 OR me.version > ?2)
+    WHERE me.user_id = CAST($1 AS TEXT) AND me.status = 'active'
+      AND (members.version > $2 OR me.version > $2)
     UNION ALL
     SELECT CASE WHEN expenses.version > me.version THEN expenses.version ELSE me.version END
     FROM expenses
     JOIN members me ON me.ledger_id = expenses.ledger_id
-    WHERE me.user_id = CAST(?1 AS TEXT) AND me.status = 'active'
-      AND (expenses.version > ?2 OR me.version > ?2)
+    WHERE me.user_id = CAST($1 AS TEXT) AND me.status = 'active'
+      AND (expenses.version > $2 OR me.version > $2)
     UNION ALL
     SELECT CASE WHEN expenses.version > me.version THEN expenses.version ELSE me.version END
     FROM paid_shares
     JOIN expenses ON expenses.id = paid_shares.expense_id
     JOIN members me ON me.ledger_id = expenses.ledger_id
-    WHERE me.user_id = CAST(?1 AS TEXT) AND me.status = 'active'
-      AND (expenses.version > ?2 OR me.version > ?2)
+    WHERE me.user_id = CAST($1 AS TEXT) AND me.status = 'active'
+      AND (expenses.version > $2 OR me.version > $2)
     UNION ALL
     SELECT CASE WHEN expenses.version > me.version THEN expenses.version ELSE me.version END
     FROM owed_shares
     JOIN expenses ON expenses.id = owed_shares.expense_id
     JOIN members me ON me.ledger_id = expenses.ledger_id
-    WHERE me.user_id = CAST(?1 AS TEXT) AND me.status = 'active'
-      AND (expenses.version > ?2 OR me.version > ?2)
+    WHERE me.user_id = CAST($1 AS TEXT) AND me.status = 'active'
+      AND (expenses.version > $2 OR me.version > $2)
     UNION ALL
     SELECT CASE WHEN settlements.version > me.version THEN settlements.version ELSE me.version END
     FROM settlements
     JOIN members me ON me.ledger_id = settlements.ledger_id
-    WHERE me.user_id = CAST(?1 AS TEXT) AND me.status = 'active'
-      AND (settlements.version > ?2 OR me.version > ?2)
+    WHERE me.user_id = CAST($1 AS TEXT) AND me.status = 'active'
+      AND (settlements.version > $2 OR me.version > $2)
     UNION ALL
     SELECT CASE WHEN activities.version > me.version THEN activities.version ELSE me.version END
     FROM activities
     JOIN members me ON me.ledger_id = activities.ledger_id
-    WHERE me.user_id = CAST(?1 AS TEXT) AND me.status = 'active'
-      AND (activities.version > ?2 OR me.version > ?2)
+    WHERE me.user_id = CAST($1 AS TEXT) AND me.status = 'active'
+      AND (activities.version > $2 OR me.version > $2)
 ) AS pending
 ORDER BY pending.version
-LIMIT 1 OFFSET ?3
+LIMIT 1 OFFSET $3::BIGINT
 `
 
 type PullPageEndParams struct {
@@ -455,8 +455,8 @@ func (q *Queries) PullPageEnd(ctx context.Context, arg PullPageEndParams) (int64
 const removedFromLedgers = `-- name: RemovedFromLedgers :many
 SELECT members.ledger_id FROM members
 JOIN activities ON activities.ledger_id = members.ledger_id AND activities.version = members.version
-WHERE members.user_id = CAST(?1 AS TEXT) AND members.status = 'former'
-  AND members.version > ?2 AND activities.kind = 'member_removed'
+WHERE members.user_id = CAST($1 AS TEXT) AND members.status = 'former'
+  AND members.version > $2 AND activities.kind = 'member_removed'
 ORDER BY members.ledger_id
 `
 

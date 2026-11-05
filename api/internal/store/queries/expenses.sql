@@ -2,29 +2,29 @@
 -- Use CreateExpense, which also stores the shares. The id comes from the
 -- client, so a resent Expense inserts nothing (ADR 0001).
 INSERT INTO expenses (id, ledger_id, description, date, currency, total, category, split_method, created_by, version, created_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 ON CONFLICT (id) DO NOTHING;
 
 -- name: InsertPaidShare :exec
 INSERT INTO paid_shares (expense_id, member_id, amount)
-VALUES (?, ?, ?);
+VALUES ($1, $2, $3);
 
 -- name: InsertOwedShare :exec
 INSERT INTO owed_shares (expense_id, member_id, amount, split_value)
-VALUES (?, ?, ?, ?);
+VALUES ($1, $2, $3, $4);
 
 -- name: GetExpense :one
 SELECT * FROM expenses
-WHERE id = ?;
+WHERE id = $1;
 
 -- name: ListPaidSharesOfExpense :many
 SELECT * FROM paid_shares
-WHERE expense_id = ?
+WHERE expense_id = $1
 ORDER BY member_id;
 
 -- name: ListOwedSharesOfExpense :many
 SELECT * FROM owed_shares
-WHERE expense_id = ?
+WHERE expense_id = $1
 ORDER BY member_id;
 
 -- name: UpdateExpenseAtVersion :one
@@ -42,21 +42,21 @@ RETURNING *;
 
 -- name: DeletePaidSharesOfExpense :exec
 DELETE FROM paid_shares
-WHERE expense_id = ?;
+WHERE expense_id = $1;
 
 -- name: DeleteOwedSharesOfExpense :exec
 DELETE FROM owed_shares
-WHERE expense_id = ?;
+WHERE expense_id = $1;
 
 -- name: DeleteExpense :one
 -- A deleted Expense no longer counts in Balances; its shares stay so it can be restored.
 UPDATE expenses
-SET deleted_at = ?, version = ?
-WHERE id = ? AND deleted_at IS NULL
+SET deleted_at = $1, version = $2
+WHERE id = $3 AND deleted_at IS NULL
 RETURNING *;
 
 -- name: RestoreExpense :one
 UPDATE expenses
-SET deleted_at = NULL, version = ?
-WHERE id = ? AND deleted_at IS NOT NULL
+SET deleted_at = NULL, version = $1
+WHERE id = $2 AND deleted_at IS NOT NULL
 RETURNING *;

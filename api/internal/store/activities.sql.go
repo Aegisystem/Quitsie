@@ -12,7 +12,7 @@ import (
 
 const createActivity = `-- name: CreateActivity :exec
 INSERT INTO activities (id, ledger_id, user_id, kind, details, version, created_at)
-VALUES (?, ?, ?, ?, ?, ?, ?)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
 `
 
 type CreateActivityParams struct {
@@ -41,7 +41,7 @@ func (q *Queries) CreateActivity(ctx context.Context, arg CreateActivityParams) 
 
 const listActivities = `-- name: ListActivities :many
 SELECT id, ledger_id, user_id, kind, details, version, created_at FROM activities
-WHERE ledger_id = ?
+WHERE ledger_id = $1
 ORDER BY version DESC, created_at DESC, id DESC
 `
 

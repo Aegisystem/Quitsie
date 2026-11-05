@@ -12,7 +12,7 @@ import (
 
 const countMailSend = `-- name: CountMailSend :exec
 INSERT INTO mail_sends (hour, sent)
-VALUES (?, 1)
+VALUES ($1, 1)
 ON CONFLICT (hour) DO UPDATE
 SET sent = mail_sends.sent + 1
 `
@@ -24,7 +24,7 @@ func (q *Queries) CountMailSend(ctx context.Context, hour time.Time) error {
 
 const deleteOldMailSends = `-- name: DeleteOldMailSends :exec
 DELETE FROM mail_sends
-WHERE hour <= ?
+WHERE hour <= $1
 `
 
 func (q *Queries) DeleteOldMailSends(ctx context.Context, hour time.Time) error {
@@ -34,7 +34,7 @@ func (q *Queries) DeleteOldMailSends(ctx context.Context, hour time.Time) error 
 
 const listMailSends = `-- name: ListMailSends :many
 SELECT hour, sent FROM mail_sends
-WHERE hour > ?
+WHERE hour > $1
 ORDER BY hour
 `
 
@@ -64,7 +64,7 @@ func (q *Queries) ListMailSends(ctx context.Context, hour time.Time) ([]MailSend
 const uncountMailSend = `-- name: UncountMailSend :exec
 UPDATE mail_sends
 SET sent = sent - 1
-WHERE hour = ? AND sent > 0
+WHERE hour = $1 AND sent > 0
 `
 
 func (q *Queries) UncountMailSend(ctx context.Context, hour time.Time) error {

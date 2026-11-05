@@ -12,7 +12,7 @@ import (
 
 const createKnownDevice = `-- name: CreateKnownDevice :exec
 INSERT INTO known_devices (token_hash, user_id, created_at, last_used_at)
-VALUES (?, ?, ?, ?)
+VALUES ($1, $2, $3, $4)
 `
 
 type CreateKnownDeviceParams struct {
@@ -34,7 +34,7 @@ func (q *Queries) CreateKnownDevice(ctx context.Context, arg CreateKnownDevicePa
 
 const deleteKnownDevicesOfUser = `-- name: DeleteKnownDevicesOfUser :exec
 DELETE FROM known_devices
-WHERE user_id = ?
+WHERE user_id = $1
 `
 
 func (q *Queries) DeleteKnownDevicesOfUser(ctx context.Context, userID string) error {
@@ -44,7 +44,7 @@ func (q *Queries) DeleteKnownDevicesOfUser(ctx context.Context, userID string) e
 
 const deleteStaleKnownDevices = `-- name: DeleteStaleKnownDevices :exec
 DELETE FROM known_devices
-WHERE last_used_at <= ?1
+WHERE last_used_at <= $1
 `
 
 // Every User's, also of those who never sign in again.
@@ -55,12 +55,12 @@ func (q *Queries) DeleteStaleKnownDevices(ctx context.Context, usedBefore time.T
 
 const deleteSurplusKnownDevices = `-- name: DeleteSurplusKnownDevices :exec
 DELETE FROM known_devices
-WHERE known_devices.user_id = ?1
+WHERE known_devices.user_id = $1
   AND known_devices.token_hash NOT IN (
       SELECT kept.token_hash FROM known_devices AS kept
-      WHERE kept.user_id = ?1
+      WHERE kept.user_id = $1
       ORDER BY kept.last_used_at DESC, kept.token_hash
-      LIMIT ?2)
+      LIMIT $2::BIGINT)
 `
 
 type DeleteSurplusKnownDevicesParams struct {
@@ -76,7 +76,7 @@ func (q *Queries) DeleteSurplusKnownDevices(ctx context.Context, arg DeleteSurpl
 
 const getKnownDevice = `-- name: GetKnownDevice :one
 SELECT token_hash, user_id, created_at, last_used_at FROM known_devices
-WHERE token_hash = ?
+WHERE token_hash = $1
 `
 
 func (q *Queries) GetKnownDevice(ctx context.Context, tokenHash string) (KnownDevice, error) {
@@ -93,8 +93,8 @@ func (q *Queries) GetKnownDevice(ctx context.Context, tokenHash string) (KnownDe
 
 const touchKnownDevice = `-- name: TouchKnownDevice :exec
 UPDATE known_devices
-SET last_used_at = ?
-WHERE token_hash = ?
+SET last_used_at = $1
+WHERE token_hash = $2
 `
 
 type TouchKnownDeviceParams struct {
