@@ -1,5 +1,7 @@
 # SQLite como base de datos
 
+> Reemplazado por el [ADR 0012](0012-postgres-en-railway.md).
+
 Por ahora los datos viven en SQLite, en el mismo servidor que la API. Se prefirió a PostgreSQL, que era la recomendación inicial para un producto público, porque es más simple de operar: un archivo, sin servicio aparte y sin costo.
 
 ## Consequences
