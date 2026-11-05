@@ -4,7 +4,8 @@
 // Configuration comes from the environment. Production needs the variables
 // marked as required, and the server refuses to start without them:
 //
-//	QUITSIE_ADDR                  address to listen on (default 127.0.0.1:8080; cloudflared connects to it)
+//	QUITSIE_ADDR                  address to listen on (default 127.0.0.1:8080, or every interface on PORT if it is set)
+//	PORT                          the port a hosting platform such as Railway routes to
 //	QUITSIE_DATABASE_URL          required: the PostgreSQL database, such as postgres://user:password@host:5432/quitsie
 //	                              (development defaults to the one in compose.yaml)
 //	QUITSIE_ENV                   production (default) or development; production also sends HSTS and
@@ -234,7 +235,7 @@ func loadConfig(getenv func(string) string) (config, error) {
 		return fallback
 	}
 	cfg := config{
-		addr:            or("QUITSIE_ADDR", "127.0.0.1:8080"),
+		addr:            or("QUITSIE_ADDR", listenAddr(getenv("PORT"))),
 		defaultCurrency: or("QUITSIE_DEFAULT_CURRENCY", "USD"),
 	}
 
@@ -323,6 +324,16 @@ func loadConfig(getenv func(string) string) (config, error) {
 		return config{}, fmt.Errorf("QUITSIE_INVITE_SECRET must have at least %d bytes", invites.MinSecretLength)
 	}
 	return cfg, nil
+}
+
+// listenAddr is where the server listens when QUITSIE_ADDR is not set. A
+// platform that routes traffic to the container says the port in PORT, and
+// reaches it from outside, so the server listens on every interface.
+func listenAddr(port string) string {
+	if port == "" {
+		return "127.0.0.1:8080"
+	}
+	return ":" + port
 }
 
 // developmentDatabase is the PostgreSQL of compose.yaml.

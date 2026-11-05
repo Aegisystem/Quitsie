@@ -245,6 +245,29 @@ func TestDevelopmentCanPointAtAnotherOrigin(t *testing.T) {
 	}
 }
 
+func TestTheAddressToListenOn(t *testing.T) {
+	tests := []struct {
+		name    string
+		changes map[string]string
+		want    string
+	}{
+		{"by default, only this machine", nil, "127.0.0.1:8080"},
+		{"a platform's PORT, on every interface", map[string]string{"PORT": "3000"}, ":3000"},
+		{"QUITSIE_ADDR wins", map[string]string{"PORT": "3000", "QUITSIE_ADDR": "127.0.0.1:9000"}, "127.0.0.1:9000"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg, err := loadConfig(env(production, tt.changes))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if cfg.addr != tt.want {
+				t.Errorf("addr = %q, want %q", cfg.addr, tt.want)
+			}
+		})
+	}
+}
+
 func TestDevelopmentUsesTheDatabaseOfCompose(t *testing.T) {
 	cfg, err := loadConfig(env(development, nil))
 	if err != nil {
