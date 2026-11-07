@@ -23,7 +23,10 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
-      registerType: 'autoUpdate',
+      // A new version waits until the User taps «Actualizar» (src/pwa.ts), so a
+      // reload never interrupts a form; the first install takes over at once.
+      registerType: 'prompt',
+      injectRegister: false,
       includeAssets: ['favicon.svg', 'apple-touch-icon-180x180.png'],
       manifest: {
         name: 'Quitsie',
@@ -47,6 +50,7 @@ export default defineConfig({
         navigateFallbackDenylist: [/^\/api\//],
         // The fonts too, or offline the interface falls back to a system font.
         globPatterns: ['**/*.{js,css,html,woff2,png,svg}'],
+        clientsClaim: true,
       },
     }),
     keepGitkeep(),

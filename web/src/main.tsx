@@ -3,11 +3,13 @@ import '@fontsource-variable/jost'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './i18n'
+import { startServiceWorker } from './pwa'
 import { App } from './ui/App'
 import './ui/styles.css'
 import { followOtherTabs } from './ui/theme'
 
 followOtherTabs()
+startServiceWorker()
 
 const queryClient = new QueryClient()
 

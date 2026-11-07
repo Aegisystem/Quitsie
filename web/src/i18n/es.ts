@@ -25,6 +25,11 @@ export const es = {
     tryAgain: 'Algo falló de nuestro lado. Inténtalo de nuevo.',
     noAnswer: 'No pudimos llegar al servidor. Inténtalo de nuevo.',
   },
+  update: {
+    available: 'Hay una versión nueva de Quitsie.',
+    apply: 'Actualizar',
+    applying: 'Actualizando…',
+  },
   connection: {
     online: 'En línea',
     onlineShort: 'En línea, todo enviado',

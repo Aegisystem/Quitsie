@@ -334,6 +334,27 @@ h3 {
   display: none;
 }
 
+.update-banner {
+  background: var(--surface);
+  color: var(--ink);
+  border-bottom: 1px solid var(--rule);
+}
+
+.update-banner-inner {
+  max-width: var(--col);
+  margin: 0 auto;
+  padding: 8px var(--gutter);
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.9375rem;
+}
+
+.update-banner p {
+  margin: 0;
+}
+
 .offline-banner {
   background: var(--pending);
   color: var(--on-pending);

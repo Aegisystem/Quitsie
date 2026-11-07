@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { liveRecords } from '../../local'
 import { replica, useLive, useSyncStatus } from '../data'
 import { href, type Route } from '../router'
+import { applyUpdate, useUpdateAvailable } from '../update'
 import { Icon, Mark, type IconName } from './icons'
 
 // The browser's own idea of the connection. Only it can tell what a screen may
@@ -132,6 +133,33 @@ export function OfflineBanner() {
   )
 }
 
+// A newer version is ready. It waits for the User, so that a reload never
+// throws away what they were typing.
+export function UpdateBanner() {
+  const { t } = useTranslation()
+  const available = useUpdateAvailable()
+  const [applying, setApplying] = useState(false)
+  if (!available) return null
+  return (
+    <div className="update-banner" role="status">
+      <div className="update-banner-inner">
+        <p>{t('update.available')}</p>
+        <button
+          type="button"
+          className="button button-small button-primary"
+          disabled={applying}
+          onClick={() => {
+            setApplying(true)
+            void applyUpdate()
+          }}
+        >
+          {applying ? t('update.applying') : t('update.apply')}
+        </button>
+      </div>
+    </div>
+  )
+}
+
 // What an empty replica means before the first pull: not that there is nothing,
 // but that it has not arrived yet.
 export function FirstSync() {
@@ -182,6 +210,7 @@ export function Screen({
           </div>
         </div>
       </header>
+      <UpdateBanner />
       <OfflineBanner />
       <main className={`main${wide ? ' main-wide' : ''}`}>{children}</main>
       {dock && (
