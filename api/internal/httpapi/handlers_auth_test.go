@@ -190,6 +190,9 @@ var everyOperation = []operationRequest{
 	{"RestoreSettlement", http.MethodPost, "/api/v1/settlements/" + someID + "/restore", ""},
 	{"PullChanges", http.MethodGet, "/api/v1/sync?since=0", ""},
 	{"StreamEvents", http.MethodGet, "/api/v1/events", ""},
+	{"GetPushKey", http.MethodGet, "/api/v1/push/key", ""},
+	{"SavePushSubscription", http.MethodPut, "/api/v1/push/subscription", `{"endpoint":"https://fcm.googleapis.com/fcm/send/x","keys":{"p256dh":"a","auth":"b"}}`},
+	{"DeletePushSubscription", http.MethodDelete, "/api/v1/push/subscription", ""},
 }
 
 // The operations anyone can call. GetInvite shows an invitation before its

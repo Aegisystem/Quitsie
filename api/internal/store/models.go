@@ -99,6 +99,19 @@ type PaidShare struct {
 	Amount    int64
 }
 
+type PushProgress struct {
+	ID      int64
+	Version int64
+}
+
+type PushSubscription struct {
+	Endpoint  string
+	SessionID string
+	P256dh    string
+	Auth      string
+	CreatedAt time.Time
+}
+
 type RestoreGap struct {
 	RestoredVersion int64
 	JumpedVersion   int64

@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/Aegisystem/Quitsie/api/internal/mail"
+	"github.com/Aegisystem/Quitsie/api/internal/push"
 	"github.com/Aegisystem/Quitsie/api/internal/store"
 	"github.com/Aegisystem/Quitsie/api/internal/storetest"
 )
@@ -370,5 +371,38 @@ func TestABrokenHandlerIsLoggedAsAnError(t *testing.T) {
 				t.Fatal("logged nothing")
 			}
 		})
+	}
+}
+
+func TestPushNotificationsNeedBothVAPIDKeys(t *testing.T) {
+	cfg, err := loadConfig(env(production, nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.vapid != nil {
+		t.Errorf("vapid = %+v without keys, want push off", cfg.vapid)
+	}
+
+	keys, err := push.GenerateKeys()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg, err = loadConfig(env(production, map[string]string{"QUITSIE_VAPID_PUBLIC_KEY": keys.Public, "QUITSIE_VAPID_PRIVATE_KEY": keys.Private}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.vapid == nil || *cfg.vapid != keys {
+		t.Errorf("vapid = %+v, want the configured keys", cfg.vapid)
+	}
+
+	other, _ := push.GenerateKeys()
+	for name, vars := range map[string]map[string]string{
+		"only the public key":  {"QUITSIE_VAPID_PUBLIC_KEY": keys.Public},
+		"only the private key": {"QUITSIE_VAPID_PRIVATE_KEY": keys.Private},
+		"keys of two pairs":    {"QUITSIE_VAPID_PUBLIC_KEY": other.Public, "QUITSIE_VAPID_PRIVATE_KEY": keys.Private},
+	} {
+		if _, err := loadConfig(env(production, vars)); err == nil || !strings.Contains(err.Error(), "QUITSIE_VAPID") {
+			t.Errorf("%s: err = %v, want one about the VAPID keys", name, err)
+		}
 	}
 }

@@ -956,6 +956,25 @@ type Problem struct {
 // ProblemCode Stable machine-readable error code. New codes may be added; clients treat an unknown code as a generic error for its status.
 type ProblemCode string
 
+// PushKey defines model for PushKey.
+type PushKey struct {
+	// PublicKey The P-256 public key in unpadded base64url.
+	PublicKey string `json:"publicKey"`
+}
+
+// PushSubscription What `PushSubscription.toJSON()` gives in the browser, without `expirationTime`.
+type PushSubscription struct {
+	// Endpoint The URL of the browser's push service for this device.
+	Endpoint string `json:"endpoint"`
+	Keys     struct {
+		// Auth The device's secret of 16 bytes, in base64url.
+		Auth string `json:"auth"`
+
+		// P256dh The device's P-256 public key, in base64url.
+		P256dh string `json:"p256dh"`
+	} `json:"keys"`
+}
+
 // RecordBatch defines model for RecordBatch.
 type RecordBatch struct {
 	Expenses    []NewExpense    `json:"expenses"`
@@ -1158,6 +1177,9 @@ type ClaimMemberJSONRequestBody = ClaimRequest
 // UpdateMeJSONRequestBody defines body for UpdateMe for application/json ContentType.
 type UpdateMeJSONRequestBody = UserUpdate
 
+// SavePushSubscriptionJSONRequestBody defines body for SavePushSubscription for application/json ContentType.
+type SavePushSubscriptionJSONRequestBody = PushSubscription
+
 // PushRecordsJSONRequestBody defines body for PushRecords for application/json ContentType.
 type PushRecordsJSONRequestBody = RecordBatch
 
@@ -1262,6 +1284,15 @@ type ServerInterface interface {
 	// UpdateMe Changes the User's name or Preferred currency.
 	// (PATCH /me)
 	UpdateMe(w http.ResponseWriter, r *http.Request)
+	// GetPushKey Gives the key a device subscribes to push notifications with.
+	// (GET /push/key)
+	GetPushKey(w http.ResponseWriter, r *http.Request)
+	// DeletePushSubscription Turns off push notifications for this device.
+	// (DELETE /push/subscription)
+	DeletePushSubscription(w http.ResponseWriter, r *http.Request)
+	// SavePushSubscription Turns on push notifications for this device.
+	// (PUT /push/subscription)
+	SavePushSubscription(w http.ResponseWriter, r *http.Request)
 	// PushRecords Sends a batch of Unsynced records (new Expenses and Settlements).
 	// (POST /records)
 	PushRecords(w http.ResponseWriter, r *http.Request)
@@ -2075,6 +2106,48 @@ func (siw *ServerInterfaceWrapper) UpdateMe(w http.ResponseWriter, r *http.Reque
 	handler.ServeHTTP(w, r)
 }
 
+// GetPushKey operation middleware
+func (siw *ServerInterfaceWrapper) GetPushKey(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetPushKey(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeletePushSubscription operation middleware
+func (siw *ServerInterfaceWrapper) DeletePushSubscription(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeletePushSubscription(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// SavePushSubscription operation middleware
+func (siw *ServerInterfaceWrapper) SavePushSubscription(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SavePushSubscription(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // PushRecords operation middleware
 func (siw *ServerInterfaceWrapper) PushRecords(w http.ResponseWriter, r *http.Request) {
 
@@ -2330,6 +2403,9 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/settlements/{settlementId}", wrapper.DeleteSettlement)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/settlements/{settlementId}/restore", wrapper.RestoreSettlement)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/events", wrapper.StreamEvents)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/push/key", wrapper.GetPushKey)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/push/subscription", wrapper.DeletePushSubscription)
+	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/push/subscription", wrapper.SavePushSubscription)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/sync", wrapper.PullChanges)
 
 	return m
@@ -4845,6 +4921,205 @@ func (response UpdateMedefaultApplicationProblemPlusJSONResponse) VisitUpdateMeR
 	return err
 }
 
+type GetPushKeyRequestObject struct {
+}
+
+type GetPushKeyResponseObject interface {
+	VisitGetPushKeyResponse(w http.ResponseWriter) error
+}
+
+type GetPushKey200JSONResponse PushKey
+
+func (response GetPushKey200JSONResponse) VisitGetPushKeyResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetPushKey401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response GetPushKey401ApplicationProblemPlusJSONResponse) VisitGetPushKeyResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetPushKey404ApplicationProblemPlusJSONResponse struct {
+	NotFoundApplicationProblemPlusJSONResponse
+}
+
+func (response GetPushKey404ApplicationProblemPlusJSONResponse) VisitGetPushKeyResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetPushKeydefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response GetPushKeydefaultApplicationProblemPlusJSONResponse) VisitGetPushKeyResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeletePushSubscriptionRequestObject struct {
+}
+
+type DeletePushSubscriptionResponseObject interface {
+	VisitDeletePushSubscriptionResponse(w http.ResponseWriter) error
+}
+
+type DeletePushSubscription204Response struct {
+}
+
+func (response DeletePushSubscription204Response) VisitDeletePushSubscriptionResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type DeletePushSubscription401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response DeletePushSubscription401ApplicationProblemPlusJSONResponse) VisitDeletePushSubscriptionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeletePushSubscriptiondefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response DeletePushSubscriptiondefaultApplicationProblemPlusJSONResponse) VisitDeletePushSubscriptionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SavePushSubscriptionRequestObject struct {
+	Body *SavePushSubscriptionJSONRequestBody
+}
+
+type SavePushSubscriptionResponseObject interface {
+	VisitSavePushSubscriptionResponse(w http.ResponseWriter) error
+}
+
+type SavePushSubscription204Response struct {
+}
+
+func (response SavePushSubscription204Response) VisitSavePushSubscriptionResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type SavePushSubscription400ApplicationProblemPlusJSONResponse struct {
+	BadRequestApplicationProblemPlusJSONResponse
+}
+
+func (response SavePushSubscription400ApplicationProblemPlusJSONResponse) VisitSavePushSubscriptionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SavePushSubscription401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response SavePushSubscription401ApplicationProblemPlusJSONResponse) VisitSavePushSubscriptionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SavePushSubscription404ApplicationProblemPlusJSONResponse struct {
+	NotFoundApplicationProblemPlusJSONResponse
+}
+
+func (response SavePushSubscription404ApplicationProblemPlusJSONResponse) VisitSavePushSubscriptionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SavePushSubscriptiondefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response SavePushSubscriptiondefaultApplicationProblemPlusJSONResponse) VisitSavePushSubscriptionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type PushRecordsRequestObject struct {
 	Body *PushRecordsJSONRequestBody
 }
@@ -5298,6 +5573,15 @@ type StrictServerInterface interface {
 	// UpdateMe Changes the User's name or Preferred currency.
 	// (PATCH /me)
 	UpdateMe(ctx context.Context, request UpdateMeRequestObject) (UpdateMeResponseObject, error)
+	// GetPushKey Gives the key a device subscribes to push notifications with.
+	// (GET /push/key)
+	GetPushKey(ctx context.Context, request GetPushKeyRequestObject) (GetPushKeyResponseObject, error)
+	// DeletePushSubscription Turns off push notifications for this device.
+	// (DELETE /push/subscription)
+	DeletePushSubscription(ctx context.Context, request DeletePushSubscriptionRequestObject) (DeletePushSubscriptionResponseObject, error)
+	// SavePushSubscription Turns on push notifications for this device.
+	// (PUT /push/subscription)
+	SavePushSubscription(ctx context.Context, request SavePushSubscriptionRequestObject) (SavePushSubscriptionResponseObject, error)
 	// PushRecords Sends a batch of Unsynced records (new Expenses and Settlements).
 	// (POST /records)
 	PushRecords(ctx context.Context, request PushRecordsRequestObject) (PushRecordsResponseObject, error)
@@ -6252,6 +6536,85 @@ func (sh *strictHandler) UpdateMe(w http.ResponseWriter, r *http.Request) {
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(UpdateMeResponseObject); ok {
 		if err := validResponse.VisitUpdateMeResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetPushKey operation middleware
+func (sh *strictHandler) GetPushKey(w http.ResponseWriter, r *http.Request) {
+	var request GetPushKeyRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetPushKey(ctx, request.(GetPushKeyRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetPushKey")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetPushKeyResponseObject); ok {
+		if err := validResponse.VisitGetPushKeyResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DeletePushSubscription operation middleware
+func (sh *strictHandler) DeletePushSubscription(w http.ResponseWriter, r *http.Request) {
+	var request DeletePushSubscriptionRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DeletePushSubscription(ctx, request.(DeletePushSubscriptionRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DeletePushSubscription")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DeletePushSubscriptionResponseObject); ok {
+		if err := validResponse.VisitDeletePushSubscriptionResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// SavePushSubscription operation middleware
+func (sh *strictHandler) SavePushSubscription(w http.ResponseWriter, r *http.Request) {
+	var request SavePushSubscriptionRequestObject
+
+	var body SavePushSubscriptionJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.SavePushSubscription(ctx, request.(SavePushSubscriptionRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "SavePushSubscription")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(SavePushSubscriptionResponseObject); ok {
+		if err := validResponse.VisitSavePushSubscriptionResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

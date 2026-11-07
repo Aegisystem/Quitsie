@@ -45,7 +45,8 @@ var (
 		"JoinGroup", "ClaimMember", "UndoClaim",
 		"CreateFriendship", "GetFriendInviteLink", "RegenerateFriendInviteLink"}
 	implementedRecords = []string{"PushRecords", "PullChanges", "StreamEvents", "UpdateExpense", "DeleteExpense", "RestoreExpense", "DeleteSettlement", "RestoreSettlement"}
-	implemented        = slices.Concat(implementedBase, implementedAuth, implementedLedgers, implementedRecords)
+	implementedPush    = []string{"GetPushKey", "SavePushSubscription", "DeletePushSubscription"}
+	implemented        = slices.Concat(implementedBase, implementedAuth, implementedLedgers, implementedRecords, implementedPush)
 )
 
 func send(t *testing.T, h http.Handler, method, target, body string) *httptest.ResponseRecorder {

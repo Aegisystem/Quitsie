@@ -23,6 +23,10 @@
 //	                              (default 1m); the end-to-end tests shorten it
 //	QUITSIE_INVITE_SECRET         required: at least 32 bytes that sign the Invite links; changing it revokes them all
 //	                              (development generates one on each start if it is missing)
+//	QUITSIE_VAPID_PUBLIC_KEY      with QUITSIE_VAPID_PRIVATE_KEY, the key pair that signs push notifications
+//	QUITSIE_VAPID_PRIVATE_KEY     (ADR 0013); `quitsie vapid-keys` prints a new one. Without them the server
+//	                              sends no push notifications. Changing them turns notifications off on each
+//	                              device until the PWA opens there again and subscribes with the new key
 //
 // To run it locally: QUITSIE_ENV=development QUITSIE_MAIL=log go run ./cmd/server
 //
@@ -53,6 +57,7 @@ import (
 	"github.com/Aegisystem/Quitsie/api/internal/httpapi"
 	"github.com/Aegisystem/Quitsie/api/internal/invites"
 	"github.com/Aegisystem/Quitsie/api/internal/mail"
+	"github.com/Aegisystem/Quitsie/api/internal/push"
 	"github.com/Aegisystem/Quitsie/api/internal/store"
 )
 
@@ -68,8 +73,13 @@ func main() {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
 	slog.SetDefault(logger)
 	start := run
-	if len(os.Args) > 1 && os.Args[1] == "record-restore" {
-		start = recordRestore
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "record-restore":
+			start = recordRestore
+		case "vapid-keys":
+			start = printVAPIDKeys
+		}
 	}
 	if err := start(logger); err != nil {
 		logger.Error("server stopped", "err", err)
@@ -91,6 +101,9 @@ func run(logger *slog.Logger) error {
 	}
 	if cfg.inviteSecretGenerated {
 		logger.Warn("QUITSIE_INVITE_SECRET is not set: generated one for this run, so Invite links stop working on restart")
+	}
+	if cfg.vapid == nil {
+		logger.Warn("QUITSIE_VAPID_PUBLIC_KEY and QUITSIE_VAPID_PRIVATE_KEY are not set: no push notifications")
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -126,6 +139,18 @@ func run(logger *slog.Logger) error {
 	// notifications through the feed (ADR 0013).
 	changes := changefeed.New(cfg.databaseURL, logger)
 	go changes.Run(ctx)
+	notified := make(chan struct{})
+	var pushKey string
+	if cfg.vapid != nil {
+		pushKey = cfg.vapid.Public
+		notifier := push.New(push.Config{DB: db, Sender: push.NewWebPush(*cfg.vapid, cfg.origins[0]), Logger: logger})
+		go func() {
+			notifier.Run(ctx, changes)
+			close(notified)
+		}()
+	} else {
+		close(notified)
+	}
 
 	api := httpapi.NewServer(db, version).WithDeps(httpapi.Deps{
 		DB:           db,
@@ -134,6 +159,7 @@ func run(logger *slog.Logger) error {
 		Origins:      cfg.origins,
 		InviteSecret: cfg.inviteSecret,
 		HTTPSOrigin:  cfg.httpsOrigin,
+		PushKey:      pushKey,
 	})
 	srv := newHTTPServer(cfg.addr, httpapi.NewHandler(api, pwa), logger)
 	// Event streams never end on their own; Shutdown would wait for them.
@@ -155,6 +181,19 @@ func run(logger *slog.Logger) error {
 	if err := srv.Shutdown(shutdownCtx); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}
+	// The notifier sends what was waiting before the database closes.
+	<-notified
+	return nil
+}
+
+// printVAPIDKeys is `quitsie vapid-keys`: it prints a new key pair for push
+// notifications, to set in the environment of the server.
+func printVAPIDKeys(*slog.Logger) error {
+	keys, err := push.GenerateKeys()
+	if err != nil {
+		return err
+	}
+	fmt.Printf("QUITSIE_VAPID_PUBLIC_KEY=%s\nQUITSIE_VAPID_PRIVATE_KEY=%s\n", keys.Public, keys.Private)
 	return nil
 }
 
@@ -230,6 +269,8 @@ type config struct {
 	inviteSecret    []byte
 	// inviteSecretGenerated says inviteSecret is a random one for this run.
 	inviteSecretGenerated bool
+	// vapid signs the push notifications; nil when the server sends none.
+	vapid *push.Keys
 }
 
 const (
@@ -346,6 +387,18 @@ func loadConfig(getenv func(string) string) (config, error) {
 		cfg.inviteSecretGenerated = true
 	default:
 		return config{}, fmt.Errorf("QUITSIE_INVITE_SECRET must have at least %d bytes", invites.MinSecretLength)
+	}
+
+	keys := push.Keys{Public: getenv("QUITSIE_VAPID_PUBLIC_KEY"), Private: getenv("QUITSIE_VAPID_PRIVATE_KEY")}
+	switch {
+	case keys.Public == "" && keys.Private == "":
+	case keys.Public == "" || keys.Private == "":
+		return config{}, errors.New("QUITSIE_VAPID_PUBLIC_KEY and QUITSIE_VAPID_PRIVATE_KEY go together: set both, or neither for no push notifications")
+	default:
+		if err := keys.Check(); err != nil {
+			return config{}, fmt.Errorf("QUITSIE_VAPID_PUBLIC_KEY and QUITSIE_VAPID_PRIVATE_KEY: %w (`quitsie vapid-keys` prints a new pair)", err)
+		}
+		cfg.vapid = &keys
 	}
 	return cfg, nil
 }

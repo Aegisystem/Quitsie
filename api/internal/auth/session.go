@@ -21,8 +21,11 @@ import (
 // __Host- prefix keeps other subdomains from setting it (see hostCookie).
 const SessionCookieName = "__Host-quitsie_session"
 
+// SessionLifetime is how long a session lasts without being used. The push
+// notifications skip the devices of expired sessions that are still stored.
+const SessionLifetime = sessionLifetime
+
 const (
-	// sessionLifetime is how long a session lasts without being used.
 	sessionLifetime = 90 * 24 * time.Hour
 	// touchInterval is how stale last_used_at may get before a request
 	// renews it, so not every request writes to the database.

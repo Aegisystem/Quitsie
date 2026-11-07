@@ -26,6 +26,9 @@ type Deps struct {
 	// InviteSecret signs the Invite links (ADR 0010): at least
 	// invites.MinSecretLength random bytes. Changing it revokes every link.
 	InviteSecret []byte
+	// PushKey is the VAPID public key the devices subscribe to push
+	// notifications with (ADR 0013); empty when the server sends none.
+	PushKey string
 	// Now is the clock of the limit of requests per IP; nil is time.Now.
 	Now func() time.Time
 	// HTTPSOrigin is the public origin in production, such as

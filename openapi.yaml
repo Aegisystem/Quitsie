@@ -57,6 +57,8 @@ tags:
     description: Expenses and Settlements.
   - name: sync
     description: Pulling changes into the device's replica.
+  - name: push
+    description: Push notifications of new Expenses and Settlements on this device (ADR 0013).
 security:
   - sessionCookie: []
 paths:
@@ -1171,6 +1173,75 @@ paths:
                 type: string
         "401":
           $ref: "#/components/responses/Unauthorized"
+  /push/key:
+    get:
+      operationId: getPushKey
+      summary: Gives the key a device subscribes to push notifications with.
+      description: >
+        The VAPID public key (RFC 8292) of the server, which the PWA passes
+        as `applicationServerKey` to `PushManager.subscribe`. A device that
+        subscribed with another key, from before the owner changed it, must
+        subscribe again. Without keys in its configuration the server sends
+        no notifications and answers `404 not_found`.
+      tags: [push]
+      responses:
+        "200":
+          description: The key.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PushKey"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  /push/subscription:
+    put:
+      operationId: savePushSubscription
+      summary: Turns on push notifications for this device.
+      description: >
+        Saves the subscription of the browser for the current session, in
+        place of the one it had. The server notifies the User of a new
+        Expense they take part in and of a Settlement that involves them,
+        unless they wrote it, at most once a minute per ledger. Signing out,
+        closing the session or deleting the account deletes the
+        subscription. The endpoint must be of the push service of a browser
+        (Apple, Google, Mozilla or Microsoft); any other answers
+        `400 validation_failed`.
+      tags: [push]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PushSubscription"
+      responses:
+        "204":
+          description: Notifications are on for this device.
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        default:
+          $ref: "#/components/responses/Problem"
+    delete:
+      operationId: deletePushSubscription
+      summary: Turns off push notifications for this device.
+      description: Deleting a subscription the session does not have also answers 204.
+      tags: [push]
+      responses:
+        "204":
+          description: Notifications are off for this device.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        default:
+          $ref: "#/components/responses/Problem"
+
   /sync:
     get:
       operationId: pullChanges
@@ -1458,6 +1529,36 @@ components:
       enum: [equal, exact, percentage, weights, adjustment]
 
     # --- Auth and profile -----------------------------------------------
+
+    PushKey:
+      type: object
+      required: [publicKey]
+      properties:
+        publicKey:
+          type: string
+          description: The P-256 public key in unpadded base64url.
+
+    PushSubscription:
+      type: object
+      description: What `PushSubscription.toJSON()` gives in the browser, without `expirationTime`.
+      required: [endpoint, keys]
+      properties:
+        endpoint:
+          type: string
+          maxLength: 2048
+          description: The URL of the browser's push service for this device.
+        keys:
+          type: object
+          required: [p256dh, auth]
+          properties:
+            p256dh:
+              type: string
+              maxLength: 128
+              description: The device's P-256 public key, in base64url.
+            auth:
+              type: string
+              maxLength: 64
+              description: The device's secret of 16 bytes, in base64url.
 
     LoginMethods:
       type: object

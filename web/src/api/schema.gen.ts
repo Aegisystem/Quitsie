@@ -594,6 +594,70 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Tells an open device, as it happens, that one of its ledgers changed.
+         * @description A Server-Sent Events stream (ADR 0013). Each `change` event carries `{"ledgerId", "version"}` for a ledger where the User has an active Member, or a ledger the User just joined; the device answers by pulling `/sync`, since the event carries no data. A `change` without `ledgerId` means any ledger may have changed. The stream sends a comment every 25 seconds to stay open, and ends when the server restarts; the browser reconnects on its own.
+         */
+        get: operations["streamEvents"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/push/key": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Gives the key a device subscribes to push notifications with.
+         * @description The VAPID public key (RFC 8292) of the server, which the PWA passes as `applicationServerKey` to `PushManager.subscribe`. A device that subscribed with another key, from before the owner changed it, must subscribe again. Without keys in its configuration the server sends no notifications and answers `404 not_found`.
+         */
+        get: operations["getPushKey"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/push/subscription": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Turns on push notifications for this device.
+         * @description Saves the subscription of the browser for the current session, in place of the one it had. The server notifies the User of a new Expense they take part in and of a Settlement that involves them, unless they wrote it, at most once a minute per ledger. Signing out, closing the session or deleting the account deletes the subscription. The endpoint must be of the push service of a browser (Apple, Google, Mozilla or Microsoft); any other answers `400 validation_failed`.
+         */
+        put: operations["savePushSubscription"];
+        post?: never;
+        /**
+         * Turns off push notifications for this device.
+         * @description Deleting a subscription the session does not have also answers 204.
+         */
+        delete: operations["deletePushSubscription"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/sync": {
         parameters: {
             query?: never;
@@ -684,6 +748,21 @@ export interface components {
          * @enum {string}
          */
         SplitMethod: "equal" | "exact" | "percentage" | "weights" | "adjustment";
+        PushKey: {
+            /** @description The P-256 public key in unpadded base64url. */
+            publicKey: string;
+        };
+        /** @description What `PushSubscription.toJSON()` gives in the browser, without `expirationTime`. */
+        PushSubscription: {
+            /** @description The URL of the browser's push service for this device. */
+            endpoint: string;
+            keys: {
+                /** @description The device's P-256 public key, in base64url. */
+                p256dh: string;
+                /** @description The device's secret of 16 bytes, in base64url. */
+                auth: string;
+            };
+        };
         /** @description The ways of signing in besides the emailed code, which is always there. */
         LoginMethods: {
             /** @description True when the server has an OAuth client of Google, so `startGoogleLogin` can sign in. */
@@ -2336,6 +2415,96 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
+            default: components["responses"]["Problem"];
+        };
+    };
+    streamEvents: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The stream of events. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": string;
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    getPushKey: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The key. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PushKey"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    savePushSubscription: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PushSubscription"];
+            };
+        };
+        responses: {
+            /** @description Notifications are on for this device. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    deletePushSubscription: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Notifications are off for this device. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
             default: components["responses"]["Problem"];
         };
     };
