@@ -1149,6 +1149,28 @@ paths:
         default:
           $ref: "#/components/responses/Problem"
 
+  /events:
+    get:
+      operationId: streamEvents
+      summary: Tells an open device, as it happens, that one of its ledgers changed.
+      description: >
+        A Server-Sent Events stream (ADR 0013). Each `change` event carries
+        `{"ledgerId", "version"}` for a ledger where the User has an active
+        Member, or a ledger the User just joined; the device answers by pulling
+        `/sync`, since the event carries no data. A `change` without `ledgerId`
+        means any ledger may have changed. The stream sends a comment every 25
+        seconds to stay open, and ends when the server restarts; the browser
+        reconnects on its own.
+      tags: [sync]
+      responses:
+        "200":
+          description: The stream of events.
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        "401":
+          $ref: "#/components/responses/Unauthorized"
   /sync:
     get:
       operationId: pullChanges

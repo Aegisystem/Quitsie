@@ -136,6 +136,8 @@ func run(logger *slog.Logger) error {
 		HTTPSOrigin:  cfg.httpsOrigin,
 	})
 	srv := newHTTPServer(cfg.addr, httpapi.NewHandler(api, pwa), logger)
+	// Event streams never end on their own; Shutdown would wait for them.
+	srv.RegisterOnShutdown(api.CloseStreams)
 	serveErr := make(chan error, 1)
 	go func() { serveErr <- srv.ListenAndServe() }()
 	logger.Info("listening", "url", "http://"+cfg.addr, "version", version)

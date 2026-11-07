@@ -15,6 +15,7 @@ type Server struct {
 	db      Pinger
 	version string
 	deps    Deps
+	streams streams
 }
 
 var _ StrictServerInterface = (*Server)(nil)

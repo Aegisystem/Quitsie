@@ -44,7 +44,7 @@ var (
 		"GetGroupInviteLink", "RegenerateGroupInviteLink", "GetInvite",
 		"JoinGroup", "ClaimMember", "UndoClaim",
 		"CreateFriendship", "GetFriendInviteLink", "RegenerateFriendInviteLink"}
-	implementedRecords = []string{"PushRecords", "PullChanges", "UpdateExpense", "DeleteExpense", "RestoreExpense", "DeleteSettlement", "RestoreSettlement"}
+	implementedRecords = []string{"PushRecords", "PullChanges", "StreamEvents", "UpdateExpense", "DeleteExpense", "RestoreExpense", "DeleteSettlement", "RestoreSettlement"}
 	implemented        = slices.Concat(implementedBase, implementedAuth, implementedLedgers, implementedRecords)
 )
 

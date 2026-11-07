@@ -1,6 +1,6 @@
 import { addExpense, createGroup, expect, expenseRow, inviteLink, openEditForm, serverChanges, signUp, test, unsyncedMark } from './support'
 
-test('the second person to save an edit is warned, and nothing is overwritten', async ({ newDevice }) => {
+test('whoever is editing is warned as soon as someone else saves, and nothing is overwritten', async ({ newDevice }) => {
   const ana = await newDevice()
   await signUp(ana, 'Ana')
   await createGroup(ana, 'La casa')
@@ -11,12 +11,10 @@ test('the second person to save an edit is warned, and nothing is overwritten', 
   await beto.getByRole('button', { name: 'Unirme al grupo' }).click()
   await expect(beto.getByRole('heading', { name: 'La casa' })).toBeVisible()
 
-  // Each device only learns about the other when it syncs, here by opening again.
-  await ana.reload()
+  // Ana's open device hears that Beto joined (ADR 0013).
   await ana.getByRole('link', { name: 'Volver' }).click()
   await addExpense(ana, { description: 'Cena', amount: '100' })
   await expect(unsyncedMark(expenseRow(ana, 'Cena'))).toBeHidden()
-  await beto.reload()
 
   await openEditForm(ana, 'Cena')
   await openEditForm(beto, 'Cena')
@@ -26,8 +24,8 @@ test('the second person to save an edit is warned, and nothing is overwritten', 
   await expect(ana.getByText('Gasto actualizado.')).toBeVisible()
   await expect(expenseRow(ana, 'Cena')).toContainText('$120')
 
+  // Beto's open form hears about Ana's edit before Beto saves anything.
   await beto.getByLabel('Descripción').fill('Almuerzo')
-  await beto.getByRole('button', { name: 'Guardar cambios' }).click()
   const conflict = beto.getByRole('alert').filter({ hasText: 'Este gasto cambió mientras lo editabas' })
   await expect(conflict).toContainText('Tus cambios no se guardaron')
   await expect(conflict).toContainText('Cena · $120.00')

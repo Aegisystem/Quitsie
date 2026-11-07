@@ -55,6 +55,7 @@ export function createSyncEngine({
   let cancelRetry = () => {}
   let stopped = false
   let stopListening = () => {}
+  let closeEvents = () => {}
   let running: Promise<void> | undefined
   let following: Promise<void> | undefined
 
@@ -128,9 +129,18 @@ export function createSyncEngine({
     return id
   }
 
+  // The event stream is open while the app is on screen; it tells the
+  // engine to sync when someone else changes one of the User's ledgers.
+  function openEvents() {
+    closeEvents()
+    closeEvents = environment.events?.(() => void sync()) ?? (() => {})
+  }
+
   function stop() {
     stopped = true
     stopListening()
+    closeEvents()
+    closeEvents = () => {}
     cancelRetry()
   }
 
@@ -141,10 +151,13 @@ export function createSyncEngine({
       const stops = [
         environment.listen('online', () => void sync()),
         environment.listen('visibilitychange', () => {
-          if (environment.visible()) void sync()
+          if (!environment.visible()) return closeEvents()
+          openEvents()
+          void sync()
         }),
       ]
       stopListening = () => stops.forEach((stopOne) => stopOne())
+      if (environment.visible()) openEvents()
       void sync()
     },
 

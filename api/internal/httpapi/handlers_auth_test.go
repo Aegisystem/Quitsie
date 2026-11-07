@@ -189,6 +189,7 @@ var everyOperation = []operationRequest{
 	{"DeleteSettlement", http.MethodDelete, "/api/v1/settlements/" + someID, ""},
 	{"RestoreSettlement", http.MethodPost, "/api/v1/settlements/" + someID + "/restore", ""},
 	{"PullChanges", http.MethodGet, "/api/v1/sync?since=0", ""},
+	{"StreamEvents", http.MethodGet, "/api/v1/events", ""},
 }
 
 // The operations anyone can call. GetInvite shows an invitation before its

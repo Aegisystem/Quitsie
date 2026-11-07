@@ -16,6 +16,8 @@ function fakeDevice() {
   let visible = true
   const listeners = new Map<string, Set<() => void>>()
   const timers: { ms: number; fire: () => void }[] = []
+  // The open event streams, by the function each calls on a change.
+  const streams = new Set<() => void>()
   const emit = (event: string) => {
     for (const listener of listeners.get(event) ?? []) listener()
   }
@@ -34,10 +36,19 @@ function fakeDevice() {
         if (timers.includes(timer)) timers.splice(timers.indexOf(timer), 1)
       }
     },
+    events(onChange) {
+      streams.add(onChange)
+      return () => streams.delete(onChange)
+    },
   }
   return {
     environment,
     timers,
+    openStreams: () => streams.size,
+    // The server says a ledger of the User changed.
+    serverSaysChanged() {
+      for (const onChange of streams) onChange()
+    },
     goOffline() {
       online = false
     },
@@ -435,6 +446,35 @@ describe('retries', () => {
 })
 
 describe('triggers', () => {
+  test('an open app syncs when the server says someone else changed a ledger', async () => {
+    const server = fakeServer()
+    const trip = server.addGroup({ name: 'Viaje a Cusco', currency: 'PEN', members: ['Ana'] })
+    const { replica, engine, device } = setup(server)
+    engine.start()
+    await until(liveHome(replica), (home) => home.length === 1)
+    expect(device.openStreams()).toBe(1)
+
+    const id = server.addExpense(trip, { description: 'Cena', paid: { Ana: 9000 }, owed: { Yo: 4500, Ana: 4500 } })
+    device.serverSaysChanged()
+
+    expect(await until(liveExpenses(replica, trip.id), (list) => list.length === 1)).toEqual([expect.objectContaining({ id })])
+  })
+
+  test('the event stream closes when the app leaves the screen or stops, and opens when it comes back', async () => {
+    const server = fakeServer()
+    const { engine, device } = setup(server)
+    engine.start()
+    expect(device.openStreams()).toBe(1)
+
+    device.hide()
+    expect(device.openStreams()).toBe(0)
+    device.show()
+    expect(device.openStreams()).toBe(1)
+
+    engine.stop()
+    expect(device.openStreams()).toBe(0)
+  })
+
   test('an Expense created offline is accepted after reconnecting', async () => {
     const server = fakeServer()
     const trip = server.addGroup({ name: 'Viaje a Cusco', currency: 'PEN', members: ['Ana'] })
