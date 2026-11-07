@@ -70,26 +70,20 @@ func (f *fixture) guessWrongFrom(t *testing.T, email string, ips []string, perCo
 	return guesses
 }
 
-// Way 1: five requests used to spend the codes of an email for an hour.
-func TestSpendingTheCodesOfAnEmailDoesNotStopItsKnownDevice(t *testing.T) {
+// Way 1: anybody can ask for a code to an email, which makes the email wait.
+func TestTheWaitOfAnEmailDoesNotStopItsKnownDevice(t *testing.T) {
 	f := newFixture(t)
 	phone := f.signedInBrowser(t, anaEmail, anaIP)
 	f.clock.Advance(time.Hour)
-	attacker := 0
-	for i := range 10 {
-		if err := f.newBrowser(fmt.Sprintf("198.51.100.%d", i)).requestCode(anaEmail); err == nil {
-			attacker++
-		}
-	}
-	if attacker != 5 {
-		t.Fatalf("the attacker got %d codes, want the 5 of an email per hour", attacker)
+	if err := f.newBrowser("198.51.100.1").requestCodeNow(anaEmail); err != nil {
+		t.Fatalf("the attacker's code: %v", err)
 	}
 
-	if err := phone.signIn(t, f.mail, anaEmail); err != nil {
-		t.Errorf("Ana's phone: %v, want a sign-in", err)
+	if err := phone.requestCodeNow(anaEmail); err != nil {
+		t.Errorf("Ana's phone at once: %v, want a code", err)
 	}
-	// What is left: a browser Ana never used shares the limit per email.
-	if err := f.newBrowser("192.0.2.1").requestCode(anaEmail); !errors.Is(err, auth.ErrRateLimited) {
+	// What is left: a browser Ana never used shares the wait of the email.
+	if err := f.newBrowser("192.0.2.1").requestCodeNow(anaEmail); !errors.Is(err, auth.ErrRateLimited) {
 		t.Errorf("a new browser of Ana: err = %v, want ErrRateLimited", err)
 	}
 }
@@ -174,13 +168,11 @@ func TestAKnownDeviceHasLimitsOfItsOwn(t *testing.T) {
 	phone := f.signedInBrowser(t, anaEmail, anaIP)
 	f.clock.Advance(time.Hour)
 
-	for i := range 5 {
-		if err := phone.requestCode(anaEmail); err != nil {
-			t.Fatalf("code %d: %v", i+1, err)
-		}
+	if err := phone.requestCodeNow(anaEmail); err != nil {
+		t.Fatal(err)
 	}
-	if err := phone.requestCode(anaEmail); !errors.Is(err, auth.ErrRateLimited) {
-		t.Errorf("sixth code within the hour: err = %v, want ErrRateLimited", err)
+	if err := phone.requestCodeNow(anaEmail); !errors.Is(err, auth.ErrRateLimited) {
+		t.Errorf("a second code at once: err = %v, want ErrRateLimited", err)
 	}
 
 	f.clock.Advance(time.Hour)
@@ -208,11 +200,12 @@ func TestAKnownDeviceHasLimitsOfItsOwn(t *testing.T) {
 	}
 }
 
-// Even after a restart, which forgets the limits in memory, the browsers an
-// email's User never used hold 5 of its codes at once at most.
+// Even after a restart, which forgets the waits in memory, the browsers an
+// email's User never used hold 10 of its codes at once at most: one a minute
+// while a code lives.
 func TestUnknownBrowsersHoldFewLiveCodesOfAnEmail(t *testing.T) {
 	f := newFixture(t)
-	for i := range 5 {
+	for i := range 10 {
 		if err := f.newBrowser(fmt.Sprintf("198.51.100.%d", i)).requestCode(anaEmail); err != nil {
 			t.Fatal(err)
 		}
@@ -222,7 +215,7 @@ func TestUnknownBrowsersHoldFewLiveCodesOfAnEmail(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err = f.newBrowser("198.51.100.9").requestCodeFrom(restarted, anaEmail)
+	err = f.newBrowser("198.51.100.99").requestCodeNowFrom(restarted, anaEmail)
 
 	var limited *auth.RateLimitError
 	if !errors.As(err, &limited) || limited.RetryAfter != 10*time.Minute {

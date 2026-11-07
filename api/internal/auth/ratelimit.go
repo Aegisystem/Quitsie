@@ -5,26 +5,26 @@ import (
 	"time"
 )
 
-// Limits on sending login codes, so nobody can flood an inbox or use
-// Quitsie to send spam. The IP limit is looser because many people can
-// share one address behind a carrier's NAT, but each code is an email out of
-// the server's budget, so one address gets a few people's worth.
+// Limits on sending login codes. After a code goes out, the email waits
+// DefaultSendCooldown (Config.SendCooldown) before it gets another, so nobody can flood an inbox; a code
+// the email service refused costs nothing, so a failure never makes anyone
+// wait. Anybody can spend the wait of an email, so a known device has its
+// own instead (ADR 0011). The server's budget of emails (mailbudget.go) caps
+// the codes of everyone together.
 //
-// Anybody can spend the limit per email, so a known device has its own
-// quota instead (ADR 0011). Other browsers also have a smaller one per pair
-// of IP and email, so that one sender cannot take all of an email's codes
-// from someone at another address.
+// The owner chose on 2026-11-07 a minute between codes over the earlier
+// quotas per hour, which kept someone out for up to an hour after a few
+// attempts. There is no quota per IP: behind Railway's proxy every visitor
+// shares one (docs/pendientes.md).
 const (
-	sendWindow             = time.Hour
-	maxSendsPerMail        = 5
-	maxSendsPerPair        = 3
-	maxSendsPerIP          = 10
-	maxSendsPerKnownDevice = 5
-	// maxVerificationsPerIP stops one sender from spreading guesses over many
-	// emails, whose codes it may have asked for from other addresses.
+	DefaultSendCooldown = time.Minute
+	// maxVerificationsPerIP, in verifyWindow, stops one sender from spreading
+	// guesses over many emails, whose codes it may have asked for from other
+	// addresses.
+	verifyWindow          = time.Hour
 	maxVerificationsPerIP = 60
 	// maxLimiterKeys bounds the memory of a limiter to some 80 MB. Reaching it
-	// takes tens of thousands of addresses within an hour.
+	// takes tens of thousands of keys within a window.
 	maxLimiterKeys = 100_000
 )
 
@@ -65,6 +65,22 @@ func (l *limiter) allow(now time.Time, quotas ...quota) (ok bool, retryAfter tim
 		l.hits[q.key] = append(recent(hits, since), now)
 	}
 	return true, 0
+}
+
+// forget takes back the event that allow recorded at now under every quota's
+// key, for a request that turned out to cost nothing.
+func (l *limiter) forget(now time.Time, quotas ...quota) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	for _, q := range quotas {
+		hits := l.hits[q.key]
+		for i := len(hits) - 1; i >= 0; i-- {
+			if hits[i].Equal(now) {
+				l.hits[q.key] = append(hits[:i:i], hits[i+1:]...)
+				break
+			}
+		}
+	}
 }
 
 // wait reports how long until every quota's key has room for one more event,

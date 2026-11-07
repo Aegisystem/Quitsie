@@ -81,12 +81,13 @@ type fixture struct {
 // browser is one browser: it keeps the cookies sign-in gives it, as a real
 // one does.
 type browser struct {
-	svc *auth.Service
+	svc   *auth.Service
+	clock *clock
 	auth.Browser
 }
 
 func (f *fixture) newBrowser(ip string) *browser {
-	return &browser{svc: f.svc, Browser: auth.Browser{IP: ip}}
+	return &browser{svc: f.svc, clock: f.clock, Browser: auth.Browser{IP: ip}}
 }
 
 // at returns the fixture's browser, now at ip.
@@ -95,13 +96,26 @@ func (f *fixture) at(ip string) *browser {
 	return f.browser
 }
 
+// requestCode asks for a code a cooldown after the previous request, as a
+// person who waits for the email does. The tests of the cooldown itself use
+// requestCodeNow.
 func (b *browser) requestCode(email string) error {
 	return b.requestCodeFrom(b.svc, email)
 }
 
-// requestCodeFrom asks svc for the code, such as another Service on the
-// same database after a restart.
+// requestCodeFrom is requestCode on svc, such as another Service on the same
+// database after a restart.
 func (b *browser) requestCodeFrom(svc *auth.Service, email string) error {
+	b.clock.Advance(sendCooldown)
+	return b.requestCodeNowFrom(svc, email)
+}
+
+// requestCodeNow asks for a code without waiting.
+func (b *browser) requestCodeNow(email string) error {
+	return b.requestCodeNowFrom(b.svc, email)
+}
+
+func (b *browser) requestCodeNowFrom(svc *auth.Service, email string) error {
 	flow, err := svc.RequestCode(context.Background(), email, b.Browser)
 	if err == nil {
 		b.Flow = flow.Value
@@ -156,6 +170,8 @@ const (
 	device   = "Firefox on Linux"
 
 	codeLifetime = 10 * time.Minute
+	// sendCooldown is how long an email waits between codes.
+	sendCooldown = time.Minute
 )
 
 func TestARequestedCodeSignsANewUserIn(t *testing.T) {
@@ -379,7 +395,7 @@ func TestOneIPCannotSpreadItsGuessesOverManyEmails(t *testing.T) {
 	f := newFixture(t, withMailBudget(1000, 1000))
 	guess := func(i int) error {
 		email := fmt.Sprintf("user%d@example.com", i)
-		if err := f.at(fmt.Sprintf("198.51.100.%d", i)).requestCode(email); err != nil {
+		if err := f.at(fmt.Sprintf("198.51.100.%d", i)).requestCodeNow(email); err != nil {
 			t.Fatal(err)
 		}
 		_, err := f.at(anaIP).verify(email, wrongCode(f.mail.lastCode(t, email)))

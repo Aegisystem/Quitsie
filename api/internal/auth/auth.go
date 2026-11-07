@@ -28,6 +28,10 @@ type Config struct {
 	// sends in a clock hour and in 24 hours. Zero means DefaultMailPerHour
 	// and DefaultMailPerDay.
 	MailPerHour, MailPerDay int
+	// SendCooldown is how long an email waits between login codes. Zero
+	// means DefaultSendCooldown; the end-to-end tests shorten it, because
+	// they sign one User in on two devices within seconds.
+	SendCooldown time.Duration
 	// Logger defaults to slog.Default; it says when the budget of emails is
 	// spent.
 	Logger *slog.Logger
@@ -53,8 +57,8 @@ func New(cfg Config) (*Service, error) {
 	if cfg.DB == nil || cfg.Mail == nil || cfg.DefaultCurrency == "" {
 		return nil, errors.New("auth: DB, Mail and DefaultCurrency are required")
 	}
-	if cfg.MailPerHour < 0 || cfg.MailPerDay < 0 {
-		return nil, errors.New("auth: MailPerHour and MailPerDay cannot be negative")
+	if cfg.MailPerHour < 0 || cfg.MailPerDay < 0 || cfg.SendCooldown < 0 {
+		return nil, errors.New("auth: MailPerHour, MailPerDay and SendCooldown cannot be negative")
 	}
 	if cfg.Now == nil {
 		cfg.Now = time.Now
@@ -70,8 +74,8 @@ func New(cfg Config) (*Service, error) {
 		logger:          cfg.Logger,
 		mailPerHour:     cmp.Or(cfg.MailPerHour, DefaultMailPerHour),
 		mailPerDay:      cmp.Or(cfg.MailPerDay, DefaultMailPerDay),
-		sends:           newLimiter(sendWindow),
-		verifications:   newLimiter(sendWindow),
+		sends:           newLimiter(cmp.Or(cfg.SendCooldown, DefaultSendCooldown)),
+		verifications:   newLimiter(verifyWindow),
 	}
 	if cfg.Google != nil {
 		g, err := newGoogle(*cfg.Google)

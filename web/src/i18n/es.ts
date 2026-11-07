@@ -464,6 +464,8 @@ export const es = {
     codeHint: 'Si no llega en un minuto, mira en la carpeta de spam.',
     codeExpired: 'Ese código caducó. Pide uno nuevo.',
     rateLimited: 'Pediste demasiados códigos. Espera un poco y vuelve a intentarlo.',
+    rateLimitedForSeconds_one: 'Ya se envió un código a este email. Revisa tu correo o pide otro en {{count}} segundo.',
+    rateLimitedForSeconds_other: 'Ya se envió un código a este email. Revisa tu correo o pide otro en {{count}} segundos.',
     rateLimitedFor_one: 'Pediste demasiados códigos. Vuelve a intentarlo en {{count}} minuto.',
     rateLimitedFor_other: 'Pediste demasiados códigos. Vuelve a intentarlo en {{count}} minutos.',
     rateLimitedForHours_one: 'Hubo demasiados intentos con este email. Vuelve a intentarlo en {{count}} hora.',

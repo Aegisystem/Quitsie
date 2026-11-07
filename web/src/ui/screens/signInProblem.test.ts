@@ -14,6 +14,7 @@ describe('what the sign-in screen says when a request fails', () => {
     const limited = { kind: 'problem', status: 429, code: 'rate_limited' } as const
     expect(signInProblemText(t, { ...limited, retryAfter: 2700 })).toBe('signIn.rateLimitedFor:45')
     expect(signInProblemText(t, { ...limited, retryAfter: 86400 })).toBe('signIn.rateLimitedForHours:24')
+    expect(signInProblemText(t, { ...limited, retryAfter: 40 })).toBe('signIn.rateLimitedForSeconds:40')
   })
 
   it('has a text for the rest', () => {

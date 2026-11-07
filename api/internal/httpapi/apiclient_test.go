@@ -14,6 +14,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -36,6 +37,10 @@ type testAPI struct {
 	db   *sql.DB
 	auth *auth.Service
 	mail *mailLog
+	// skew moves the API's clock ahead of the real one, or advance moves the
+	// clock of withClock instead.
+	skew    atomic.Int64
+	advance func(time.Duration)
 }
 
 func newTestAPI(t *testing.T, options ...func(*testAPI, *auth.Config)) *testAPI {
@@ -49,8 +54,9 @@ func newTestAPI(t *testing.T, options ...func(*testAPI, *auth.Config)) *testAPI 
 		DB:              db,
 		Mail:            mail.NewLogSender(slog.New(slog.NewTextHandler(a.mail, nil))),
 		DefaultCurrency: "USD",
-		Now:             time.Now,
+		Now:             func() time.Time { return time.Now().Add(time.Duration(a.skew.Load())) },
 	}
+	a.advance = func(d time.Duration) { a.skew.Add(int64(d)) }
 	for _, option := range options {
 		option(a, &cfg)
 	}
@@ -182,6 +188,8 @@ func (c *client) signIn(email string) httpapi.LoginResult {
 // signedIn returns a new client already signed in as email.
 func (a *testAPI) signedIn(t *testing.T, email string) (*client, httpapi.User) {
 	t.Helper()
+	// An email waits a minute between login codes, as a person would.
+	a.advance(time.Minute)
 	c := a.newClient(t)
 	return c, c.signIn(email).User
 }
@@ -253,9 +261,10 @@ func (c *clock) Advance(d time.Duration) {
 // withClock makes the API read the time from a new clock, which it returns
 // through c.
 func withClock(c **clock) func(*testAPI, *auth.Config) {
-	return func(_ *testAPI, cfg *auth.Config) {
+	return func(a *testAPI, cfg *auth.Config) {
 		*c = &clock{now: time.Date(2026, 10, 27, 12, 0, 0, 0, time.UTC)}
 		cfg.Now = (*c).Now
+		a.advance = (*c).Advance
 	}
 }
 

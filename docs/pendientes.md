@@ -22,7 +22,7 @@ Borra cada punto de aquí cuando quede terminado. Antes de actuar sobre un punto
 
 Los 14 hallazgos de [revision-seguridad.md](revision-seguridad.md) están arreglados. Quedan las comprobaciones que solo se pueden hacer al desplegar (sección 4).
 
-- **Límites por IP detrás del proxy de Railway.** El servidor solo cree la IP del visitante en `CF-Connecting-IP`, y solo si la conexión llega por loopback ([limits.go](../api/internal/httpapi/limits.go)). En Railway todas las conexiones llegan desde su proxy, así que todos los visitantes comparten los límites por IP: 300 peticiones por minuto, 10 códigos por hora y 60 verificaciones por hora. Arreglarlo exige saber qué encabezado escribe el proxy de Railway con la IP real y en qué conexiones se puede creer.
+- **Límites por IP detrás del proxy de Railway.** El servidor solo cree la IP del visitante en `CF-Connecting-IP`, y solo si la conexión llega por loopback ([limits.go](../api/internal/httpapi/limits.go)). En Railway todas las conexiones llegan desde su proxy, así que todos los visitantes comparten los límites por IP: 300 peticiones por minuto y 60 verificaciones por hora. Por eso tampoco hay un cupo de envío de códigos por IP. Mientras falte, quien pida códigos para muchos emails distintos puede agotar el tope global de 40 correos por hora, y entonces nadie recibe códigos hasta la hora siguiente. Arreglarlo exige saber qué encabezado escribe el proxy de Railway con la IP real y en qué conexiones se puede creer.
 
 ## 3. Decisiones del dueño
 
@@ -46,7 +46,7 @@ Ningún agente debe tomar estas decisiones por su cuenta.
 | 11 | Moneda propuesta | `es` propone EUR y `es-419` no propone ninguna, lo que encaja mal con Latinoamérica |
 | 12 | Formato de importes | Se agrupan miles siempre, y es-CO escribe «EUR 88» |
 | 13 | Registros rechazados sin conexión | Descartar y corregir están deshabilitados, aunque ambos son locales |
-| 14 | Cifras de los límites de entrada | Provisionales: 40 correos por hora y 90 al día entre todos, 10 códigos por hora por IP, y 5 códigos por hora y 10 fallos al día por dispositivo conocido. Se cambian por entorno las dos primeras y en `api/internal/auth/` el resto |
+| 14 | Cifras de los límites de entrada | Provisionales: 40 correos por hora y 90 al día entre todos, un minuto de espera entre códigos por email y por dispositivo conocido (decidido el 2026-11-07), y 10 fallos al día por email y por dispositivo conocido. Se cambian por entorno las dos primeras y en `api/internal/auth/` el resto |
 | 15 | HSTS con `includeSubDomains` y `preload` | Solo la precarga protege la primera visita por `http://`, y exige `includeSubDomains`, que alcanza a los demás subdominios del dominio |
 | 16 | Deudas por parejas por encima de 2^53 - 1 | El Grupo muestra en silencio las Deudas simplificadas aunque tenga la Simplificación desactivada. Solo pasa con billones en círculo dentro del propio Grupo. ¿Hace falta un aviso? |
 | 17 | Banda a cero mientras se vacía su fila | Una moneda que llega a cero sigue en verde con «0» hasta que sus fichas salen. La alternativa es mostrar la cifra anterior |

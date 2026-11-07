@@ -19,6 +19,8 @@
 //	QUITSIE_DEFAULT_CURRENCY      PreferredCurrency of new Users (default USD)
 //	QUITSIE_MAIL_MAX_PER_HOUR     most login-code emails sent in a clock hour (default 40)
 //	QUITSIE_MAIL_MAX_PER_DAY      most login-code emails sent in 24 hours (default 90, under Resend's free 100)
+//	QUITSIE_LOGIN_CODE_COOLDOWN   development only: how long an email waits between login codes, such as 1ms
+//	                              (default 1m); the end-to-end tests shorten it
 //	QUITSIE_INVITE_SECRET         required: at least 32 bytes that sign the Invite links; changing it revokes them all
 //	                              (development generates one on each start if it is missing)
 //
@@ -109,6 +111,7 @@ func run(logger *slog.Logger) error {
 		Google:          cfg.google,
 		MailPerHour:     cfg.mailPerHour,
 		MailPerDay:      cfg.mailPerDay,
+		SendCooldown:    cfg.sendCooldown,
 	})
 	if err != nil {
 		return err
@@ -208,8 +211,11 @@ type config struct {
 	logMail bool
 	resend  mail.ResendConfig
 	// mailPerHour and mailPerDay are the budget of login-code emails.
-	mailPerHour     int
-	mailPerDay      int
+	mailPerHour int
+	mailPerDay  int
+	// sendCooldown is the wait between login codes of an email; zero means
+	// auth's default.
+	sendCooldown    time.Duration
 	google          *auth.GoogleConfig
 	defaultCurrency string
 	inviteSecret    []byte
@@ -301,6 +307,15 @@ func loadConfig(getenv func(string) string) (config, error) {
 	}
 	if cfg.mailPerHour > cfg.mailPerDay {
 		return config{}, fmt.Errorf("QUITSIE_MAIL_MAX_PER_HOUR (%d) cannot exceed QUITSIE_MAIL_MAX_PER_DAY (%d)", cfg.mailPerHour, cfg.mailPerDay)
+	}
+	// Production keeps the minute: a shorter wait lets anyone flood an inbox.
+	if v := getenv("QUITSIE_LOGIN_CODE_COOLDOWN"); v != "" {
+		if !development {
+			return config{}, errors.New("QUITSIE_LOGIN_CODE_COOLDOWN is only for development")
+		}
+		if cfg.sendCooldown, err = time.ParseDuration(v); err != nil || cfg.sendCooldown <= 0 {
+			return config{}, fmt.Errorf("QUITSIE_LOGIN_CODE_COOLDOWN must be a positive duration such as 1ms, not %q", v)
+		}
 	}
 
 	id, secret := getenv("QUITSIE_GOOGLE_CLIENT_ID"), getenv("QUITSIE_GOOGLE_CLIENT_SECRET")

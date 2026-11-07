@@ -146,6 +146,7 @@ func TestProductionRefusesToStartWithABadEnvironment(t *testing.T) {
 		mention string
 	}{
 		{"no database", map[string]string{"QUITSIE_DATABASE_URL": ""}, "QUITSIE_DATABASE_URL"},
+		{"a shorter wait between login codes", map[string]string{"QUITSIE_LOGIN_CODE_COOLDOWN": "1ms"}, "QUITSIE_LOGIN_CODE_COOLDOWN"},
 		{"no public origin", map[string]string{"QUITSIE_PUBLIC_ORIGIN": ""}, "QUITSIE_PUBLIC_ORIGIN"},
 		{"plain HTTP origin", map[string]string{"QUITSIE_PUBLIC_ORIGIN": "http://quitsie.app"}, "QUITSIE_PUBLIC_ORIGIN"},
 		{"origin with a path", map[string]string{"QUITSIE_PUBLIC_ORIGIN": "https://quitsie.app/app"}, "QUITSIE_PUBLIC_ORIGIN"},
@@ -265,6 +266,19 @@ func TestTheAddressToListenOn(t *testing.T) {
 				t.Errorf("addr = %q, want %q", cfg.addr, tt.want)
 			}
 		})
+	}
+}
+
+func TestDevelopmentCanShortenTheWaitBetweenLoginCodes(t *testing.T) {
+	cfg, err := loadConfig(env(development, map[string]string{"QUITSIE_LOGIN_CODE_COOLDOWN": "1ms"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.sendCooldown != time.Millisecond {
+		t.Errorf("sendCooldown = %v, want 1ms", cfg.sendCooldown)
+	}
+	if _, err := loadConfig(env(development, map[string]string{"QUITSIE_LOGIN_CODE_COOLDOWN": "soon"})); err == nil {
+		t.Error("an unreadable wait was accepted")
 	}
 }
 

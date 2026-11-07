@@ -62,7 +62,7 @@ func (f *fixture) askForCodes(t *testing.T, n int) {
 	for range n {
 		f.asked++
 		email, ip := fmt.Sprintf("user%d@example.com", f.asked), fmt.Sprintf("198.51.100.%d", f.asked%256)
-		if err := f.at(ip).requestCode(email); err != nil {
+		if err := f.at(ip).requestCodeNow(email); err != nil {
 			t.Fatalf("code %d: %v", f.asked, err)
 		}
 	}
@@ -72,7 +72,7 @@ func (f *fixture) askForCodes(t *testing.T, n int) {
 // retryAfter.
 func (f *fixture) wantBudgetSpent(t *testing.T, retryAfter time.Duration) {
 	t.Helper()
-	err := f.at("192.0.2.1").requestCode("late@example.com")
+	err := f.at("192.0.2.1").requestCodeNow("late@example.com")
 	var spent *auth.MailBudgetError
 	if !errors.As(err, &spent) || !errors.Is(err, auth.ErrMailBudgetSpent) || spent.RetryAfter != retryAfter {
 		t.Fatalf("err = %v, want ErrMailBudgetSpent for %v", err, retryAfter)
@@ -169,7 +169,7 @@ func TestRequestsThatLoseTheLastEmailCostTheSenderNothing(t *testing.T) {
 	f.clock.Advance(50 * time.Minute)
 	results := make(chan error, 20)
 	for range 20 {
-		go func() { results <- f.newBrowser(anaIP).requestCode(anaEmail) }()
+		go func() { results <- f.newBrowser(anaIP).requestCodeNow(anaEmail) }()
 	}
 	sent := 0
 	for range 20 {
@@ -187,7 +187,7 @@ func TestRequestsThatLoseTheLastEmailCostTheSenderNothing(t *testing.T) {
 	f.clock.Advance(10 * time.Minute) // a new hour of the budget
 
 	if err := f.newBrowser(anaIP).requestCode(anaEmail); err != nil {
-		t.Errorf("err = %v, want the second of the 3 codes an hour of the IP for Ana", err)
+		t.Errorf("err = %v, want Ana's second code", err)
 	}
 }
 

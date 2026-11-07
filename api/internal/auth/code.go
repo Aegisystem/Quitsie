@@ -31,9 +31,10 @@ const (
 	maxFailures   = 10
 	failureWindow = 24 * time.Hour
 	// maxLiveCodesPerEmail bounds the codes of one email that browsers it does
-	// not know can hold at once. It is maxSendsPerMail kept in the database,
-	// where a restart does not forget it.
-	maxLiveCodesPerEmail = maxSendsPerMail
+	// not know can hold at once. One every DefaultSendCooldown never reaches it; it
+	// counts in the database, where a restart, which forgets the cooldowns,
+	// does not forget it.
+	maxLiveCodesPerEmail = int64(codeTTL / DefaultSendCooldown)
 )
 
 // CodeFlowCookieName is the cookie that ties a login code to the browser
@@ -105,11 +106,12 @@ func ClearCodeFlowCookie() *http.Cookie {
 // replaces any earlier one of the same browser, and leaves alone the codes
 // other browsers asked for.
 //
-// The limits count the browser by its IP, and by its pair of email and IP. A
-// browser that email's User signed in from before has a quota of its own;
-// any other one shares the limits per email, which anybody can spend. Every
-// email also counts against the server's budget (see DefaultMailPerHour);
-// when it is spent, RequestCode returns a *MailBudgetError.
+// After a code goes out, the email waits Config.SendCooldown for the next one. A
+// browser that email's User signed in from before waits on its own; any
+// other one shares the wait of the email, which anybody can spend. A code the
+// email service refused costs no wait. Every email also counts against the
+// server's budget (see DefaultMailPerHour); when it is spent, RequestCode
+// returns a *MailBudgetError.
 func (s *Service) RequestCode(ctx context.Context, email string, from Browser) (*http.Cookie, error) {
 	email, err := NormalizeEmail(email)
 	if err != nil {
@@ -130,11 +132,9 @@ func (s *Service) RequestCode(ctx context.Context, email string, from Browser) (
 	if err := s.checkMailBudget(ctx); err != nil {
 		return nil, err
 	}
-	quotas := []quota{{"ip:" + from.IP, maxSendsPerIP}}
+	quotas := []quota{{"email:" + email, 1}}
 	if known.ok() {
-		quotas = append(quotas, quota{"known-device:" + known.tokenHash, maxSendsPerKnownDevice})
-	} else {
-		quotas = append(quotas, quota{"email:" + email, maxSendsPerMail}, quota{"pair:" + from.IP + " " + email, maxSendsPerPair})
+		quotas = []quota{{"known-device:" + known.tokenHash, 1}}
 	}
 	// Only a look: the quotas count the request once nothing else refuses it.
 	if wait := s.sends.wait(s.now(), quotas...); wait > 0 {
@@ -204,9 +204,11 @@ func (s *Service) RequestCode(ctx context.Context, email string, from Browser) (
 
 	if err := s.mail.Send(ctx, codeMessage(email, code)); err != nil {
 		// Nobody got this code, so it could only ever be guessed, and its
-		// owner would never hear of it. Nor did it cost an email. It still
-		// spends the sender's quotas, or an address the email service refuses
-		// could be asked for without end.
+		// owner would never hear of it. Nor did it cost an email, nor does it
+		// make the sender wait. Requests for an address the email service
+		// keeps refusing are bounded only by the limit of requests per IP
+		// (httpapi/limits.go).
+		s.sends.forget(now, quotas...)
 		q, ctx := store.New(s.db), context.WithoutCancel(ctx)
 		cleanup := errors.Join(q.DeleteLoginCodeOfFlow(ctx, ptr(hashToken(flow))), q.UncountMailSend(ctx, budget.hour))
 		return nil, fmt.Errorf("auth: send login code: %w", errors.Join(err, cleanup))

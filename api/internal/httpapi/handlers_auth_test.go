@@ -305,7 +305,7 @@ func TestALoginCodeMustBeTheOneSentAndStillLive(t *testing.T) {
 	}
 }
 
-func TestLoginCodesAreLimitedPerEmail(t *testing.T) {
+func TestAnEmailWaitsAMinuteBetweenLoginCodes(t *testing.T) {
 	var clk *clock
 	api := newTestAPI(t, withClock(&clk))
 	request := func(i int) *http.Response {
@@ -314,17 +314,16 @@ func TestLoginCodesAreLimitedPerEmail(t *testing.T) {
 		return browser.do(http.MethodPost, "/api/v1/auth/login-code", `{"email":"ana@example.com"}`)
 	}
 
-	for i := range 5 {
-		wantStatus(t, request(i), http.StatusNoContent)
-		clk.Advance(time.Minute)
-	}
-	resp := request(5)
+	wantStatus(t, request(0), http.StatusNoContent)
+	clk.Advance(20 * time.Second)
+	resp := request(1)
 
 	wantProblem(t, resp, http.StatusTooManyRequests, httpapi.ProblemCodeRateLimited)
-	// The first of the 5 codes was sent 5 minutes ago; the hour ends in 55.
-	if got := resp.Header.Get("Retry-After"); got != "3300" {
-		t.Errorf("Retry-After = %q, want 3300 seconds", got)
+	if got := resp.Header.Get("Retry-After"); got != "40" {
+		t.Errorf("Retry-After = %q, want the 40 seconds left of the minute", got)
 	}
+	clk.Advance(40 * time.Second)
+	wantStatus(t, request(2), http.StatusNoContent)
 }
 
 // The client must tell this apart from its own limits: nobody gets a code.
@@ -375,6 +374,7 @@ func TestAUserSeesAndClosesTheirSessions(t *testing.T) {
 	laptop := api.newClient(t)
 	laptop.device = "Mozilla/5.0 (X11; Linux x86_64) Firefox/140.0"
 	laptop.signIn("ana@example.com")
+	api.advance(time.Minute)
 	phone := api.newClient(t)
 	phone.device = "Mozilla/5.0 (iPhone; CPU iPhone OS 19_0 like Mac OS X) Safari/604.1"
 	phone.signIn("ana@example.com")

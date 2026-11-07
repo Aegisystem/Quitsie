@@ -11,6 +11,8 @@ export function signInProblemText(t: TFunction, error: CallError): string {
   if (error.code === 'rate_limited') {
     if (!wait) return t('signIn.rateLimited')
     if (wait > HOUR) return t('signIn.rateLimitedForHours', { count: Math.ceil(wait / HOUR) })
+    // An email waits a minute between codes.
+    if (wait < 60) return t('signIn.rateLimitedForSeconds', { count: wait })
     return t('signIn.rateLimitedFor', { count: Math.ceil(wait / 60) })
   }
   // Nobody gets a code until then, so it is not the person's doing.

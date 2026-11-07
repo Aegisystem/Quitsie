@@ -62,6 +62,8 @@ export default defineConfig({
       QUITSIE_ADDR: `127.0.0.1:${port}`,
       QUITSIE_PUBLIC_ORIGIN: origin,
       QUITSIE_DATABASE_URL: databaseURL(process.env.QUITSIE_E2E_DATABASE),
+      // The tests sign one User in on two devices within seconds.
+      QUITSIE_LOGIN_CODE_COOLDOWN: '1ms',
     },
   },
 })

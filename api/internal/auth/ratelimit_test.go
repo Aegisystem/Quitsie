@@ -1,79 +1,67 @@
 package auth_test
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"testing"
 	"time"
 
 	"github.com/Aegisystem/Quitsie/api/internal/auth"
+	"github.com/Aegisystem/Quitsie/api/internal/mail"
 )
 
-func TestAnEmailGetsAtMostFiveCodesPerHour(t *testing.T) {
+// An email waits a minute between codes, whoever asks for them.
+func TestAnEmailWaitsAMinuteBetweenCodes(t *testing.T) {
 	f := newFixture(t)
-	for i := 1; i <= 5; i++ {
-		if err := f.newBrowser(fmt.Sprintf("198.51.100.%d", i)).requestCode(anaEmail); err != nil {
-			t.Fatalf("request %d: %v", i, err)
-		}
-		f.clock.Advance(3 * time.Minute)
+	if err := f.newBrowser(anaIP).requestCodeNow(anaEmail); err != nil {
+		t.Fatal(err)
+	}
+	f.clock.Advance(20 * time.Second)
+
+	err := f.newBrowser("198.51.100.1").requestCodeNow(anaEmail)
+	var limited *auth.RateLimitError
+	if !errors.As(err, &limited) || limited.RetryAfter != 40*time.Second {
+		t.Fatalf("a second code 20 s later, from another IP: err = %v, want a wait of 40 s", err)
+	}
+	if err := f.newBrowser(anaIP).requestCodeNow("beto@example.com"); err != nil {
+		t.Errorf("another email at once: %v", err)
 	}
 
-	if err := f.newBrowser("198.51.100.6").requestCode(anaEmail); !errors.Is(err, auth.ErrRateLimited) {
-		t.Errorf("sixth request within the hour, from yet another IP: err = %v, want ErrRateLimited", err)
+	f.clock.Advance(40 * time.Second)
+	if err := f.newBrowser(anaIP).requestCodeNow(anaEmail); err != nil {
+		t.Errorf("a minute after the first: %v", err)
 	}
-	if len(f.mail.sent) != 5 {
-		t.Errorf("sent %d emails, want 5", len(f.mail.sent))
-	}
-
-	f.clock.Advance(46 * time.Minute) // the first request is now an hour old
-	if err := f.newBrowser("198.51.100.6").requestCode(anaEmail); err != nil {
-		t.Errorf("request an hour after the first: %v", err)
+	if len(f.mail.sent) != 3 {
+		t.Errorf("sent %d emails, want 3", len(f.mail.sent))
 	}
 }
 
-// One sender cannot take all the codes of an email from someone at another
-// address.
-func TestAnIPGetsAtMostThreeCodesPerHourForOneEmail(t *testing.T) {
-	f := newFixture(t)
-	for i := 1; i <= 3; i++ {
-		if err := f.newBrowser(anaIP).requestCode(anaEmail); err != nil {
-			t.Fatalf("request %d: %v", i, err)
+// What kept someone out for an hour: each attempt the email service refused
+// used to count.
+func TestACodeThatCouldNotBeSentMakesNobodyWait(t *testing.T) {
+	broken := true
+	f := newFixture(t, func(cfg *auth.Config) {
+		cfg.Mail = switchableMail{broken: &broken, outbox: cfg.Mail.(*outbox)}
+	})
+	for i := range 5 {
+		if err := f.at(anaIP).requestCodeNow(anaEmail); err == nil || errors.Is(err, auth.ErrRateLimited) {
+			t.Fatalf("attempt %d while the email service refuses: err = %v, want its failure", i+1, err)
 		}
 	}
 
-	if err := f.newBrowser(anaIP).requestCode(anaEmail); !errors.Is(err, auth.ErrRateLimited) {
-		t.Errorf("fourth request from one IP: err = %v, want ErrRateLimited", err)
-	}
-	if err := f.newBrowser("198.51.100.1").requestCode(anaEmail); err != nil {
-		t.Errorf("the same email from another IP: %v", err)
-	}
-	if err := f.newBrowser(anaIP).requestCode("beto@example.com"); err != nil {
-		t.Errorf("another email from the same IP: %v", err)
+	broken = false
+	if err := f.at(anaIP).requestCodeNow(anaEmail); err != nil {
+		t.Errorf("once the email service works: %v, want a code at once", err)
 	}
 }
 
-func TestAnIPGetsAtMostTenCodesPerHour(t *testing.T) {
-	f := newFixture(t)
-	for i := 1; i <= 10; i++ {
-		if err := f.at(anaIP).requestCode(fmt.Sprintf("user%d@example.com", i)); err != nil {
-			t.Fatalf("request %d: %v", i, err)
-		}
-	}
-
-	if err := f.at(anaIP).requestCode("user11@example.com"); !errors.Is(err, auth.ErrRateLimited) {
-		t.Errorf("11th request from one IP: err = %v, want ErrRateLimited", err)
-	}
-	if err := f.at("198.51.100.1").requestCode("user11@example.com"); err != nil {
-		t.Errorf("the same email from another IP: %v", err)
-	}
-}
-
-// Requests of one sender at once still get no more than its quota.
-func TestRequestsAtOnceGetNoMoreThanTheQuota(t *testing.T) {
+// Requests for one email at once still get a single code.
+func TestRequestsAtOnceGetOneCode(t *testing.T) {
 	f := newFixture(t)
 	results := make(chan error, 20)
 	for i := range 20 {
-		go func() { results <- f.newBrowser(anaIP).requestCode(fmt.Sprintf("user%d@example.com", i)) }()
+		go func() { results <- f.newBrowser(fmt.Sprintf("198.51.100.%d", i)).requestCodeNow(anaEmail) }()
 	}
 
 	sent := 0
@@ -85,41 +73,50 @@ func TestRequestsAtOnceGetNoMoreThanTheQuota(t *testing.T) {
 			t.Errorf("err = %v, want ErrRateLimited", err)
 		}
 	}
-	if sent != 10 {
-		t.Errorf("sent %d codes, want the 10 of an IP", sent)
+	if sent != 1 {
+		t.Errorf("sent %d codes, want 1", sent)
 	}
 }
 
-// After a restart, which forgets the quotas, the live codes of an email cap
-// its codes. A request refused there sends nothing, so it must not spend its
-// sender's quotas either.
+// After a restart, which forgets the waits, the live codes of an email cap
+// its codes. A request refused there sends nothing, so it must not make its
+// sender wait either.
 func TestARequestRefusedForTheLiveCodesCostsTheSenderNothing(t *testing.T) {
 	f := newFixture(t)
-	for i := range 5 {
-		if err := f.newBrowser(fmt.Sprintf("198.51.100.%d", i)).requestCode(anaEmail); err != nil {
+	for i := range 10 {
+		if err := f.newBrowser(fmt.Sprintf("198.51.100.%d", i)).requestCodeNow(anaEmail); err != nil {
+			t.Fatalf("code %d: %v", i+1, err)
+		}
+		f.clock.Advance(time.Second)
+		restarted, err := auth.New(auth.Config{DB: f.db, Mail: f.mail, DefaultCurrency: "USD", Now: f.clock.Now})
+		if err != nil {
 			t.Fatal(err)
 		}
+		f.svc = restarted
 	}
-	restarted, err := auth.New(auth.Config{DB: f.db, Mail: f.mail, DefaultCurrency: "USD", Now: f.clock.Now})
-	if err != nil {
-		t.Fatal(err)
-	}
-	for range 10 {
-		if err := f.newBrowser(anaIP).requestCodeFrom(restarted, anaEmail); !errors.Is(err, auth.ErrRateLimited) {
+	for range 3 {
+		if err := f.newBrowser(anaIP).requestCodeNow(anaEmail); !errors.Is(err, auth.ErrRateLimited) {
 			t.Fatalf("err = %v, want ErrRateLimited", err)
 		}
 	}
 
 	f.clock.Advance(codeLifetime)
 
-	// All 10 of the IP, the first one for Ana under the quota of the pair.
-	for i := range 10 {
-		email := fmt.Sprintf("user%d@example.com", i)
-		if i == 0 {
-			email = anaEmail
-		}
-		if err := f.newBrowser(anaIP).requestCodeFrom(restarted, email); err != nil {
-			t.Fatalf("code %d once Ana's codes expired: %v", i+1, err)
-		}
+	if err := f.newBrowser(anaIP).requestCodeNow(anaEmail); err != nil {
+		t.Errorf("once Ana's codes expired: %v", err)
 	}
+}
+
+// switchableMail refuses every email while broken, like Resend refusing a
+// recipient, and delivers to outbox otherwise.
+type switchableMail struct {
+	broken *bool
+	outbox *outbox
+}
+
+func (m switchableMail) Send(ctx context.Context, msg mail.Message) error {
+	if *m.broken {
+		return errors.New("resend: 403 Forbidden")
+	}
+	return m.outbox.Send(ctx, msg)
 }

@@ -1,5 +1,7 @@
 # Cada código se ata a su navegador, y los navegadores conocidos tienen límites propios
 
+> Cambio del 2026-11-07, decidido por el dueño: los cupos de envío por hora (5 por email, 3 por email desde una IP, 10 por IP y 5 por dispositivo conocido) pasan a una espera de un minuto entre códigos, por email o por dispositivo conocido. Un envío que el servicio de correo rechaza no cuenta. Ya no hay cupo de envío por IP. Los cupos anteriores dejaban a alguien fuera hasta una hora después de unos pocos intentos fallidos. Los límites de códigos equivocados no cambian.
+
 Pedir un código deja en el navegador una cookie de flujo `HttpOnly` con un valor aleatorio de 128 bits, y la fila del código guarda solo su hash. Solo ese navegador puede comprobar el código, los intentos se cuentan por código, y pedir otro desde el mismo navegador reemplaza solo el suyo. Además, cada inicio de sesión, con código o con Google, deja una cookie de dispositivo conocido que dura un año y dice que ese navegador ya entró en ese Usuario; en la base solo está su hash. Un dispositivo conocido no gasta los límites por email, que cualquiera puede agotar sabiendo la dirección, y tiene los suyos: 5 envíos por hora y 10 códigos equivocados al día. Los demás navegadores siguen compartiendo los del email, así que el tope del hallazgo 4 de la [revisión de seguridad](../revision-seguridad.md) se mantiene. Es la defensa que OWASP llama *device cookies*.
 
 ## Considered Options

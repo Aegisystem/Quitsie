@@ -86,7 +86,7 @@ QUITSIE_DATABASE_URL='<DATABASE_PUBLIC_URL de la base>' go -C api run ./cmd/serv
 
 ## Límites conocidos
 
-- **Todos los visitantes cuentan como la IP del proxy de Railway.** El servidor solo cree la IP del visitante si la conexión llega por loopback, que era como entraba `cloudflared` en la VM ([limits.go](../api/internal/httpapi/limits.go)). En Railway llega desde su proxy. Los límites por IP (300 peticiones por minuto, 10 códigos por hora) los comparten entonces todos los Usuarios. Está en [pendientes](pendientes.md#2-seguridad).
+- **Todos los visitantes cuentan como la IP del proxy de Railway.** El servidor solo cree la IP del visitante si la conexión llega por loopback, que era como entraba `cloudflared` en la VM ([limits.go](../api/internal/httpapi/limits.go)). En Railway llega desde su proxy. Los límites por IP (300 peticiones por minuto, 60 verificaciones de código por hora) los comparten entonces todos los Usuarios. Está en [pendientes](pendientes.md#2-seguridad).
 - **Una sola instancia.** Los límites de peticiones viven en la memoria del proceso. Con dos réplicas, cada una contaría por su lado.
 
 ## Si algo falla

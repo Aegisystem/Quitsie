@@ -32,8 +32,6 @@ type world struct {
 	auth *auth.Service
 	mail *outbox
 	h    http.Handler
-	// codes counts the emails askForCode used.
-	codes int
 }
 
 func newWorld(t *testing.T) *world {
