@@ -91,6 +91,27 @@ Después de desplegar, comprueba:
 - Copiar y compartir el enlace con el portapapeles real, sin el permiso que concede Playwright.
 - La caché HTTP del navegador tras cerrar sesión, aunque la API ya responde `no-store`.
 
+## 8. Funciones propuestas
+
+Están decididas en su forma general, pero no empezadas. Antes de implementar una, presenta el diseño al dueño.
+
+### Sugerir la Categoría a partir de la descripción
+
+Al escribir la descripción de un Gasto, el formulario propone una de las 11 Categorías ([reglas](reglas-de-negocio.md)). No tiene que acertar siempre: la Categoría es opcional y una sugerencia equivocada se cambia con un toque.
+
+**Diseño acordado el 2026-11-06:**
+
+- Una función pura `suggestCategory(description, history)` en `web/src/domain/`. Normaliza la descripción: minúsculas, sin tildes y con los espacios colapsados.
+- Primero busca en el historial. Si el Usuario ya puso Categoría a un Gasto con esa descripción, o con una casi igual, usa esa. El historial sale de la réplica local (`web/src/local/`). Las descripciones se repiten («Netflix», «Arriendo», «Mercado»), así que esta parte acierta sola y se adapta a cada persona.
+- Si el historial no da nada, busca palabras clave en un diccionario en español, con comercios comunes de Colombia y Latinoamérica. Por ejemplo: uber, taxi, gasolina y peaje → transporte; almuerzo, pizza y restaurante → comida; mercado y d1 → supermercado; luz, agua e internet → servicios.
+- Si nada coincide, no sugiere nada.
+- En `web/src/ui/screens/ExpenseForm.tsx`, la sugerencia solo rellena la Categoría si el Usuario no eligió una, y se ve como sugerida. Una elección a mano no se vuelve a pisar. Al editar un Gasto que ya tiene Categoría, no se sugiere nada.
+- Todo ocurre en el cliente. Funciona sin conexión ([ADR 0001](adr/0001-offline-solo-creacion.md)), responde mientras se escribe y la descripción no sale del dispositivo. El servidor y `openapi.yaml` no cambian.
+
+**Descartado:** un modelo de IA en el servidor. Acertaría más en descripciones raras, pero necesita conexión, cuesta por petición y envía las descripciones a un tercero, lo que obligaría a cambiar [datos-personales.md](datos-personales.md).
+
+**Terminado significa:** pruebas unitarias de `suggestCategory` (normalización, historial antes que diccionario y sin coincidencia), pruebas del comportamiento del formulario, `npm run typecheck`, `npm test` y `npm run e2e` en verde, y una comprobación en el navegador. El esfuerzo estimado es de un día.
+
 ## Cómo trabajar aquí
 
 **Comprobaciones.** Son las de la CI: `go vet ./...`, `go test ./...` y `govulncheck` en `api/`; `npm run typecheck`, `npm test` y `npm run build` en `web/`; el trabajo `lint`, que pasa `actionlint`, y el trabajo `image`, que compila el `Dockerfile`. Las pruebas de Go y las de punta a punta necesitan el PostgreSQL de `compose.yaml` (`docker compose up -d`). Tras cambiar `openapi.yaml` o las consultas, ejecuta `go generate ./...` en `api/` y `npm run generate` en `web/`.
