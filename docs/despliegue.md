@@ -6,9 +6,10 @@ Quitsie corre en Railway como dos servicios del mismo proyecto: la aplicación, 
 
 1. En Railway, crea un proyecto y añade **PostgreSQL** (New → Database → PostgreSQL).
 2. Añade la aplicación desde el repositorio de GitHub (New → GitHub Repo), con la rama `main`. Deja vacío el Root Directory: el `Dockerfile` necesita `web/` y `api/`.
-3. Rellena las variables de la aplicación ([Variables](#variables)).
-4. En **Settings → Networking**, pulsa **Generate Domain**, o añade tu dominio propio. Railway detecta el puerto por la variable `PORT`, que él mismo pone.
-5. En **Settings → Deploy**, activa **Wait for CI**. Así Railway solo despliega los commits de `main` que pasaron la CI.
+3. Verifica en Resend el dominio del remitente de los códigos ([Dominio del correo](#dominio-del-correo)).
+4. Rellena las variables de la aplicación ([Variables](#variables)).
+5. En **Settings → Networking**, pulsa **Generate Domain**, o añade tu dominio propio. Railway detecta el puerto por la variable `PORT`, que él mismo pone.
+6. En **Settings → Deploy**, activa **Wait for CI**. Así Railway solo despliega los commits de `main` que pasaron la CI.
 
 Al terminar, `https://<dominio>/` muestra la PWA y `https://<dominio>/api/v1/health` responde `{"status":"ok","database":"ok","version":"<commit>"}`.
 
@@ -23,7 +24,7 @@ Sin las obligatorias, el servidor no arranca y el despliegue falla en la comprob
 | `QUITSIE_DATABASE_URL` | `${{Postgres.DATABASE_URL}}`. Railway la sustituye por la URL interna de la base. Si el servicio de la base tiene otro nombre, cambia `Postgres` por ese nombre. |
 | `QUITSIE_PUBLIC_ORIGIN` | URL base de la aplicación, con `https` y sin barra final: `https://${{RAILWAY_PUBLIC_DOMAIN}}` o `https://<tu-dominio>`. |
 | `QUITSIE_RESEND_API_KEY` | Clave de API de Resend con permiso de envío. |
-| `QUITSIE_MAIL_FROM` | Remitente de un dominio verificado en Resend: `Quitsie <codigos@<dominio>>`. |
+| `QUITSIE_MAIL_FROM` | Remitente de un dominio verificado en Resend: `Quitsie <codigos@<dominio>>` ([Dominio del correo](#dominio-del-correo)). |
 | `QUITSIE_INVITE_SECRET` | 32 bytes o más, que firman los Enlaces de invitación. Genéralos con `openssl rand -base64 32`. Cambiarlo revoca todos los enlaces. Guárdalo también en tu gestor de contraseñas. |
 
 Opcionales:
@@ -48,6 +49,40 @@ Cada push a `main` que pase la CI llega a Railway:
 - **A mano.** Desde el panel de Railway, **Redeploy** en el último despliegue.
 
 Las migraciones se aplican al arrancar y solo avanzan. Si se vuelve a un despliegue anterior, el binario viejo arranca contra el esquema nuevo. Por eso cada migración debe ser compatible con la versión anterior: primero se añade y después se quita.
+
+## Dominio del correo
+
+Los códigos de acceso salen de Resend con el remitente de `QUITSIE_MAIL_FROM`. Outlook, Hotmail y Gmail rechazan o mandan a spam el correo de un dominio que no pasa SPF, DKIM y DMARC. Outlook responde entonces `550 5.7.1 Message rejected: Message lacks SPF/DKIM/DMARC Auth Records`, y Resend lo muestra como rebote.
+
+1. En Resend, entra a **Domains → Add Domain** y escribe el dominio del remitente.
+2. Copia en el DNS del dominio los tres registros que muestra Resend, con sus valores exactos:
+
+   | Tipo | Nombre | Para qué |
+   | --- | --- | --- |
+   | `TXT` | `resend._domainkey` | DKIM: la clave pública con la que Resend firma cada correo. |
+   | `MX` | `send` | Recibe los avisos de rebote en el subdominio `send`. |
+   | `TXT` | `send` | SPF: autoriza a Resend a enviar desde el subdominio `send`. |
+
+3. Agrega el registro DMARC. Resend no lo pide para verificar el dominio, pero Outlook lo exige:
+
+   | Tipo | Nombre | Valor |
+   | --- | --- | --- |
+   | `TXT` | `_dmarc` | `v=DMARC1; p=none;` |
+
+   `p=none` solo pide reportes y no rechaza nada. Cuando los correos lleguen bien, puedes subirlo a `p=quarantine`. Un dominio tiene un solo registro `_dmarc`: si ya existe uno, conserva ese.
+4. Espera a que Resend marque los tres registros como **Verified**. Un cambio de DNS tarda de minutos a horas en propagarse.
+5. Comprueba que el DNS responde. Cambia `<dominio>` por el tuyo; cada comando debe devolver un valor:
+
+   ```bash
+   dig +short TXT _dmarc.<dominio>
+   dig +short TXT resend._domainkey.<dominio>
+   dig +short TXT send.<dominio>
+   dig +short MX send.<dominio>
+   ```
+
+6. Usa en `QUITSIE_MAIL_FROM` un remitente de ese mismo dominio. Con otro dominio u otro subdominio, la firma DKIM no coincide con el remitente y DMARC falla.
+
+Un rebote de tipo **Transient** no bloquea la dirección en Resend: el siguiente código llega cuando el DNS esté bien.
 
 ## HTTPS
 
@@ -99,3 +134,4 @@ QUITSIE_DATABASE_URL='<DATABASE_PUBLIC_URL de la base>' go -C api run ./cmd/serv
 | El build falla en `npm run build` o en `go build` | El mismo fallo aparece en el job `image` de la CI. Reprodúcelo con `docker build .`. |
 | Tras restaurar, `record-restore` dice «check the clock» | El reloj de la máquina donde lo ejecutas va tan adelantado que el salto pasaría de lo que la PWA lee con exactitud. Corrige la hora y repítelo. |
 | Muchos `429` con poco tráfico | Los límites por IP ([Límites conocidos](#límites-conocidos)). |
+| Resend muestra un rebote con `Message lacks SPF/DKIM/DMARC Auth Records`, o los códigos llegan a spam | Falta un registro DNS del correo, casi siempre el DMARC ([Dominio del correo](#dominio-del-correo)). |
