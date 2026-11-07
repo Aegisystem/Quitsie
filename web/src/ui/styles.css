@@ -7,8 +7,8 @@
   --surface: #ffffff;
   --sunken: #e9ebe6;
   --ink: #1f2328;
-  --ink-2: #5b616b;
-  --ink-3: #8a9098;
+  --ink-2: #4b515a;
+  --ink-3: #646a72;
   --rule: #dcdfd8;
   --rule-strong: #bcc0b8;
 
@@ -18,13 +18,24 @@
   --pending: #e2a72e;
   --favor-text: var(--favor);
   --against-text: var(--against);
-  --even-text: var(--even);
+  --even-text: #2a7145;
   --pending-ink: #8a5d00;
 
   --bar: #1f2328;
   --on-bar: #f4f5f2;
   --on-bar-2: #b6bbc2;
+  --on-bar-strong: #ffffff;
+  --on-bar-line: rgb(255 255 255 / 0.22);
+  --on-bar-hover: rgb(255 255 255 / 0.1);
+  --on-bar-ghost: rgb(255 255 255 / 0.45);
+  --on-bar-favor: #7a9ee0;
+  --on-bar-against: #e8775f;
   --focus: #2f5da8;
+
+  /* On a full colour field: white on the bands, ink on ochre (both themes). */
+  --on-color: #ffffff;
+  --on-color-2: rgb(255 255 255 / 0.92);
+  --on-pending: #1f2328;
 
   --font: 'Jost Variable', Futura, 'Century Gothic', 'Avenir Next', system-ui, sans-serif;
   --radius: 6px;
@@ -45,7 +56,7 @@
     --sunken: #24282d;
     --ink: #ecedea;
     --ink-2: #a2a7ae;
-    --ink-3: #737981;
+    --ink-3: #8a9098;
     --rule: #2b2f35;
     --rule-strong: #41464e;
     --favor-text: #86a8ea;
@@ -64,7 +75,7 @@
   --sunken: #24282d;
   --ink: #ecedea;
   --ink-2: #a2a7ae;
-  --ink-3: #737981;
+  --ink-3: #8a9098;
   --rule: #2b2f35;
   --rule-strong: #41464e;
   --favor-text: #86a8ea;
@@ -233,7 +244,7 @@ h3 {
 .topbar-back:hover,
 .icon-button:hover,
 .records-button:hover {
-  background: rgb(255 255 255 / 0.1);
+  background: var(--on-bar-hover);
 }
 
 .icon-button.is-disabled {
@@ -273,7 +284,7 @@ h3 {
   padding: 0 11px 0 9px;
   border-radius: 999px;
   color: var(--on-bar-2);
-  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.22);
+  box-shadow: inset 0 0 0 1px var(--on-bar-line);
   font-size: 0.8125rem;
   font-weight: 500;
   white-space: nowrap;
@@ -281,7 +292,7 @@ h3 {
 
 .status-offline {
   background: var(--pending);
-  color: #1f2328;
+  color: var(--on-pending);
   box-shadow: none;
   font-weight: 600;
 }
@@ -306,7 +317,7 @@ h3 {
   padding: 0 5px;
   border-radius: 9px;
   background: var(--pending);
-  color: #1f2328;
+  color: var(--on-pending);
   font-size: 0.6875rem;
   font-weight: 700;
   line-height: 18px;
@@ -315,8 +326,8 @@ h3 {
 }
 
 .records-badge-rejected {
-  background: #fff;
-  color: #1f2328;
+  background: var(--on-bar-strong);
+  color: var(--bar);
 }
 
 .topnav {
@@ -325,7 +336,7 @@ h3 {
 
 .offline-banner {
   background: var(--pending);
-  color: #1f2328;
+  color: var(--on-pending);
 }
 
 .offline-banner-inner {
@@ -428,7 +439,7 @@ h3 {
 }
 
 .tabbar a[aria-current='page'] {
-  color: #fff;
+  color: var(--on-bar-strong);
 }
 
 .tabbar a[aria-current='page'] .icon {
@@ -478,7 +489,7 @@ h3 {
 
 .band {
   background: var(--favor);
-  color: #fff;
+  color: var(--on-color);
 }
 .band-against {
   background: var(--against);
@@ -501,7 +512,7 @@ h3 {
   margin: 0;
   font-size: 1.0625rem;
   font-weight: 500;
-  color: rgb(255 255 255 / 0.88);
+  color: var(--on-color-2);
 }
 
 .band-amount {
@@ -531,7 +542,7 @@ h3 {
 }
 
 .band .tally-legend {
-  color: rgb(255 255 255 / 0.85);
+  color: var(--on-color-2);
 }
 
 .band-footer {
@@ -542,7 +553,7 @@ h3 {
   display: inline-flex;
   align-items: center;
   gap: 2px;
-  color: #fff;
+  color: var(--on-color);
   font-weight: 500;
 }
 
@@ -1333,13 +1344,13 @@ h3 {
 }
 
 .button-light {
-  background: #fff;
-  color: #1f2328;
+  background: var(--on-bar-strong);
+  color: var(--bar);
 }
 
 .button-ghost-light {
-  color: #fff;
-  border-color: rgb(255 255 255 / 0.45);
+  color: var(--on-bar-strong);
+  border-color: var(--on-bar-ghost);
 }
 
 .button-small {
@@ -2045,7 +2056,7 @@ select.input,
   margin: 40px 0 0 calc(50% - 50vw);
   padding: 24px max(var(--gutter), calc(50vw - var(--col) / 2 + var(--gutter)));
   background: var(--bar);
-  color: #fff;
+  color: var(--on-bar-strong);
 }
 
 .install h2 {
@@ -2095,7 +2106,7 @@ select.input,
 
 .signin-hero {
   background: var(--bar);
-  color: #fff;
+  color: var(--on-bar-strong);
   padding-top: env(safe-area-inset-top);
 }
 
@@ -2136,11 +2147,11 @@ select.input,
 }
 
 .signin-tally-favor {
-  color: #7a9ee0;
+  color: var(--on-bar-favor);
 }
 
 .signin-tally-against {
-  color: #e8775f;
+  color: var(--on-bar-against);
 }
 
 .signin-equals {
@@ -2315,12 +2326,12 @@ select.input,
   }
 
   .topnav a:hover {
-    color: #fff;
+    color: var(--on-bar-strong);
   }
 
   .topnav a[aria-current='page'] {
-    color: #fff;
-    background: rgb(255 255 255 / 0.1);
+    color: var(--on-bar-strong);
+    background: var(--on-bar-hover);
   }
 
   .topnav .icon {

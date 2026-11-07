@@ -14,8 +14,8 @@
       "paper": { "role": "neutral", "displayName": "Papel", "canonical": "#f4f5f2", "tonalRamp": ["#111211", "#292928", "#424341", "#636361", "#868684", "#aaaba9", "#d1d1d0", "#eeeeed"] },
       "surface": { "role": "neutral", "displayName": "Superficie", "canonical": "#ffffff" },
       "sunken": { "role": "neutral", "displayName": "Hundido", "canonical": "#e9ebe6" },
-      "ink-2": { "role": "neutral", "displayName": "Tinta 2", "canonical": "#5b616b" },
-      "ink-3": { "role": "neutral", "displayName": "Tinta 3 (salió o borrado)", "canonical": "#8a9098" },
+      "ink-2": { "role": "neutral", "displayName": "Tinta 2", "canonical": "#4b515a" },
+      "ink-3": { "role": "neutral", "displayName": "Tinta 3 (salió o borrado)", "canonical": "#646a72" },
       "rule": { "role": "neutral", "displayName": "Regla", "canonical": "#dcdfd8" },
       "rule-strong": { "role": "neutral", "displayName": "Regla fuerte", "canonical": "#bcc0b8" },
       "on-bar": { "role": "neutral", "displayName": "Texto sobre barra", "canonical": "#f4f5f2" },
@@ -26,7 +26,7 @@
       "sunken-dark": { "role": "neutral", "displayName": "Hundido (oscuro)", "canonical": "#24282d" },
       "ink-dark": { "role": "neutral", "displayName": "Tinta (oscuro)", "canonical": "#ecedea" },
       "ink-2-dark": { "role": "neutral", "displayName": "Tinta 2 (oscuro)", "canonical": "#a2a7ae" },
-      "ink-3-dark": { "role": "neutral", "displayName": "Tinta 3 (oscuro)", "canonical": "#737981" },
+      "ink-3-dark": { "role": "neutral", "displayName": "Tinta 3 (oscuro)", "canonical": "#8a9098" },
       "rule-dark": { "role": "neutral", "displayName": "Regla (oscuro)", "canonical": "#2b2f35" },
       "rule-strong-dark": { "role": "neutral", "displayName": "Regla fuerte (oscuro)", "canonical": "#41464e" },
       "favor-text-dark": { "role": "secondary", "displayName": "Azul a favor, texto (oscuro)", "canonical": "#86a8ea" },
@@ -132,7 +132,7 @@
       "refersTo": "figure",
       "description": "Silueta Isotype: llena vinculada, hueca pendiente, ink-3 antiguo miembro.",
       "html": "<div class=\"ds-figures\"><svg width=\"28\" height=\"28\" viewBox=\"0 0 24 24\" fill=\"currentColor\"><circle cx=\"12\" cy=\"6.25\" r=\"4.25\"/><path d=\"M5 23v-6.6c0-3.1 2.2-5.1 5.2-5.1h3.6c3 0 5.2 2 5.2 5.1V23z\"/></svg><svg width=\"28\" height=\"28\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\"><circle cx=\"12\" cy=\"6.25\" r=\"3.4\"/><path d=\"M6 22.1v-5.6c0-2.6 1.9-4.4 4.4-4.4h3.2c2.5 0 4.4 1.8 4.4 4.4v5.6z\"/></svg><svg class=\"ds-former\" width=\"28\" height=\"28\" viewBox=\"0 0 24 24\" fill=\"currentColor\"><circle cx=\"12\" cy=\"6.25\" r=\"4.25\"/><path d=\"M5 23v-6.6c0-3.1 2.2-5.1 5.2-5.1h3.6c3 0 5.2 2 5.2 5.1V23z\"/></svg></div>",
-      "css": ".ds-figures { display: flex; gap: 12px; color: var(--ink, #1f2328); } .ds-former { color: var(--ink-3, #8a9098); }"
+      "css": ".ds-figures { display: flex; gap: 12px; color: var(--ink, #1f2328); } .ds-former { color: var(--ink-3, #646a72); }"
     },
     {
       "name": "Problema (marca tachada)",

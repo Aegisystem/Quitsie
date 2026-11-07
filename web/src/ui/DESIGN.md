@@ -6,25 +6,31 @@ colors:
   surface: "#ffffff"
   sunken: "#e9ebe6"
   ink: "#1f2328"
-  ink-2: "#5b616b"
-  ink-3: "#8a9098"
+  ink-2: "#4b515a"
+  ink-3: "#646a72"
   rule: "#dcdfd8"
   rule-strong: "#bcc0b8"
   favor: "#2f5da8"
   against: "#c03a25"
   even: "#2e7a4b"
+  even-text: "#2a7145"
   pending: "#e2a72e"
   pending-ink: "#8a5d00"
   bar: "#1f2328"
   on-bar: "#f4f5f2"
   on-bar-2: "#b6bbc2"
+  on-bar-strong: "#ffffff"
+  on-bar-favor: "#7a9ee0"
+  on-bar-against: "#e8775f"
   on-color: "#ffffff"
+  on-color-2: "#ffffffeb"
+  on-pending: "#1f2328"
   paper-dark: "#121417"
   surface-dark: "#1b1e22"
   sunken-dark: "#24282d"
   ink-dark: "#ecedea"
   ink-2-dark: "#a2a7ae"
-  ink-3-dark: "#737981"
+  ink-3-dark: "#8a9098"
   rule-dark: "#2b2f35"
   rule-strong-dark: "#41464e"
   favor-text-dark: "#86a8ea"
@@ -247,7 +253,13 @@ Color plano de imprenta: cuatro tintas con significado sobre una escala neutra l
 - **Tinta 2** (ink-2): texto secundario, etiquetas de campo y de sección, leyendas.
 - **Tinta 3** (ink-3): lo que salió o se borró (antiguo miembro, gasto borrado, participante fuera del reparto) y las fichas grises de las Deudas.
 - **Regla** (rule) y **regla fuerte** (rule-strong): separadores de fila y bordes de campo; la fuerte también es el punto de un registro sincronizado.
-- **Sobre color** (on-color): blanco puro para todo texto, figura y ficha dentro de una banda.
+- **Sobre color** (on-color): blanco puro para todo texto, figura y ficha dentro de una banda; **on-color-2** (blanco al 92 %) para la etiqueta «Te deben»/«Debes» y la leyenda dentro de la banda, que así pasa AA sobre el rojo y el verde.
+- **Sobre ocre** (on-pending): tinta fija sobre el ocre pleno, en ambos modos.
+- **Sobre barra** (on-bar, on-bar-2, on-bar-strong, on-bar-favor, on-bar-against): texto, activo y fichas sobre la barra de tinta; los bordes y fondos translúcidos de la barra también son tokens (on-bar-line, on-bar-hover, on-bar-ghost).
+
+Fuera de los tokens no hay colores literales en `styles.css`; la única excepción del código es el logo de Google, con los colores de su marca.
+
+**Contraste.** Todo texto pasa WCAG AA (4,5:1) sobre paper, surface y sunken en ambos modos, ink-3 incluido: lo que salió o se borró se apaga, pero se sigue leyendo.
 
 En modo oscuro las neutras se invierten (los tokens `-dark`) y las tintas de significado conservan el tono pero suben de luminosidad solo cuando son texto o ficha sobre el fondo (`favor-text-dark`, `against-text-dark`, `even-text-dark`, `pending-ink-dark`). Las bandas mantienen favor, against y even plenos con texto blanco en ambos modos. El tema sigue `prefers-color-scheme` y admite forzarse con `data-theme`.
 

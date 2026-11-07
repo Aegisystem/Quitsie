@@ -168,8 +168,8 @@ export function Mark({ size = 28 }: { size?: number }) {
   return (
     <svg className="mark" width={size} height={size} viewBox="0 0 32 32" aria-hidden="true">
       <rect width="32" height="32" rx="7" fill="var(--even)" />
-      <rect x="7" y="10" width="18" height="4.5" rx="2.25" fill="#fff" />
-      <rect x="7" y="17.5" width="18" height="4.5" rx="2.25" fill="#fff" />
+      <rect x="7" y="10" width="18" height="4.5" rx="2.25" fill="var(--on-color)" />
+      <rect x="7" y="17.5" width="18" height="4.5" rx="2.25" fill="var(--on-color)" />
     </svg>
   )
 }
