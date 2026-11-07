@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { formatAmount, formatAmountInput, parseAmount, parsePercentage } from './money'
+import { formatAmount, formatAmountInput, formatAmountTyping, parseAmount, parsePercentage } from './money'
 
 // CLDR separates the currency symbol with a no-break space in these locales.
 const nbsp = ' '
@@ -76,11 +76,17 @@ describe('formatAmount', () => {
 })
 
 describe('formatAmountInput', () => {
-  it('writes an amount as the Usuario would type it: every decimal, no symbol or grouping', () => {
-    expect(formatAmountInput(123456, 'COP', 'es-CO')).toBe('1234,56')
-    expect(formatAmountInput(123456, 'MXN', 'es-MX')).toBe('1234.56')
+  it('writes every decimal and the region\u2019s thousands separators, without symbol', () => {
+    expect(formatAmountInput(123456, 'COP', 'es-CO')).toBe('1.234,56')
+    expect(formatAmountInput(123456, 'MXN', 'es-MX')).toBe('1,234.56')
     expect(formatAmountInput(4500, 'EUR', 'es-ES')).toBe('45,00')
-    expect(formatAmountInput(1500, 'JPY', 'ja-JP')).toBe('1500')
+    expect(formatAmountInput(1500, 'JPY', 'ja-JP')).toBe('1,500')
+    expect(formatAmountInput(123456789012, 'COP', 'es-CO')).toBe('1.234.567.890,12')
+    expect(formatAmountInput(-500000, 'COP', 'es-CO')).toBe('-5.000,00')
+  })
+
+  it('groups every three digits, the only grouping parseAmount reads, also in hi-IN', () => {
+    expect(formatAmountInput(1234567800, 'INR', 'hi-IN')).toBe('12,345,678.00')
   })
 
   it('is read back by parseAmount as the same amount in any region', () => {
@@ -175,5 +181,79 @@ describe('parsePercentage', () => {
 
   it('rejects a third decimal', () => {
     expect(parsePercentage('33,333', 'es-CO')).toEqual({ ok: false, error: 'too-many-decimals' })
+  })
+})
+
+describe('formatAmountTyping', () => {
+  // The text after a keystroke at the end of the field, as the browser reports it.
+  const typed = (text: string, data: string | null = text.slice(-1)) => ({ text, caret: text.length, inputType: 'insertText', data })
+
+  it('puts the thousands separators as the Usuario types', () => {
+    expect(formatAmountTyping(typed('5000'), 'COP', 'es-CO')).toEqual({ text: '5.000', caret: 5 })
+    expect(formatAmountTyping(typed('5.0000'), 'COP', 'es-CO')).toEqual({ text: '50.000', caret: 6 })
+    expect(formatAmountTyping(typed('1234567'), 'MXN', 'es-MX')).toEqual({ text: '1,234,567', caret: 9 })
+  })
+
+  it('keeps the decimal separator and what follows it, even half typed', () => {
+    expect(formatAmountTyping(typed('50.000,'), 'COP', 'es-CO')).toEqual({ text: '50.000,', caret: 7 })
+    expect(formatAmountTyping(typed('50.000,5'), 'COP', 'es-CO')).toEqual({ text: '50.000,5', caret: 8 })
+    expect(formatAmountTyping(typed('1,234.'), 'MXN', 'es-MX')).toEqual({ text: '1,234.', caret: 6 })
+  })
+
+  it('reads a point just typed as the decimal separator where the region groups with points', () => {
+    expect(formatAmountTyping(typed('50.'), 'COP', 'es-CO')).toEqual({ text: '50,', caret: 3 })
+    expect(formatAmountTyping(typed('5.000.'), 'COP', 'es-CO')).toEqual({ text: '5.000,', caret: 6 })
+  })
+
+  it('reads the points it put as separators after a deletion, not as decimals', () => {
+    const deleted = { text: '5.00', caret: 4, inputType: 'deleteContentBackward', data: null }
+    expect(formatAmountTyping(deleted, 'COP', 'es-CO')).toEqual({ text: '500', caret: 3 })
+  })
+
+  it('reads a pasted amount the way parseAmount does', () => {
+    const paste = (text: string) => ({ text, caret: text.length, inputType: 'insertFromPaste', data: null })
+    expect(formatAmountTyping(paste('1234.56'), 'COP', 'es-CO').text).toBe('1.234,56')
+    expect(formatAmountTyping(paste('1.500'), 'COP', 'es-CO').text).toBe('1.500')
+    expect(formatAmountTyping(paste('$ 1.234.567,8'), 'COP', 'es-CO').text).toBe('1.234.567,8')
+  })
+
+  it('keeps the caret among the same digits when editing in the middle', () => {
+    // '1.234' with a 5 typed after the 1.
+    expect(formatAmountTyping({ text: '15.234', caret: 2, inputType: 'insertText', data: '5' }, 'COP', 'es-CO')).toEqual({
+      text: '15.234',
+      caret: 2,
+    })
+    // '12.345' with the 3 deleted.
+    expect(formatAmountTyping({ text: '12.45', caret: 3, inputType: 'deleteContentBackward', data: null }, 'COP', 'es-CO')).toEqual({
+      text: '1.245',
+      caret: 3,
+    })
+  })
+
+  it('drops leading zeros but keeps the zero before the decimals, and adds it when missing', () => {
+    expect(formatAmountTyping(typed('007'), 'COP', 'es-CO').text).toBe('7')
+    expect(formatAmountTyping(typed('0,5'), 'COP', 'es-CO').text).toBe('0,5')
+    expect(formatAmountTyping(typed(','), 'COP', 'es-CO')).toEqual({ text: '0,', caret: 2 })
+  })
+
+  it('has no decimals in a currency without them, and a sign only where it is allowed', () => {
+    expect(formatAmountTyping(typed('1500.'), 'JPY', 'ja-JP').text).toBe('1,500')
+    expect(formatAmountTyping(typed('-5000'), 'COP', 'es-CO').text).toBe('5.000')
+    expect(formatAmountTyping(typed('-5000'), 'COP', 'es-CO', { allowNegative: true }).text).toBe('-5.000')
+    expect(formatAmountTyping(typed('-'), 'COP', 'es-CO', { allowNegative: true }).text).toBe('-')
+  })
+
+  it('gives parseAmount the amount the Usuario meant', () => {
+    for (const [keys, locale, currency, amount] of [
+      ['5000000', 'es-CO', 'COP', 500000000],
+      ['1234.5', 'es-CO', 'COP', 123450],
+      ['1234,56', 'es-CO', 'COP', 123456],
+      ['1234.56', 'es-MX', 'MXN', 123456],
+      ['98765', 'ja-JP', 'JPY', 98765],
+    ] as const) {
+      let text = ''
+      for (const key of keys) text = formatAmountTyping(typed(text + key, key), currency, locale).text
+      expect(parseAmount(text, currency, locale), `${keys} in ${locale} as ${text}`).toEqual({ ok: true, value: amount })
+    }
   })
 })

@@ -50,7 +50,7 @@ describe('a person’s field', () => {
 
 describe('what a person’s field says when it cannot be read', () => {
   it('explains an amount as the total does', () => {
-    expect(valueError('invalid', 'exact', 'USD', t)).toBe('expenseForm.amountInvalid {"example":"1234.50"}')
+    expect(valueError('invalid', 'exact', 'USD', t)).toBe('expenseForm.amountInvalid {"example":"1,234.50"}')
     expect(valueError('too-many-decimals', 'paid', 'JPY', t)).toBe('expenseForm.amountDecimals {"count":0,"currency":"JPY"}')
     expect(valueError('too-large', 'adjustment', 'USD', t)).toBe('expenseForm.amountTooLarge')
     expect(valueError('negative', 'paid', 'USD', t)).toBe('expenseForm.paidNegative')

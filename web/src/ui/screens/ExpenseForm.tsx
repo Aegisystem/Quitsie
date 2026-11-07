@@ -26,6 +26,7 @@ import { problemPointer, readValue, valueError } from '../forms/values'
 import { categories } from '../types'
 import { previewOwedShares, type SplitParticipant } from '../split'
 import { formatDay, todayISO } from '../dates'
+import { AmountInput } from '../forms/AmountInput'
 import { amountPlaceholder, formatAmountInput, formatMoney, formatPercent, readAmount } from '../money'
 import { href, navigate } from '../router'
 
@@ -426,13 +427,13 @@ function ExpenseForm({ summary, user, me, purpose }: { summary: LedgerSummary; u
         <div className="field field-amount">
           <label htmlFor={`${ids}-amount`}>{t('expenseForm.amount')}</label>
           <div className="amount-input">
-            <input
+            <AmountInput
               id={`${ids}-amount`}
-              inputMode="decimal"
+              currency={currency}
               autoComplete="off"
               placeholder={amountPlaceholder(currency)}
               value={amountText}
-              onChange={(e) => setAmountText(e.target.value)}
+              onChange={setAmountText}
               aria-invalid={touched && !!errors.amount}
               aria-describedby={touched && errors.amount ? `${ids}-amount-error` : undefined}
               autoFocus={!draft}
@@ -532,14 +533,14 @@ function ExpenseForm({ summary, user, me, purpose }: { summary: LedgerSummary; u
                     <li key={m.id} className="p-row p-row-input">
                       <Figure state={figureState(m)} size={24} />
                       <span className="p-name">{nameOf(m.id)}</span>
-                      <input
+                      <AmountInput
                         className="input input-amount"
-                        inputMode="decimal"
+                        currency={currency}
                         placeholder="0"
                         aria-label={t('expenseForm.valueFor', { name: nameOf(m.id) })}
                         value={paidText[m.id] ?? ''}
                         disabled={former.paid.has(m.id)}
-                        onChange={(e) => setPaidText((p) => ({ ...p, [m.id]: e.target.value }))}
+                        onChange={(text) => setPaidText((p) => ({ ...p, [m.id]: text }))}
                         aria-invalid={!!problem}
                         aria-describedby={problem ? `${ids}-paid-${m.id}` : undefined}
                       />
@@ -623,17 +624,32 @@ function ExpenseForm({ summary, user, me, purpose }: { summary: LedgerSummary; u
                   <span className="p-name">{nameOf(m.id)}</span>
                   {method !== 'equal' && (
                     <span className="p-value">
-                      <input
-                        className="input input-amount"
-                        inputMode={method === 'weights' ? 'numeric' : 'decimal'}
-                        placeholder={method === 'adjustment' ? '+0' : '0'}
-                        aria-label={t('expenseForm.valueFor', { name: nameOf(m.id) })}
-                        value={values[method][m.id] ?? ''}
-                        disabled={kept || (method === 'adjustment' && !included[m.id])}
-                        onChange={(e) => setValue(m.id, e.target.value)}
-                        aria-invalid={!!problem}
-                        aria-describedby={problem ? `${ids}-value-${m.id}` : undefined}
-                      />
+                      {method === 'exact' || method === 'adjustment' ? (
+                        <AmountInput
+                          className="input input-amount"
+                          currency={currency}
+                          allowNegative={method === 'adjustment'}
+                          placeholder={method === 'adjustment' ? '+0' : '0'}
+                          aria-label={t('expenseForm.valueFor', { name: nameOf(m.id) })}
+                          value={values[method][m.id] ?? ''}
+                          disabled={kept || (method === 'adjustment' && !included[m.id])}
+                          onChange={(text) => setValue(m.id, text)}
+                          aria-invalid={!!problem}
+                          aria-describedby={problem ? `${ids}-value-${m.id}` : undefined}
+                        />
+                      ) : (
+                        <input
+                          className="input input-amount"
+                          inputMode={method === 'weights' ? 'numeric' : 'decimal'}
+                          placeholder="0"
+                          aria-label={t('expenseForm.valueFor', { name: nameOf(m.id) })}
+                          value={values[method][m.id] ?? ''}
+                          disabled={kept}
+                          onChange={(e) => setValue(m.id, e.target.value)}
+                          aria-invalid={!!problem}
+                          aria-describedby={problem ? `${ids}-value-${m.id}` : undefined}
+                        />
+                      )}
                       <span className="p-unit" aria-hidden="true">
                         {method === 'percentage' ? '%' : method === 'weights' ? t('expenseForm.weightUnit') : ''}
                       </span>

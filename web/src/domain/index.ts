@@ -19,8 +19,10 @@ export {
   offeredCurrencies,
 } from './currencies'
 export {
+  type AmountEdit,
   formatAmount,
   formatAmountInput,
+  formatAmountTyping,
   type FormatOptions,
   type ParseError,
   parseAmount,

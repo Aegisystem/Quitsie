@@ -11,6 +11,7 @@ import { liveUsedCurrencies, useUser } from '../forms/data'
 import { activeMembers } from '../forms/people'
 import { initialPeople, type SettlementFix, settlementRejectionText } from '../forms/settlement'
 import { todayISO } from '../dates'
+import { AmountInput } from '../forms/AmountInput'
 import { amountPlaceholder, formatAmountInput, formatMoney, readAmount } from '../money'
 import { navigate } from '../router'
 
@@ -178,13 +179,13 @@ function SettlementFields({
         <div className="field field-amount">
           <label htmlFor={`${ids}-amount`}>{t('settlement.amount')}</label>
           <div className="amount-input">
-            <input
+            <AmountInput
               id={`${ids}-amount`}
-              inputMode="decimal"
+              currency={currency}
               autoComplete="off"
               placeholder={amountPlaceholder(currency)}
               value={amountText}
-              onChange={(e) => setAmountText(e.target.value)}
+              onChange={setAmountText}
               aria-invalid={touched && !!errors.amount}
             />
             {groupCurrency ? (

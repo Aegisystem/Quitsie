@@ -89,17 +89,89 @@ export function formatAmount(
   return formatter.format(toDecimalString(units, digits) as unknown as number)
 }
 
-// The amount as the Usuario would type it, to fill a form field: every decimal,
-// without symbol or grouping ('1234,56' in es-CO). parseAmount reads it back.
+// The amount as it shows in a form field: every decimal and the region's
+// thousands separators, without symbol ('1.234,56' in es-CO). parseAmount reads
+// it back, and formatAmountTyping keeps it that way while the Usuario edits it.
 export function formatAmountInput(amount: number, currency: CurrencyCode, locale: string): string {
   const units = unitsOf(amount)
-  const digits = minorUnitDigits(currency)
-  const formatter = numberFormat(locale, {
-    minimumFractionDigits: digits,
-    maximumFractionDigits: digits,
-    useGrouping: false,
+  const { group, decimal } = separators(locale)
+  const [whole = '0', fraction] = toDecimalString(units < 0n ? -units : units, minorUnitDigits(currency)).split('.')
+  return (units < 0n ? '-' : '') + groupDigits(whole, group) + (fraction === undefined ? '' : decimal + fraction)
+}
+
+// The whole part grouped every three digits, the only grouping parseAmount
+// accepts: '1234567' is '1.234.567' in es-CO (Intl would write '12,34,567' in hi-IN).
+function groupDigits(whole: string, group: string): string {
+  let grouped = ''
+  for (let end = whole.length; end > 0; end -= 3) {
+    const chunk = whole.slice(Math.max(0, end - 3), end)
+    grouped = grouped ? chunk + group + grouped : chunk
+  }
+  return grouped
+}
+
+// One change to an amount field: its new text, where the caret ended up, and
+// what the browser says caused it (InputEvent.inputType and .data).
+export interface AmountEdit {
+  text: string
+  caret: number
+  inputType?: string
+  data?: string | null
+}
+
+// Rewrites an amount field while the Usuario types: the whole part takes the
+// region's thousands separators (typing 50000 in es-CO shows '50.000') and the
+// caret stays among the same digits. The separators it puts are its own, so
+// they are dropped and put again on every change. A decimal separator is the
+// region's one, or a point the Usuario has just typed or pasted where the
+// region groups with points, which parseAmount reads as decimal the same way.
+// Everything else that is not a digit goes; what is left may still be wrong
+// (too many decimals), and parseAmount says why.
+export function formatAmountTyping(
+  edit: AmountEdit,
+  currency: CurrencyCode,
+  locale: string,
+  options: { allowNegative?: boolean } = {},
+): { text: string; caret: number } {
+  const { text, caret } = edit
+  const decimals = minorUnitDigits(currency)
+  const { group, decimal } = separators(locale)
+
+  let decimalAt = decimals > 0 ? text.indexOf(decimal) : -1
+  if (decimalAt === -1 && decimals > 0 && decimal !== '.') {
+    if (edit.inputType === 'insertText' && edit.data === '.' && text[caret - 1] === '.') decimalAt = caret - 1
+    else if (edit.inputType === 'insertFromPaste' && /^[-−]?\d*\.(\d{0,2}|\d{4,})$/.test(text)) decimalAt = text.indexOf('.')
+  }
+
+  // Each character of the result, and the index of the character it comes
+  // from, so that the caret can follow it.
+  type Piece = { char: string; from?: number }
+  const sign: Piece[] = []
+  let whole: Piece[] = []
+  const fraction: Piece[] = []
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i] ?? ''
+    const afterDecimal = decimalAt !== -1 && i > decimalAt
+    if (/\d/.test(char)) (afterDecimal ? fraction : whole).push({ char, from: i })
+    else if (/[-−]/.test(char) && options.allowNegative && !sign.length && !whole.length && !afterDecimal) sign.push({ char: '-', from: i })
+  }
+  // '007' is 7; the zero of '0,5' stays, and ',5' gets one.
+  while (whole.length > 1 && whole[0]?.char === '0') whole.shift()
+  if (!whole.length && decimalAt !== -1) whole = [{ char: '0' }]
+
+  const pieces: Piece[] = [...sign]
+  whole.forEach((piece, i) => {
+    if (i > 0 && (whole.length - i) % 3 === 0) pieces.push({ char: group })
+    pieces.push(piece)
   })
-  return formatter.format(toDecimalString(units, digits) as unknown as number)
+  if (decimalAt !== -1) pieces.push({ char: decimal, from: decimalAt }, ...fraction)
+
+  // The caret goes right after the last character that was before it.
+  let position = 0
+  pieces.forEach((piece, i) => {
+    if (piece.from !== undefined && piece.from < caret) position = i + 1
+  })
+  return { text: pieces.map((piece) => piece.char).join(''), caret: position }
 }
 
 export type ParseError = 'empty' | 'invalid' | 'too-many-decimals' | 'too-large'
