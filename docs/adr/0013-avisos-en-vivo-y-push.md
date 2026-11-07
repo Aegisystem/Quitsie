@@ -14,7 +14,12 @@ El dueño decidió estos avisos el 2026-11-06. Cada escritura en un libro dispar
 ## Consequences
 
 - En iOS, las notificaciones push solo funcionan con la PWA instalada en la pantalla de inicio, desde iOS 16.4. El permiso se pide después de un toque del Usuario.
-- Las notificaciones viajan cifradas por el servicio push del navegador (Apple, Google o Mozilla).
+- Las notificaciones viajan cifradas por el servicio push del navegador (Apple, Google, Mozilla o Microsoft).
 - El servidor corta las respuestas a los 60 segundos (`WriteTimeout`). La conexión SSE tiene que alargar ese plazo.
 - Con varias instancias del servidor funciona igual, porque cada instancia escucha a PostgreSQL.
 - Una notificación de PostgreSQL perdida (por ejemplo, durante una reconexión) solo retrasa el aviso: el `changefeed` avisa de todos los libros al reconectar, y la PWA sigue sincronizando al abrirse y al volver a la pantalla.
+- Sin `QUITSIE_VAPID_PUBLIC_KEY` y `QUITSIE_VAPID_PRIVATE_KEY`, el servidor no envía notificaciones y la sección de Cuenta no aparece. Cambiar las claves apaga las notificaciones de cada dispositivo hasta que la PWA se abre allí de nuevo y se suscribe con la clave nueva.
+- El paquete `api/internal/push` lee las Actividades nuevas desde un cursor (`push_progress`). Cada instancia lo toma con `FOR UPDATE`, así que cada registro se notifica una vez. La espera de cada notificación vive en memoria: al apagarse, la instancia envía lo que tenía pendiente.
+- La notificación se compone al enviarla, con los registros como están en ese momento. Un registro de hace más de 15 minutos no se notifica: así, activar las claves no avisa de lo que pasó mientras estaban apagadas.
+- El servidor solo envía a los servicios push de Apple, Google, Mozilla y Microsoft. Un endpoint de otro host se rechaza, porque el servidor haría peticiones a la dirección que diga un cliente (SSRF).
+- La PWA usa un service worker propio (`web/src/sw.ts`, estrategia `injectManifest` de `vite-plugin-pwa`). Muestra una notificación por libro, con el nombre del Grupo o del amigo, y suma a ella los registros que llegan mientras sigue en pantalla.

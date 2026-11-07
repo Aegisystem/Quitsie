@@ -1,8 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useId, useState } from 'react'
+import { useEffect, useId, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { Session, User } from '../../api/client'
-import { type CallResult, describeDevice, type DeviceRecords, session } from '../../session'
+import { type CallResult, describeDevice, type DeviceRecords, type PushStatus, pushNotices, session } from '../../session'
 import { Figure, Icon } from '../components/icons'
 import { Screen, toast, useOnline } from '../components/Shell'
 import { formatRelative } from '../dates'
@@ -28,6 +28,8 @@ export function Account({ user }: { user: User }) {
       <ProfileForm user={user} />
 
       <Appearance />
+
+      <Notifications />
 
       <Sessions userId={user.id} />
 
@@ -111,6 +113,75 @@ function SignOut() {
       </button>
       <p className="hint">{t('account.signOutHint')}</p>
     </div>
+  )
+}
+
+// Push notifications, for this device only (ADR 0013). The browser asks for
+// the permission when the User taps «Activar», never before. A server without
+// VAPID keys sends none, and then the section does not show.
+function Notifications() {
+  const { t } = useTranslation()
+  const ids = useId()
+  const online = useOnline()
+  const [status, setStatus] = useState<PushStatus>()
+  const [step, setStep] = useState<'idle' | 'turningOn' | 'turningOff'>('idle')
+
+  // Back online, status() loads the server's key that turning them on needs.
+  useEffect(() => {
+    let current = true
+    void pushNotices.status().then((s) => current && setStatus(s))
+    return () => {
+      current = false
+    }
+  }, [online])
+
+  if (!status || status === 'serverOff') return null
+
+  const turnOn = async () => {
+    setStep('turningOn')
+    const result = await pushNotices.turnOn()
+    setStep('idle')
+    if (result.ok) setStatus('on')
+    else if (result.error.kind === 'denied') setStatus('denied')
+    else toast(result.error.kind === 'offline' ? t('common.onlineOnly') : t('account.notificationsFailed'))
+  }
+
+  const turnOff = async () => {
+    setStep('turningOff')
+    await pushNotices.turnOff()
+    setStep('idle')
+    setStatus('off')
+  }
+
+  const explanation = { install: 'notificationsInstall', denied: 'notificationsDenied', unsupported: 'notificationsUnsupported' } as const
+
+  return (
+    <section className="section" aria-labelledby={`${ids}-title`}>
+      <h2 id={`${ids}-title`} className="section-title">
+        {t('account.notificationsTitle')}
+      </h2>
+      <p className="hint">{t('account.notificationsHint')}</p>
+      {status === 'on' && (
+        <div className="button-row button-row-split">
+          <p className="notifications-on">{t('account.notificationsOn')}</p>
+          <button type="button" className="button button-secondary button-small" disabled={step !== 'idle'} onClick={() => void turnOff()}>
+            {step === 'turningOff' ? t('account.notificationsTurningOff') : t('account.notificationsTurnOff')}
+          </button>
+        </div>
+      )}
+      {status === 'off' && (
+        <button
+          type="button"
+          className="button button-secondary"
+          disabled={!online || step !== 'idle'}
+          title={online ? undefined : t('common.onlineOnly')}
+          onClick={() => void turnOn()}
+        >
+          {step === 'turningOn' ? t('account.notificationsTurningOn') : t('account.notificationsTurnOn')}
+        </button>
+      )}
+      {(status === 'install' || status === 'denied' || status === 'unsupported') && <p className="hint">{t(`account.${explanation[status]}`)}</p>}
+    </section>
   )
 }
 

@@ -6,7 +6,7 @@ Borra cada punto de aquí cuando quede terminado. Antes de actuar sobre un punto
 
 ## Estado actual
 
-- **API:** las 36 operaciones de `openapi.yaml` están implementadas.
+- **API:** las 40 operaciones de `openapi.yaml` están implementadas.
 - **PWA:** usa datos reales: réplica, cola, formularios, Grupos, Amistades, invitaciones y sesiones.
 - **Calidad:** la CI corre con Go 1.26.10 las pruebas de Go contra PostgreSQL, las de la web y las de punta a punta, `govulncheck`, `actionlint` y la compilación de la imagen de Railway.
 - **Seguridad:** los 14 hallazgos están arreglados. El detalle está en [revision-seguridad.md](revision-seguridad.md).
@@ -63,6 +63,7 @@ Después de desplegar, comprueba:
 - Un correo real de Resend y, si se activa, un inicio de sesión real con Google.
 - La memoria y el tiempo de `GET /sync` en el plan de Railway elegido.
 - La PWA instalada en Safari de iOS.
+- Las notificaciones push: generar las claves VAPID, ponerlas en Railway ([variables](despliegue.md#variables)), activarlas en un iPhone con la PWA instalada y recibir una de otro Usuario.
 
 ## 5. Falta fuera del código
 
@@ -89,6 +90,7 @@ Después de desplegar, comprueba:
 - Railway, su PostgreSQL, Google y Resend reales.
 - Safari, Firefox y dos dispositivos reales a la vez. Las pruebas de punta a punta solo cubren Chromium. En desarrollo, Safari puede rechazar las cookies `Secure` por `http://localhost`.
 - Copiar y compartir el enlace con el portapapeles real, sin el permiso que concede Playwright.
+- Una notificación push real. Las pruebas simulan el servicio push del navegador y el permiso, porque el Chromium de las pruebas no tiene ninguno de los dos.
 - La caché HTTP del navegador tras cerrar sesión, aunque la API ya responde `no-store`.
 
 ## Cómo trabajar aquí

@@ -33,6 +33,7 @@ Opcionales:
 | `QUITSIE_GOOGLE_CLIENT_ID` y `QUITSIE_GOOGLE_CLIENT_SECRET` | Inicio de sesión con Google. Sin los dos, el botón no aparece. La URI de redirección del cliente en Google Cloud es `<QUITSIE_PUBLIC_ORIGIN>/api/v1/auth/google/callback`. |
 | `QUITSIE_DEFAULT_CURRENCY` | Moneda preferida de los Usuarios nuevos. Por defecto, `USD`. |
 | `QUITSIE_MAIL_MAX_PER_HOUR` y `QUITSIE_MAIL_MAX_PER_DAY` | Tope de correos con códigos por hora y por 24 horas. Por defecto 40 y 90, por debajo de los 100 diarios gratuitos de Resend. |
+| `QUITSIE_VAPID_PUBLIC_KEY` y `QUITSIE_VAPID_PRIVATE_KEY` | Notificaciones push. Genera el par en tu equipo con `go -C api run ./cmd/server vapid-keys`. Sin las dos, el servidor no envía notificaciones. Cambiarlas apaga las notificaciones de cada dispositivo hasta que la PWA se abre allí de nuevo. Guarda la privada también en tu gestor de contraseñas. |
 | `GOMEMLIMIT` | Memoria a partir de la cual Go recoge basura con más fuerza, por ejemplo `400MiB` en un plan de 512 MB. |
 
 `QUITSIE_ENV=development` y `QUITSIE_MAIL=log` son para desarrollo local. En producción, `QUITSIE_MAIL=log` impide arrancar, porque escribiría los códigos en el log.

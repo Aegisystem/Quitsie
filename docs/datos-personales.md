@@ -1,6 +1,6 @@
 # Datos personales
 
-Inventario de los datos personales que maneja Quitsie: qué se guarda, dónde, cuánto dura y quién más lo ve. Sirve de base para la política de privacidad, que todavía no existe ([pendientes](pendientes.md#5-falta-fuera-del-código)). Se comprobó contra el código el 2026-11-01. El vocabulario sigue [CONTEXT.md](../CONTEXT.md).
+Inventario de los datos personales que maneja Quitsie: qué se guarda, dónde, cuánto dura y quién más lo ve. Sirve de base para la política de privacidad, que todavía no existe ([pendientes](pendientes.md#5-falta-fuera-del-código)). Se comprobó contra el código el 2026-11-01, y las notificaciones push el 2026-11-06. El vocabulario sigue [CONTEXT.md](../CONTEXT.md).
 
 No es la política de privacidad. Lo que solo puede decidir o firmar el dueño está al final.
 
@@ -22,6 +22,7 @@ No es la política de privacidad. Lo que solo puede decidir o firmar el dueño e
 | Nombre y email de cada Miembro o Amigo, y quién escribió ese email; nombre de cada Grupo | `members`, `ledgers` | Lo que dure el libro. El email de un pendiente solo lo ve quien lo escribió. Al borrar una cuenta, sus Miembros vuelven a ser pendientes, conservan el nombre y pierden el email |
 | Gastos (descripción, fecha, importes, Categoría, autor), Liquidaciones y Actividades | `expenses`, `paid_shares`, `owed_shares`, `settlements`, `activities` | Lo que dure el libro. Un Gasto borrado se puede restaurar sin límite de tiempo, así que no desaparece |
 | Correos enviados por hora, sin direcciones | `mail_sends` | 24 horas |
+| Suscripción push de cada dispositivo que activó las notificaciones: el endpoint del servicio push del navegador y sus claves | `push_subscriptions` | Hasta desactivarlas, cerrar esa sesión, que caduque o borrar la cuenta. También se borra cuando el servicio push dice que ya no existe |
 
 Los Gastos y Liquidaciones son de todos los Miembros del libro. Borrar una cuenta no los borra, porque cambiaría los Saldos de los demás ([reglas](reglas-de-negocio.md)).
 
@@ -49,6 +50,7 @@ En producción no escribe correos ni códigos: el servidor no arranca con `QUITS
 | Cookie de flujo del código | Cookie `HttpOnly` | 10 minutos |
 | Cookie de dispositivo conocido | Cookie `HttpOnly` | Un año. **Cerrar sesión no la borra**, a propósito ([ADR 0011](adr/0011-codigos-atados-al-navegador.md)) |
 | Cookie del flujo de Google | Cookie `HttpOnly` | 10 minutos, o hasta volver de Google |
+| Suscripción push, si el Usuario activó las notificaciones | El navegador | Hasta desactivarlas o cerrar sesión |
 
 Todas las cookies son propias y necesarias para entrar. No hay analítica, publicidad ni recursos de terceros: la `Content-Security-Policy` solo admite archivos propios.
 
@@ -59,6 +61,7 @@ Todas las cookies son propias y necesarias para entrar. No hay analítica, publi
 | Railway | El servidor, la base y sus respaldos | Todo lo que guarda el servidor, y cada petición descifrada, porque Railway termina el TLS | La región del proyecto (comprobar en su panel) |
 | Resend | Enviar los códigos | El email de destino y el contenido, código incluido | Estados Unidos (comprobar en su panel) |
 | Google | Entrar con Google, si se activa | Que esa persona usa Quitsie | Global |
+| Servicios push de Apple, Google, Mozilla y Microsoft | Entregar las notificaciones del Usuario que las activa | El contenido va cifrado para el dispositivo y el servicio no lo lee. Ve a qué dispositivo va cada notificación, cuándo y cuánto pesa | El del navegador del Usuario |
 | GitHub | Código y despliegue | Ningún dato de Usuarios | Global |
 
 ## Derechos que la app ya cubre
@@ -66,6 +69,7 @@ Todas las cookies son propias y necesarias para entrar. No hay analítica, publi
 - **Borrar la cuenta**, desde Cuenta. Se borran el email, el nombre, las sesiones y los dispositivos conocidos. Los Gastos se quedan, con el nombre guardado en cada Miembro.
 - **Corregir** el nombre y la Moneda preferida, desde Cuenta.
 - **Ver las sesiones abiertas y cerrarlas**, desde Cuenta.
+- **Activar y desactivar las notificaciones** de cada dispositivo, desde Cuenta.
 
 No hay forma de **exportar** los datos propios, ni de que una persona sin cuenta pida que se borre su nombre o su email de un libro ajeno, salvo que un Miembro lo edite.
 

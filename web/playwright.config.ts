@@ -1,3 +1,4 @@
+import { generateKeyPairSync } from 'node:crypto'
 import { mkdtempSync } from 'node:fs'
 import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
@@ -17,11 +18,24 @@ function freePort(): Promise<number> {
   })
 }
 
+// A VAPID key pair for this run, so the server sends push notifications.
+function vapidKeys(): { publicKey: string; privateKey: string } {
+  const { publicKey, privateKey } = generateKeyPairSync('ec', { namedCurve: 'prime256v1' })
+  const pub = publicKey.export({ format: 'jwk' })
+  const raw = Buffer.concat([Buffer.from([4]), Buffer.from(pub.x ?? '', 'base64url'), Buffer.from(pub.y ?? '', 'base64url')])
+  return { publicKey: raw.toString('base64url'), privateKey: privateKey.export({ format: 'jwk' }).d ?? '' }
+}
+
 // Each run gets its own port and database. Playwright loads this file again in
 // every worker, which inherit these variables and so agree with the first load.
 process.env.QUITSIE_E2E_PORT ??= String(await freePort())
 process.env.QUITSIE_E2E_DIR ??= mkdtempSync(join(tmpdir(), 'quitsie-e2e-'))
 process.env.QUITSIE_E2E_DATABASE ??= await createDatabase()
+if (!process.env.QUITSIE_E2E_VAPID_PUBLIC_KEY) {
+  const keys = vapidKeys()
+  process.env.QUITSIE_E2E_VAPID_PUBLIC_KEY = keys.publicKey
+  process.env.QUITSIE_E2E_VAPID_PRIVATE_KEY = keys.privateKey
+}
 const port = process.env.QUITSIE_E2E_PORT
 const dir = process.env.QUITSIE_E2E_DIR
 
@@ -64,6 +78,8 @@ export default defineConfig({
       QUITSIE_DATABASE_URL: databaseURL(process.env.QUITSIE_E2E_DATABASE),
       // The tests sign one User in on two devices within seconds.
       QUITSIE_LOGIN_CODE_COOLDOWN: '1ms',
+      QUITSIE_VAPID_PUBLIC_KEY: process.env.QUITSIE_E2E_VAPID_PUBLIC_KEY ?? '',
+      QUITSIE_VAPID_PRIVATE_KEY: process.env.QUITSIE_E2E_VAPID_PRIVATE_KEY ?? '',
     },
   },
 })

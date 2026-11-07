@@ -27,6 +27,10 @@ export default defineConfig({
       // reload never interrupts a form; the first install takes over at once.
       registerType: 'prompt',
       injectRegister: false,
+      // Our own service worker, which also shows the push notifications.
+      strategies: 'injectManifest',
+      srcDir: 'src',
+      filename: 'sw.ts',
       includeAssets: ['favicon.svg', 'apple-touch-icon-180x180.png'],
       manifest: {
         name: 'Quitsie',
@@ -44,13 +48,9 @@ export default defineConfig({
           { src: 'maskable-512x512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
         ],
       },
-      workbox: {
-        // The service worker only precaches the interface. Data lives in IndexedDB,
-        // and /api must always reach the server instead of getting index.html.
-        navigateFallbackDenylist: [/^\/api\//],
+      injectManifest: {
         // The fonts too, or offline the interface falls back to a system font.
         globPatterns: ['**/*.{js,css,html,woff2,png,svg}'],
-        clientsClaim: true,
       },
     }),
     keepGitkeep(),

@@ -1,6 +1,7 @@
 import { useSyncExternalStore } from 'react'
 import { api } from '../api/client'
 import { openReplica } from '../local'
+import { browserPush, createDevicePush } from '../push/device'
 import { createSyncEngine } from '../sync'
 import { isGoogleFailure } from './api'
 import { createLedgerCalls } from './ledgers'
@@ -15,6 +16,7 @@ export { suggestCurrency } from './currency'
 export { type Device, describeDevice } from './device'
 export type { GroupUpdate, InviteLinkOwner, NewGroup, NewPendingMember } from './ledgers'
 export type { DeviceRecords, SessionState, SignedOutNotice } from './session'
+export type { PushStatus } from '../push/device'
 
 // Private mode or blocked storage: the User is just not remembered offline.
 const storage: KeyValueStorage = {
@@ -65,14 +67,23 @@ export const session = createSession({
 
 export const ledgers = createLedgerCalls({ client: api, sync: () => engine.sync() })
 
+// Push notifications belong to the session too: each sign-in sends this
+// device's subscription again, and signing out drops it.
+export const pushNotices = createDevicePush({ client: api, browser: browserPush() })
+
 // The engine runs while someone is signed in.
 let running = false
 function followSession() {
   const signedIn = session.getState().status === 'signedIn'
   if (signedIn === running) return
   running = signedIn
-  if (signedIn) engine.start()
-  else engine.stop()
+  if (signedIn) {
+    engine.start()
+    void pushNotices.refresh()
+  } else {
+    engine.stop()
+    void pushNotices.forget()
+  }
 }
 session.subscribe(followSession)
 followSession()

@@ -13,7 +13,7 @@ flowchart LR
     UI -->|crea offline| Cola[(Cola de Registros<br/>sin sincronizar)]
     Motor[Motor de sincronización] -->|escribe| Replica
     Motor -->|vacía| Cola
-    SW[Service worker] -.->|precarga la interfaz| UI
+    SW[Service worker] -.->|precarga la interfaz<br/>y muestra notificaciones| UI
   end
   subgraph Railway
     Proxy[Proxy HTTPS] --> Bin[Binario Go<br/>PWA + API]
@@ -21,17 +21,19 @@ flowchart LR
   end
   Motor <-->|HTTPS /api/v1| Proxy
   Bin -->|códigos de acceso| Resend[Resend]
+  Bin -->|notificaciones cifradas| PushSvc[Servicios push<br/>de los navegadores]
+  PushSvc -.-> SW
   UI -->|iniciar sesión| Google[Google OAuth]
 ```
 
 ## Cliente (`web/`)
 
 - **React + Vite + TypeScript**, como SPA. No necesita renderizado en servidor porque todo está detrás del inicio de sesión.
-- **Service worker** (`vite-plugin-pwa` / Workbox): precarga la interfaz para que abra sin red. No guarda respuestas de la API en caché; los datos viven en la réplica.
+- **Service worker** (`web/src/sw.ts`, con Workbox): precarga la interfaz para que abra sin red y muestra las notificaciones push ([ADR 0013](adr/0013-avisos-en-vivo-y-push.md)). No guarda respuestas de la API en caché; los datos viven en la réplica.
 - **Réplica local** en IndexedDB con Dexie. La interfaz siempre lee de la réplica, con o sin conexión, así que se comporta igual en ambos casos.
 - **Cola de Registros sin sincronizar**: Gastos y Liquidaciones creados sin conexión, también en IndexedDB ([ADR 0001](adr/0001-offline-solo-creacion.md)).
 - **Cuando la sesión termina sola** (caduca, se cierra desde otro dispositivo o se borra la cuenta), el primer 401 borra la réplica y deja la cola. Si entra otro Usuario, la cola del anterior se aparta, oculta, bajo su id, y vuelve cuando su dueño entra de nuevo en ese dispositivo. La réplica guarda quién es su dueño, así que el cambio de manos es una sola transacción.
-- **Motor de sincronización**: trae cambios y vacía la cola al abrir la app, al volver a ella, al recuperar la conexión y después de cada cambio. No usa Background Sync porque Safari en iOS no lo soporta.
+- **Motor de sincronización**: trae cambios y vacía la cola al abrir la app, al volver a ella, al recuperar la conexión, después de cada cambio y cuando el servidor avisa por `GET /events` que un libro cambió. No usa Background Sync porque Safari en iOS no lo soporta.
 - **Operaciones solo en línea** (editar, borrar y crear Grupos, Miembros o Amigos): llaman directamente a la API con TanStack Query y después sincronizan.
 - **`domain/`**: funciones puras de TypeScript que convierten un Método de reparto en Cuotas, reparten el sobrante y calculan Saldos provisionales ([ADR 0003](adr/0003-cliente-calcula-cuotas.md)). Es el código más probado del cliente.
 - **Cliente de API** generado desde `openapi.yaml` con `openapi-typescript`.
@@ -44,6 +46,7 @@ flowchart LR
 - **Datos**: PostgreSQL, con el driver `pgx` usado a través de `database/sql` ([ADR 0012](adr/0012-postgres-en-railway.md)). La base se elige con `QUITSIE_DATABASE_URL`, así que cambiar de proveedor es cambiar esa URL. Las consultas se escriben en SQL y `sqlc` genera el código Go con tipos. Las migraciones van con `goose` y se aplican al arrancar.
 - **Transacciones**: las de escritura toman un bloqueo consultivo (`pg_advisory_xact_lock`) y corren una detrás de otra, así que una que lee y después escribe (un límite, un email único, la siguiente versión) nunca compite con otra. Las lecturas que necesitan una sola foto de la base, como un pull, corren en `REPEATABLE READ`.
 - **Dominio**: valida Gastos y Liquidaciones (sumas y Participantes) y calcula Saldos y la Simplificación de deudas. No reimplementa los Métodos de reparto.
+- **Avisos** ([ADR 0013](adr/0013-avisos-en-vivo-y-push.md)): un trigger de PostgreSQL hace `NOTIFY` en cada escritura de un libro. `internal/changefeed` lo escucha y lo reparte a las conexiones SSE de `GET /events` y al notificador push de `internal/push`, que envía con Web Push y claves VAPID.
 - **Autenticación**: código de 6 dígitos por email (enviado con Resend) o Google con OpenID Connect ([ADR 0005](adr/0005-login-con-codigo-no-enlace.md)). Google solo se ofrece si el servidor tiene configurado su cliente OAuth: la PWA lo pregunta con `GET /auth/methods` y, si no, no muestra el botón. La sesión es una cookie HttpOnly con un token opaco; en la base solo se guarda su hash. Caduca a los 90 días sin uso y se puede cerrar por dispositivo.
 
 ## Infraestructura ([ADR 0012](adr/0012-postgres-en-railway.md))
@@ -129,6 +132,8 @@ Un **libro** (`Ledger`) es el contenedor de Gastos y Liquidaciones. Cada Grupo t
 | `settlements` | libro, de quién, a quién, importe, moneda, fecha, autor, versión, fecha de borrado |
 | `activities` | libro, Usuario, qué cambió, versión, cuándo |
 | `version_counter` | una sola fila con la última versión entregada (ver [Traer cambios](#traer-cambios)) |
+| `push_subscriptions` | por sesión, el endpoint del servicio push del navegador y sus claves; se borra con la sesión |
+| `push_progress` | una sola fila con la versión hasta la que el notificador leyó las Actividades |
 | `restore_gaps` | por cada restauración, el contador del respaldo y el valor al que saltó (ver [Restaurar un respaldo](#restaurar-un-respaldo)) |
 
 Los Saldos no se guardan: se calculan sumando, lo cual es rápido a esta escala.

@@ -9,6 +9,7 @@ const hourly = 60 * 60 * 1000
 // is usually resumed rather than opened again, so the browser's own check,
 // which only runs on navigation, would leave it on an old version for days.
 export function startServiceWorker() {
+  followNotificationTaps()
   const activate = registerSW({
     immediate: true,
     onNeedRefresh() {
@@ -34,5 +35,15 @@ export function startServiceWorker() {
       })
       setInterval(check, hourly)
     },
+  })
+}
+
+// A tap on a notification, with the app open, opens its ledger here (src/sw.ts).
+function followNotificationTaps() {
+  if (!('serviceWorker' in navigator)) return
+  navigator.serviceWorker.addEventListener('message', (event) => {
+    if (event.data?.type !== 'open' || typeof event.data.url !== 'string') return
+    const url = new URL(event.data.url, window.location.href)
+    if (url.origin === window.location.origin) window.location.hash = url.hash
   })
 }

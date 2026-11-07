@@ -102,8 +102,10 @@ Reglas acordadas durante el diseño. El vocabulario sigue [CONTEXT.md](../CONTEX
 - Con la aplicación abierta, lo que otro Usuario cambia en un Grupo o una Amistad aparece al momento.
 - Las notificaciones push avisan de un Gasto nuevo en el que el Usuario participa y de una Liquidación que lo incluye. No avisan de lo que hace el propio Usuario.
 - La notificación dice quién lo hizo, en qué Grupo o Amistad, qué Gasto es y cuánto le toca al Usuario.
-- Varios registros del mismo Grupo o Amistad en un minuto llegan en una sola notificación.
-- Las notificaciones se activan en cada dispositivo, desde la aplicación ([ADR 0013](adr/0013-avisos-en-vivo-y-push.md)).
+- Una notificación espera 5 segundos por más registros del mismo Grupo o Amistad. Entre dos notificaciones del mismo Grupo o Amistad a un Usuario pasa al menos un minuto, y los registros de ese minuto llegan juntos.
+- Un registro que se borra antes de que salga la notificación no aparece en ella. Un registro de hace más de 15 minutos no se notifica.
+- Las notificaciones se activan en cada dispositivo, desde Cuenta. Cerrar sesión las desactiva en ese dispositivo ([ADR 0013](adr/0013-avisos-en-vivo-y-push.md)).
+- En iPhone y iPad, las notificaciones solo llegan a Quitsie instalada en la pantalla de inicio, desde iOS 16.4.
 
 ## Sin conexión
 

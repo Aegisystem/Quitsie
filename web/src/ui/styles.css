@@ -1420,6 +1420,10 @@ h3 {
   justify-content: space-between;
 }
 
+.notifications-on {
+  margin: 0;
+}
+
 /* Forms */
 
 .form {
