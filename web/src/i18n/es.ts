@@ -501,6 +501,13 @@ export const es = {
     saving: 'Guardando…',
     saved: 'Cambios guardados.',
     saveFailed: 'No pudimos guardar los cambios. Inténtalo de nuevo.',
+    themeTitle: 'Apariencia',
+    themeHint: 'Se guarda en este dispositivo.',
+    themes: {
+      system: 'Sistema',
+      light: 'Claro',
+      dark: 'Oscuro',
+    },
     sessionsTitle: 'Sesiones abiertas',
     sessionsHint: 'Una por dispositivo. Cierra las que no reconozcas: ese dispositivo borra tus datos en cuanto vuelva a tener conexión. Mientras no la tenga, siguen allí.',
     sessionsLoading: 'Buscando tus sesiones…',

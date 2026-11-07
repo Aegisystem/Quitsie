@@ -5,6 +5,9 @@ import { createRoot } from 'react-dom/client'
 import './i18n'
 import { App } from './ui/App'
 import './ui/styles.css'
+import { followOtherTabs } from './ui/theme'
+
+followOtherTabs()
 
 const queryClient = new QueryClient()
 

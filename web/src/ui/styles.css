@@ -741,6 +741,10 @@ h3 {
   color: var(--ink-2);
 }
 
+.section-title + .chips {
+  margin-top: 12px;
+}
+
 .tab-panel .section-title,
 .main > .section-title {
   margin: 28px 0 8px;

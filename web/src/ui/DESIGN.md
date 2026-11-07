@@ -261,7 +261,7 @@ Fuera de los tokens no hay colores literales en `styles.css`; la única excepci�
 
 **Contraste.** Todo texto pasa WCAG AA (4,5:1) sobre paper, surface y sunken en ambos modos, ink-3 incluido: lo que salió o se borró se apaga, pero se sigue leyendo.
 
-En modo oscuro las neutras se invierten (los tokens `-dark`) y las tintas de significado conservan el tono pero suben de luminosidad solo cuando son texto o ficha sobre el fondo (`favor-text-dark`, `against-text-dark`, `even-text-dark`, `pending-ink-dark`). Las bandas mantienen favor, against y even plenos con texto blanco en ambos modos. El tema sigue `prefers-color-scheme` y admite forzarse con `data-theme`.
+En modo oscuro las neutras se invierten (los tokens `-dark`) y las tintas de significado conservan el tono pero suben de luminosidad solo cuando son texto o ficha sobre el fondo (`favor-text-dark`, `against-text-dark`, `even-text-dark`, `pending-ink-dark`). Las bandas mantienen favor, against y even plenos con texto blanco en ambos modos. El tema sigue `prefers-color-scheme` mientras el Usuario no elija otro en Cuenta › Apariencia (Sistema · Claro · Oscuro, chips de radio). La elección es del dispositivo: vive en `localStorage` (`quitsie.theme`), sobrevive a cerrar sesión y `public/theme.js` la aplica como `data-theme` antes del primer pintado. La barra del navegador (`<meta name="theme-color">`) toma el color de `bar` del tema activo; el manifiesto es estático y conserva la barra clara.
 
 ### Named Rules
 **The Rojo-Solo-Debes Rule.** El rojo significa únicamente «debes». Errores, rechazos, acciones destructivas y repartos que no cierran van en tinta con la marca tachada; el botón de peligro es tinta, igual que el primario.

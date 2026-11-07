@@ -8,6 +8,7 @@ import { Screen, toast, useOnline } from '../components/Shell'
 import { formatRelative } from '../dates'
 import { useUsedCurrencies } from '../forms/data'
 import { href, navigate } from '../router'
+import { readTheme, saveTheme, type ThemeChoice, themeChoices } from '../theme'
 import { CurrencySelect } from './Welcome'
 
 export function Account({ user }: { user: User }) {
@@ -25,6 +26,8 @@ export function Account({ user }: { user: User }) {
       </div>
 
       <ProfileForm user={user} />
+
+      <Appearance />
 
       <Sessions userId={user.id} />
 
@@ -108,6 +111,41 @@ function SignOut() {
       </button>
       <p className="hint">{t('account.signOutHint')}</p>
     </div>
+  )
+}
+
+// System, light or dark, for this device only. It applies at once: there is
+// nothing to save and no network involved.
+function Appearance() {
+  const { t } = useTranslation()
+  const ids = useId()
+  const [theme, setTheme] = useState<ThemeChoice>(readTheme)
+
+  return (
+    <section className="section" aria-labelledby={`${ids}-title`}>
+      <h2 id={`${ids}-title`} className="section-title">
+        {t('account.themeTitle')}
+      </h2>
+      <div className="chips" role="radiogroup" aria-labelledby={`${ids}-title`} aria-describedby={`${ids}-hint`}>
+        {themeChoices.map((choice) => (
+          <label key={choice} className="chip">
+            <input
+              type="radio"
+              name={`${ids}-theme`}
+              checked={theme === choice}
+              onChange={() => {
+                setTheme(choice)
+                saveTheme(choice)
+              }}
+            />
+            <span>{t(`account.themes.${choice}`)}</span>
+          </label>
+        ))}
+      </div>
+      <p className="hint" id={`${ids}-hint`}>
+        {t('account.themeHint')}
+      </p>
+    </section>
   )
 }
 
