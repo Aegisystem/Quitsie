@@ -97,6 +97,14 @@ Reglas acordadas durante el diseño. El vocabulario sigue [CONTEXT.md](../CONTEX
 - Los campos de importe muestran los separadores de miles mientras se escribe (al escribir 50000 en Colombia se ve 50.000).
 - Al escribir un importe, si después del punto no vienen exactamente tres cifras, el punto se lee como separador decimal aunque en esa región separe los miles ("10.50" son 10,50 en Colombia).
 
+## Avisos
+
+- Con la aplicación abierta, lo que otro Usuario cambia en un Grupo o una Amistad aparece al momento.
+- Las notificaciones push avisan de un Gasto nuevo en el que el Usuario participa y de una Liquidación que lo incluye. No avisan de lo que hace el propio Usuario.
+- La notificación dice quién lo hizo, en qué Grupo o Amistad, qué Gasto es y cuánto le toca al Usuario.
+- Varios registros del mismo Grupo o Amistad en un minuto llegan en una sola notificación.
+- Las notificaciones se activan en cada dispositivo, desde la aplicación ([ADR 0013](adr/0013-avisos-en-vivo-y-push.md)).
+
 ## Sin conexión
 
 - Se pueden crear Gastos y Liquidaciones; no Grupos, Miembros ni Amigos (ver [ADR 0001](adr/0001-offline-solo-creacion.md)).

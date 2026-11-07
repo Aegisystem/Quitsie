@@ -48,6 +48,7 @@ import (
 	"time"
 
 	"github.com/Aegisystem/Quitsie/api/internal/auth"
+	"github.com/Aegisystem/Quitsie/api/internal/changefeed"
 	"github.com/Aegisystem/Quitsie/api/internal/domain"
 	"github.com/Aegisystem/Quitsie/api/internal/httpapi"
 	"github.com/Aegisystem/Quitsie/api/internal/invites"
@@ -121,8 +122,14 @@ func run(logger *slog.Logger) error {
 		return fmt.Errorf("embedded PWA: %w", err)
 	}
 
+	// Each write to a ledger reaches the open devices and the push
+	// notifications through the feed (ADR 0013).
+	changes := changefeed.New(cfg.databaseURL, logger)
+	go changes.Run(ctx)
+
 	api := httpapi.NewServer(db, version).WithDeps(httpapi.Deps{
 		DB:           db,
+		Changes:      changes,
 		Auth:         authService,
 		Origins:      cfg.origins,
 		InviteSecret: cfg.inviteSecret,

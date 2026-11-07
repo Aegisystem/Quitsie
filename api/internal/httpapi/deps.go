@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/Aegisystem/Quitsie/api/internal/auth"
+	"github.com/Aegisystem/Quitsie/api/internal/changefeed"
 )
 
 // Deps are what the handlers use besides the health check's Pinger. Each area
@@ -12,6 +13,9 @@ import (
 // cmd/server wires them.
 type Deps struct {
 	DB *sql.DB
+	// Changes says when a ledger changed, for the open devices and the push
+	// notifications (ADR 0013). Nil in tests that do not need it.
+	Changes *changefeed.Feed
 	// Auth signs Users in and resolves the session of every request. Only a
 	// test that never reaches the sign-in operations can leave it out; then
 	// nobody is signed in.
