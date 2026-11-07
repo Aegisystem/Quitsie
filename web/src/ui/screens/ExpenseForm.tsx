@@ -7,7 +7,8 @@ import { Screen, toast, useOnline } from '../components/Shell'
 import { amountError, balanceError } from '../forms/amountError'
 import { CurrencyOptions } from '../forms/CurrencyOptions'
 import { engine, ledgerName, myMember, replica, useLive } from '../data'
-import { liveUsedCurrencies, useUser } from '../forms/data'
+import { suggestCategory } from '../../domain'
+import { liveUsedCurrencies, useCategoryHistory, useUser } from '../forms/data'
 import {
   balanceRecords,
   changedFormerShare,
@@ -162,6 +163,12 @@ function ExpenseForm({ summary, user, me, purpose }: { summary: LedgerSummary; u
   const [amountText, setAmountText] = useState(draft ? formatAmountInput(draft.total, draft.currency) : '')
   const [description, setDescription] = useState(draft?.description ?? '')
   const [category, setCategory] = useState<Category | undefined>(draft?.category)
+  // A Category picked by hand, or the one the Expense already had, is never
+  // replaced by a suggestion; until then the description suggests one.
+  const [categoryChosen, setCategoryChosen] = useState(draft?.category !== undefined)
+  const categoryHistory = useCategoryHistory(user.id)
+  const suggestedCategory = categoryChosen ? undefined : suggestCategory(description, categoryHistory)
+  const shownCategory = categoryChosen ? category : suggestedCategory
   const [date, setDate] = useState(draft?.date ?? todayISO())
   const [manyPayersChosen, setManyPayers] = useState((draft?.paidShares.length ?? 1) > 1)
   // A former member's Aporte cannot go away, so nobody else can pay it all.
@@ -283,7 +290,7 @@ function ExpenseForm({ summary, user, me, purpose }: { summary: LedgerSummary; u
       date,
       currency,
       total,
-      category,
+      category: shownCategory,
       splitMethod: method,
       paidShares,
       owedShares,
@@ -475,17 +482,29 @@ function ExpenseForm({ summary, user, me, purpose }: { summary: LedgerSummary; u
         </div>
 
         <fieldset className="field">
-          <legend>{t('categories.label')}</legend>
+          <legend>
+            {t('categories.label')}
+            {suggestedCategory && <span className="legend-note">{t('categories.suggested')}</span>}
+          </legend>
           <div className="chips chips-scroll" role="radiogroup" aria-label={t('categories.label')}>
             {categories.map((c) => (
               <label key={c} className="chip chip-glyph">
                 <input
                   type="radio"
                   name={`${ids}-category`}
-                  checked={category === c}
-                  onChange={() => setCategory(c)}
+                  checked={shownCategory === c}
+                  onChange={() => {
+                    setCategory(c)
+                    setCategoryChosen(true)
+                  }}
                   onClick={() => {
-                    if (category !== c) return
+                    if (shownCategory !== c) return
+                    setCategoryChosen(true)
+                    // Tapping the suggestion takes it; tapping a chosen one clears it.
+                    if (!categoryChosen) {
+                      setCategory(c)
+                      return
+                    }
                     setCategory(undefined)
                     edited()
                   }}

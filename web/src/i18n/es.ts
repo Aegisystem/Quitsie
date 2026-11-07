@@ -209,6 +209,7 @@ export const es = {
   // The same entries when the User did it: "Añadiste…", never "Tú añadió…".
   categories: {
     label: 'Categoría',
+    suggested: 'Sugerida por la descripción',
     none: 'Sin categoría',
     food: 'Comida',
     groceries: 'Supermercado',

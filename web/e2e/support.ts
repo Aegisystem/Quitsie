@@ -119,6 +119,7 @@ interface ServerExpense {
   id: string
   description: string
   total: number
+  category?: string
   version: number
   deletedAt?: string
   paidShares: { memberId: string; amount: number }[]

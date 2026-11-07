@@ -28,6 +28,7 @@ export {
   parseAmount,
   parsePercentage,
 } from './money'
+export { type CategorizedExpense, type CategoryName, normalizeDescription, suggestCategory } from './category'
 export { multiplePayers, type PaidShare, singlePayer } from './paidShares'
 export type { Result } from './result'
 export {

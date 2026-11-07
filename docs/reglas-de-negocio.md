@@ -6,6 +6,7 @@ Reglas acordadas durante el diseño. El vocabulario sigue [CONTEXT.md](../CONTEX
 
 - Un Gasto tiene descripción, fecha (por defecto hoy, editable), un total mayor que cero y una Categoría opcional.
 - Las Categorías son: comida, supermercado, transporte, alojamiento, vivienda, servicios, ocio, compras, salud, regalos y otros.
+- Al escribir la descripción de un Gasto, la aplicación sugiere una Categoría: primero la que el Usuario dio a sus Gastos con una descripción igual o casi igual, y si no hay ninguno, la de una palabra clave («uber», «almuerzo», «D1»). Si nada coincide, no sugiere nada. Una Categoría elegida a mano nunca se reemplaza, y al editar un Gasto que ya tiene Categoría no se sugiere nada. La sugerencia se calcula en el dispositivo, sin enviar nada a terceros.
 - Tiene al menos un Aporte y al menos una Cuota; los Aportes suman el total y las Cuotas también.
 - Los Aportes son mayores que cero. Una Cuota puede quedar en cero por redondeo (1 céntimo al 50 %), y se guarda igualmente para no perder el reparto al reeditar.
 - Ningún importe supera 10^15 unidades mínimas de su moneda. Eso limita cada registro, no los Saldos, que suman muchos: ellos tienen su propio tope (ver [Límites](#límites)).
@@ -93,6 +94,7 @@ Reglas acordadas durante el diseño. El vocabulario sigue [CONTEXT.md](../CONTEX
 - Los importes se muestran con el formato numérico de la región del Usuario (en México, 7,589.67; en Colombia, 7.589,67).
 - El total de Inicio suma, por moneda, los Saldos del Usuario en todos sus Grupos y Amistades. Puede pasar del tope de un Saldo, y se muestra exacto igualmente.
 - En los listados se ocultan los decimales cuando son cero; en los formularios se muestran siempre.
+- Los campos de importe muestran los separadores de miles mientras se escribe (al escribir 50000 en Colombia se ve 50.000).
 - Al escribir un importe, si después del punto no vienen exactamente tres cifras, el punto se lee como separador decimal aunque en esa región separe los miles ("10.50" son 10,50 en Colombia).
 
 ## Sin conexión
