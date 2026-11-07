@@ -373,6 +373,18 @@ func TestTwoServersNotifyEachRecordOnce(t *testing.T) {
 	only(t, w.after(0), w.anaPhone)
 }
 
+func TestAnActivityItCannotReadDoesNotStopTheOthers(t *testing.T) {
+	w := newWorld(t)
+	w.write(func(q *store.Queries, version int64) error {
+		return q.CreateActivity(context.Background(), store.CreateActivityParams{
+			ID: uuid.NewString(), LedgerID: w.trip, UserID: w.beto, Kind: "expense_created", Details: "not json", Version: version, CreatedAt: time.Now(),
+		})
+	})
+	w.expense(w.beto, "Cena", 1000, w.betoM, w.anaM, w.betoM)
+	w.collect()
+	only(t, w.after(push.Wait), w.anaPhone)
+}
+
 func TestLateRecordsAreNotNotified(t *testing.T) {
 	w := newWorld(t)
 	w.expense(w.beto, "Cena", 1000, w.betoM, w.anaM, w.betoM)

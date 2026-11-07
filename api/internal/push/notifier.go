@@ -245,8 +245,10 @@ func involved(ctx context.Context, q *store.Queries, a store.Activity, now time.
 		ExpenseID    string `json:"expenseId"`
 		SettlementID string `json:"settlementId"`
 	}
+	// The server writes the details, so they always parse; one that did
+	// not would stop the cursor for good, so it is skipped instead.
 	if err := json.Unmarshal([]byte(a.Details), &details); err != nil {
-		return notice{}, nil, fmt.Errorf("details of activity %s: %w", a.ID, err)
+		return notice{}, nil, nil
 	}
 	x := notice{kind: a.Kind, actorID: a.UserID}
 	var memberIDs []string
