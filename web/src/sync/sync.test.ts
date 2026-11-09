@@ -460,6 +460,48 @@ describe('triggers', () => {
     expect(await until(liveExpenses(replica, trip.id), (list) => list.length === 1)).toEqual([expect.objectContaining({ id })])
   })
 
+  // A phone that loses the network mid-request, often in the background, may
+  // never get an answer; the engine must not wait for it forever.
+  test('a pull that never answers is given up after a minute, and the next sync runs', async () => {
+    const server = fakeServer()
+    const trip = server.addGroup({ name: 'Viaje a Cusco', currency: 'PEN', members: ['Ana'] })
+    const { replica, engine, device } = setup(server)
+    engine.start()
+    await until(liveHome(replica), (home) => home.length === 1)
+
+    server.holdNextPull()
+    device.serverSaysChanged()
+    const id = server.addExpense(trip, { description: 'Cena', paid: { Ana: 9000 }, owed: { Yo: 4500, Ana: 4500 } })
+    device.serverSaysChanged()
+    const timeout = await vi.waitFor(() => {
+      const timer = device.timers.find(({ ms }) => ms === 60_000)
+      if (!timer) throw new Error('no request timeout')
+      return timer
+    })
+    timeout.fire()
+
+    expect(await until(liveExpenses(replica, trip.id), (list) => list.length === 1)).toEqual([expect.objectContaining({ id })])
+  })
+
+  test('coming back to the screen gives up a request in flight and syncs again', async () => {
+    const server = fakeServer()
+    const trip = server.addGroup({ name: 'Viaje a Cusco', currency: 'PEN', members: ['Ana'] })
+    const { replica, engine, device } = setup(server)
+    engine.start()
+    await until(liveHome(replica), (home) => home.length === 1)
+
+    server.holdNextPull()
+    const pulled = server.pulls.length
+    device.serverSaysChanged()
+    // The pull reached the server, which never answers it.
+    await vi.waitFor(() => expect(server.pulls.length).toBe(pulled + 1))
+    const id = server.addExpense(trip, { description: 'Cena', paid: { Ana: 9000 }, owed: { Yo: 4500, Ana: 4500 } })
+    device.hide()
+    device.show()
+
+    expect(await until(liveExpenses(replica, trip.id), (list) => list.length === 1)).toEqual([expect.objectContaining({ id })])
+  })
+
   test('the event stream closes when the app leaves the screen or stops, and opens when it comes back', async () => {
     const server = fakeServer()
     const { engine, device } = setup(server)

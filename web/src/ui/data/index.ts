@@ -3,6 +3,7 @@ import { useEffect, useState, useSyncExternalStore } from 'react'
 import { api } from '../../api/client'
 import { engine, replica, session } from '../../session'
 import { createActions } from './actions'
+import { watchQuery } from './watch'
 
 export { type ActionResult, type RecordKind } from './actions'
 export { type ActivityLine, describeActivity } from './activity'
@@ -23,23 +24,21 @@ session.subscribe(() => {
 
 // Renders every value of a live query and unsubscribes when the screen goes
 // away. `key` names the query: the same key is the same query. `loaded` tells a
-// query that has not answered yet from one that answered undefined.
+// query that has not answered yet from one that answered undefined. A query
+// that fails is tried again (watchQuery), and the diagnostics log names it by
+// the part of the key before any id.
 export function useLive<T>(key: string, query: () => Observable<T>): [value: T | undefined, loaded: boolean] {
   const [latest, setLatest] = useState<{ key: string; value: T }>()
 
-  useEffect(() => {
-    const subscription = query().subscribe({
-      next(value) {
+  useEffect(
+    () =>
+      watchQuery<T>(key.split(':')[0] ?? key, query, (value) => {
         lastValues.set(key, value)
         setLatest({ key, value })
-      },
-      error(error) {
-        console.error(error)
-      },
-    })
-    return () => subscription.unsubscribe()
+      }),
     // The key stands for the query, which is a new function on every render.
-  }, [key])
+    [key],
+  )
 
   if (latest?.key === key) return [latest.value, true]
   return [lastValues.get(key) as T | undefined, lastValues.has(key)]

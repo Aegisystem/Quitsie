@@ -51,6 +51,7 @@ En producción no escribe correos ni códigos: el servidor no arranca con `QUITS
 | Cookie de dispositivo conocido | Cookie `HttpOnly` | Un año. **Cerrar sesión no la borra**, a propósito ([ADR 0011](adr/0011-codigos-atados-al-navegador.md)) |
 | Cookie del flujo de Google | Cookie `HttpOnly` | 10 minutos, o hasta volver de Google |
 | Suscripción push, si el Usuario activó las notificaciones | El navegador | Hasta desactivarlas o cerrar sesión |
+| Registro de diagnóstico: errores y esperas de la app, con la hora y sin nombres, importes ni ids | `localStorage` | Las 50 entradas más recientes. Se borra al cerrar sesión, al borrar la cuenta o con «Borrar registro». Se conserva si la sesión termina sola |
 
 Todas las cookies son propias y necesarias para entrar. No hay analítica, publicidad ni recursos de terceros: la `Content-Security-Policy` solo admite archivos propios.
 

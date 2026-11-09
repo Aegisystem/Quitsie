@@ -55,6 +55,8 @@ export default defineConfig({
     }),
     keepGitkeep(),
   ],
+  // When this PWA was built, which the diagnostics in Cuenta show.
+  define: { __BUILD_TIME__: JSON.stringify(new Date().toISOString()) },
   build: {
     outDir,
     emptyOutDir: true,

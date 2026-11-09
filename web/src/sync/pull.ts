@@ -1,13 +1,13 @@
 import type { Changes } from '../api/client'
 import type { Replica } from '../local'
-import { type Api, SyncFailure } from './api'
+import { type Api, type Requests, SyncFailure, untimed } from './api'
 
 // Brings everything that changed since the replica's cursor (GET /sync), page
 // by page while the server says it has more.
-export async function pull(replica: Replica, api: Api): Promise<void> {
+export async function pull(replica: Replica, api: Api, request: Requests = untimed): Promise<void> {
   for (;;) {
     const since = (await replica.meta.get('cursor'))?.value ?? 0
-    const { data, response } = await api.GET('/sync', { params: { query: { since } } })
+    const { data, response } = await request((signal) => api.GET('/sync', { params: { query: { since } }, signal }))
     // 410: the server restored a backup older than this cursor, which is now
     // ahead of the server or among the versions it skipped. The replica may
     // hold rows the server lost, so it starts over from 0.

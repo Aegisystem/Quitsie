@@ -1,12 +1,16 @@
 import type { NewExpense, NewSettlement } from '../api/client'
 import { type Replica, uuidv7 } from '../local'
-import { type Api, SyncFailure } from './api'
+import { type Api, type Requests, SyncFailure } from './api'
 import { browserEnvironment, type Environment } from './environment'
 import { pull } from './pull'
 import { push } from './push'
 
 const firstWait = 1000
 const longestWait = 5 * 60 * 1000
+// How long one request of a sync may take. A phone that loses the network
+// mid-request, often in the background, may never get an answer, and every
+// later sync would wait for it.
+const requestTimeout = 60 * 1000
 
 // `retrying`: the last sync failed and another one is scheduled.
 // `signedOut`: the server refused the session, so nothing retries until the
@@ -44,10 +48,13 @@ export function createSyncEngine({
   replica,
   api,
   environment = browserEnvironment,
+  report = () => {},
 }: {
   replica: Replica
   api: Api
   environment?: Environment
+  // Tells the diagnostics log why a sync failed.
+  report?: (message: string) => void
 }): SyncEngine {
   let status: SyncStatus = 'idle'
   const listeners = new Set<() => void>()
@@ -58,20 +65,43 @@ export function createSyncEngine({
   let closeEvents = () => {}
   let running: Promise<void> | undefined
   let following: Promise<void> | undefined
+  // Aborts the sync in flight, if any.
+  let giveUp = () => {}
 
   function setStatus(next: SyncStatus) {
     status = next
     for (const listener of listeners) listener()
   }
 
+  // Each request of a sync gets its own deadline, and giving up the sync
+  // aborts the request in flight.
+  function requestsOf(sync: AbortSignal): Requests {
+    return async (send) => {
+      const request = new AbortController()
+      const abort = () => request.abort()
+      if (sync.aborted) abort()
+      sync.addEventListener('abort', abort)
+      const cancel = environment.after(requestTimeout, () => {
+        report(`una petición pasó de ${requestTimeout / 1000} s sin respuesta y se abandonó`)
+        abort()
+      })
+      try {
+        return await send(request.signal)
+      } finally {
+        cancel()
+        sync.removeEventListener('abort', abort)
+      }
+    }
+  }
+
   // The pull runs even if the push failed: a broken POST /records should not
   // keep the replica from getting news.
-  async function attempt() {
+  async function attempt(request: Requests) {
     let pushFailure: unknown
-    await push(replica, api).catch((failure: unknown) => {
+    await push(replica, api, request).catch((failure: unknown) => {
       pushFailure = failure
     })
-    await pull(replica, api)
+    await pull(replica, api, request)
     if (pushFailure) throw pushFailure
   }
 
@@ -82,8 +112,10 @@ export function createSyncEngine({
       return
     }
     setStatus('syncing')
+    const current = new AbortController()
+    giveUp = () => current.abort()
     try {
-      await attempt()
+      await attempt(requestsOf(current.signal))
       failures = 0
       setStatus('idle')
     } catch (failure) {
@@ -92,10 +124,31 @@ export function createSyncEngine({
         setStatus('signedOut')
         return
       }
+      // An abort is the engine's own doing: a deadline, reported when it
+      // passed, or giving up the sync on purpose.
+      if (!isAbort(failure)) report(failure instanceof SyncFailure ? `el servidor respondió ${failure.status}` : describe(failure))
       if (!stopped) cancelRetry = environment.after(Math.min(firstWait * 2 ** failures, longestWait), () => void sync())
       failures += 1
       setStatus('retrying')
+    } finally {
+      giveUp = () => {}
     }
+  }
+
+  function describe(failure: unknown): string {
+    return failure instanceof Error ? `${failure.name}: ${failure.message}` : String(failure)
+  }
+
+  function isAbort(failure: unknown): boolean {
+    return failure instanceof Error && failure.name === 'AbortError'
+  }
+
+  // Coming back to the screen or to the network, a request still in flight
+  // most likely went through a connection that is gone: the sync starts over.
+  function startOver() {
+    if (running) report('al volver, un sync en curso se abandonó y empezó de nuevo')
+    giveUp()
+    void sync()
   }
 
   function sync(): Promise<void> {
@@ -142,6 +195,7 @@ export function createSyncEngine({
     closeEvents()
     closeEvents = () => {}
     cancelRetry()
+    giveUp()
   }
 
   return {
@@ -149,11 +203,11 @@ export function createSyncEngine({
       stop()
       stopped = false
       const stops = [
-        environment.listen('online', () => void sync()),
+        environment.listen('online', startOver),
         environment.listen('visibilitychange', () => {
           if (!environment.visible()) return closeEvents()
           openEvents()
-          void sync()
+          startOver()
         }),
       ]
       stopListening = () => stops.forEach((stopOne) => stopOne())

@@ -63,6 +63,7 @@ Después de desplegar, comprueba:
 - Un correo real de Resend y, si se activa, un inicio de sesión real con Google.
 - La memoria y el tiempo de `GET /sync` en el plan de Railway elegido.
 - La PWA instalada en Safari de iOS.
+- Que Cloudflare no guarde `/sw.js` en caché. El 2026-11-09 respondía `max-age=14400` y `cf-cache-status: EXPIRED`, aunque el servidor manda `no-cache` ([Caché de Cloudflare](despliegue.md#caché-de-cloudflare)).
 - Las notificaciones push: generar las claves VAPID, ponerlas en Railway ([variables](despliegue.md#variables)), activarlas en un iPhone con la PWA instalada y recibir una de otro Usuario.
 
 ## 5. Falta fuera del código
@@ -86,6 +87,8 @@ Después de desplegar, comprueba:
 **Limpieza:** en la máquina del dueño, los worktrees `api-endurecer-48a67d`, `web-escritura-c04f34`, `web-grupos-25864f` y `web-lectura-59f6a4` ya están integrados en `main`.
 
 ## 7. Sin verificar
+
+- **Pantallas vacías en un Android** (reportado el 2026-11-09). En Quitsie instalada desde Chrome, al abrir un Grupo o un Gasto se ven la barra y las pestañas pero no el contenido, aunque los datos ya estén en el teléfono, y recargar lo arregla. Tampoco llegan los cambios en vivo. No se pudo reproducir en Chromium con la CPU lenta, navegando mientras otro Usuario añade gastos ni congelando la página. Desde entonces el motor abandona las peticiones colgadas y las consultas que fallan se reintentan. Falta una captura de **Cuenta → Diagnóstico** de ese teléfono después del fallo, para saber si las consultas a la réplica fallan o no responden, y cuántas páginas de Quitsie hay abiertas.
 
 - Railway, su PostgreSQL, Google y Resend reales.
 - Safari, Firefox y dos dispositivos reales a la vez. Las pruebas de punta a punta solo cubren Chromium. En desarrollo, Safari puede rechazar las cookies `Secure` por `http://localhost`.

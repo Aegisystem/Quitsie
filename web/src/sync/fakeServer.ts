@@ -230,7 +230,13 @@ export function fakeServer({ versionsPerPull = Infinity }: { versionsPerPull?: n
       busiest = Math.max(busiest, active)
       await new Promise((resolve) => setTimeout(resolve))
       try {
-        return await answer(request)
+        // Like a real fetch, an aborted request rejects even if the server
+        // never answers.
+        return await new Promise<Response>((resolve, reject) => {
+          if (request.signal.aborted) return reject(request.signal.reason)
+          request.signal.addEventListener('abort', () => reject(request.signal.reason), { once: true })
+          answer(request).then(resolve, reject)
+        })
       } finally {
         active -= 1
       }

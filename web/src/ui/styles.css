@@ -1424,6 +1424,23 @@ h3 {
   margin: 0;
 }
 
+.diagnostics summary {
+  cursor: pointer;
+}
+
+.diagnostics-facts,
+.diagnostics-log {
+  margin: 8px 0 12px;
+  padding-left: 1.25em;
+  font-size: 0.75rem;
+  color: var(--ink-2);
+  overflow-wrap: anywhere;
+}
+
+.diagnostics-log {
+  font-variant-numeric: tabular-nums;
+}
+
 /* Forms */
 
 .form {

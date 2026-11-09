@@ -1,6 +1,6 @@
 import type { RecordBatch, RecordResult } from '../api/client'
 import type { QueuedRecord, Replica } from '../local'
-import { type Api, SyncFailure } from './api'
+import { type Api, type Requests, SyncFailure, untimed } from './api'
 
 // POST /records takes at most this many Expenses and this many Settlements.
 const batchSize = 100
@@ -8,13 +8,13 @@ const batchSize = 100
 // Sends the UnsyncedRecords (POST /records), oldest first. An accepted record
 // leaves the queue; a rejected one stays, as a RejectedRecord with its reason.
 // A record the response does not mention stays unsynced for the next push.
-export async function push(replica: Replica, api: Api): Promise<void> {
+export async function push(replica: Replica, api: Api, request: Requests = untimed): Promise<void> {
   const unsynced = await replica.queue.where({ status: 'unsynced' }).sortBy('id')
   const expenses = unsynced.flatMap((record) => (record.kind === 'expense' ? [record.expense] : []))
   const settlements = unsynced.flatMap((record) => (record.kind === 'settlement' ? [record.settlement] : []))
 
   while (expenses.length > 0 || settlements.length > 0) {
-    await send(replica, api, { expenses: expenses.splice(0, batchSize), settlements: settlements.splice(0, batchSize) })
+    await send(replica, api, request, { expenses: expenses.splice(0, batchSize), settlements: settlements.splice(0, batchSize) })
   }
 }
 
@@ -22,8 +22,8 @@ export async function push(replica: Replica, api: Api): Promise<void> {
 // date is enough for, and a 413 is a batch too big for it. Retrying would get
 // the same answer forever with the whole queue waiting, so each record goes
 // alone and the one at fault gets rejected.
-async function send(replica: Replica, api: Api, batch: RecordBatch): Promise<void> {
-  const { data, response } = await api.POST('/records', { body: batch })
+async function send(replica: Replica, api: Api, request: Requests, batch: RecordBatch): Promise<void> {
+  const { data, response } = await request((signal) => api.POST('/records', { body: batch, signal }))
   if (data) return settle(replica, data.results)
   if (response.status !== 400 && response.status !== 413) throw new SyncFailure(response.status)
 
@@ -35,7 +35,7 @@ async function send(replica: Replica, api: Api, batch: RecordBatch): Promise<voi
     const { id } = batch.expenses[0] ?? batch.settlements[0]!
     return settle(replica, [{ id, status: 'rejected', reason: 'invalid_record' }])
   }
-  for (const single of alone) await send(replica, api, single)
+  for (const single of alone) await send(replica, api, request, single)
 }
 
 type Outcome = Pick<RecordResult, 'id' | 'status' | 'reason' | 'detail'>

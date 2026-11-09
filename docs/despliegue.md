@@ -88,6 +88,19 @@ Un rebote de tipo **Transient** no bloquea la dirección en Resend: el siguiente
 
 Railway termina el TLS. El servidor envía `Strict-Transport-Security: max-age=31536000` en producción. La redirección de `http://` a `https://` que hace el propio servidor solo actúa detrás de `cloudflared` en la misma máquina, así que en Railway depende de Railway. Compruébalo tras el primer despliegue: `curl -sI http://<dominio>/` debe responder con una redirección a `https://`, y `curl -sI https://<dominio>/` debe traer `strict-transport-security`.
 
+### Caché de Cloudflare
+
+Si el dominio pasa por el proxy de Cloudflare, ninguna regla de caché puede guardar `/sw.js`. El servidor lo manda con `Cache-Control: no-cache` para que cada teléfono vea una versión nueva en cuanto se despliega. Si Cloudflare lo guarda, un teléfono puede tardar horas en ver la versión nueva. Compruébalo así:
+
+```bash
+curl -sI https://<dominio>/sw.js | grep -iE "cache-control|cf-cache-status"
+```
+
+Debe decir `cache-control: no-cache` y `cf-cache-status: DYNAMIC` o `BYPASS`. Si dice otra cosa, revisa dos ajustes de Cloudflare:
+
+1. En **Caching → Configuration**, **Browser Cache TTL** debe estar en **Respect Existing Headers**.
+2. En **Caching → Cache Rules**, crea una regla para la ruta `/sw.js` con **Bypass cache**, antes de cualquier regla que guarde archivos `.js`.
+
 ## Respaldo y restauración
 
 Los respaldos son los de la base de Railway (pestaña **Backups** del servicio PostgreSQL). Comprueba en tu plan si están incluidos y cada cuánto se hacen.
@@ -134,4 +147,5 @@ QUITSIE_DATABASE_URL='<DATABASE_PUBLIC_URL de la base>' go -C api run ./cmd/serv
 | El build falla en `npm run build` o en `go build` | El mismo fallo aparece en el job `image` de la CI. Reprodúcelo con `docker build .`. |
 | Tras restaurar, `record-restore` dice «check the clock» | El reloj de la máquina donde lo ejecutas va tan adelantado que el salto pasaría de lo que la PWA lee con exactitud. Corrige la hora y repítelo. |
 | Muchos `429` con poco tráfico | Los límites por IP ([Límites conocidos](#límites-conocidos)). |
+| Un teléfono no ve el aviso de versión nueva horas después de desplegar | Cloudflare guarda `/sw.js` en su caché ([Caché de Cloudflare](#caché-de-cloudflare)). |
 | Resend muestra un rebote con `Message lacks SPF/DKIM/DMARC Auth Records`, o los códigos llegan a spam | Falta un registro DNS del correo, casi siempre el DMARC ([Dominio del correo](#dominio-del-correo)). |

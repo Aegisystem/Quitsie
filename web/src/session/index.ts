@@ -1,6 +1,7 @@
 import { useSyncExternalStore } from 'react'
 import { api } from '../api/client'
 import { openReplica } from '../local'
+import { diagnostics } from '../diagnostics'
 import { browserPush, createDevicePush } from '../push/device'
 import { createSyncEngine } from '../sync'
 import { isGoogleFailure } from './api'
@@ -56,7 +57,7 @@ function takeGoogleFailure(): boolean {
 // The replica and the sync engine belong to whoever is signed in, so they are
 // created here, with the `api` whose 401s sign the User out.
 export const replica = openReplica()
-export const engine = createSyncEngine({ replica, api })
+export const engine = createSyncEngine({ replica, api, report: (message) => diagnostics.report('sync', message) })
 
 export const session = createSession({
   client: api,
@@ -87,6 +88,14 @@ function followSession() {
 }
 session.subscribe(followSession)
 followSession()
+
+// Signing out or deleting the account leaves nothing of Quitsie behind, the
+// diagnostics log included. When the session ends by itself the log stays:
+// that may be part of the problem it records.
+session.subscribe(() => {
+  const state = session.getState()
+  if (state.status === 'signedOut' && (state.notice === undefined || state.notice === 'accountDeleted')) diagnostics.clear()
+})
 
 export function useSession(): SessionState {
   return useSyncExternalStore(session.subscribe, session.getState)

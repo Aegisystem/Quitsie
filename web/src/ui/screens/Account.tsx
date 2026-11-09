@@ -1,12 +1,15 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useEffect, useId, useState } from 'react'
+import { useEffect, useId, useState, useSyncExternalStore } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { Session, User } from '../../api/client'
+import { countOpenPages, diagnostics } from '../../diagnostics'
 import { type CallResult, describeDevice, type DeviceRecords, type PushStatus, pushNotices, session } from '../../session'
 import { Figure, Icon } from '../components/icons'
 import { Screen, toast, useOnline } from '../components/Shell'
 import { formatRelative } from '../dates'
+import { useSyncStatus } from '../data'
 import { useUsedCurrencies } from '../forms/data'
+import { regionLocale } from '../money'
 import { href, navigate } from '../router'
 import { readTheme, saveTheme, type ThemeChoice, themeChoices } from '../theme'
 import { CurrencySelect } from './Welcome'
@@ -36,6 +39,8 @@ export function Account({ user }: { user: User }) {
       <SignOut />
 
       <DeleteAccount />
+
+      <Diagnostics />
     </Screen>
   )
 }
@@ -182,6 +187,53 @@ function Notifications() {
       )}
       {(status === 'install' || status === 'denied' || status === 'unsupported') && <p className="hint">{t(`account.${explanation[status]}`)}</p>}
     </section>
+  )
+}
+
+// What went wrong on this device (src/diagnostics.ts), folded away until
+// someone needs it. Opening it counts the Quitsie pages of this browser, which
+// share the replica.
+function Diagnostics() {
+  const { t } = useTranslation()
+  const entries = useSyncExternalStore(diagnostics.subscribe, diagnostics.entries)
+  const status = useSyncStatus()
+  const [pages, setPages] = useState<number>()
+  const installed = window.matchMedia('(display-mode: standalone)').matches || (navigator as { standalone?: boolean }).standalone === true
+  const when = (iso: string) => new Date(iso).toLocaleString(regionLocale(), { dateStyle: 'short', timeStyle: 'medium' })
+
+  return (
+    <details
+      className="section diagnostics"
+      onToggle={(event) => {
+        if (event.currentTarget.open) void countOpenPages().then(setPages)
+      }}
+    >
+      <summary className="section-title">
+        {t('account.diagnosticsTitle')} ({entries.length})
+      </summary>
+      <p className="hint">{t('account.diagnosticsHint')}</p>
+      <ul className="diagnostics-facts">
+        <li>{t('account.diagnosticsBuild', { when: when(__BUILD_TIME__) })}</li>
+        <li>{t('account.diagnosticsBrowser', { agent: navigator.userAgent })}</li>
+        <li>{t('account.diagnosticsInstalled', { answer: installed ? t('account.diagnosticsYes') : t('account.diagnosticsNo') })}</li>
+        {pages !== undefined && <li>{t('account.diagnosticsPages', { count: pages })}</li>}
+        <li>{t('account.diagnosticsSync', { status })}</li>
+      </ul>
+      {entries.length === 0 ? (
+        <p className="hint">{t('account.diagnosticsEmpty')}</p>
+      ) : (
+        <ol className="diagnostics-log" reversed>
+          {[...entries].reverse().map((entry, i) => (
+            <li key={`${entry.at}-${i}`}>
+              {when(entry.at)} · {t(`account.diagnosticsSources.${entry.source}`)} · {entry.message}
+            </li>
+          ))}
+        </ol>
+      )}
+      <button type="button" className="button button-quiet button-small" disabled={entries.length === 0} onClick={() => diagnostics.clear()}>
+        {t('account.diagnosticsClear')}
+      </button>
+    </details>
   )
 }
 
