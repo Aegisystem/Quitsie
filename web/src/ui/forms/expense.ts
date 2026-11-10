@@ -13,10 +13,10 @@ export type ExpenseDraft = Omit<NewExpense, 'id' | 'ledgerId'>
 // the methods loses nothing.
 export type SplitValues = Record<SplitMethod, Record<string, string>>
 
-export function initialSplitValues(memberIds: readonly string[], draft?: ExpenseDraft): SplitValues {
+// A method the draft did not use starts empty, and switchMethod fills it from the
+// split on screen when the Usuario picks it.
+export function initialSplitValues(draft?: ExpenseDraft): SplitValues {
   const values: SplitValues = { equal: {}, exact: {}, percentage: {}, weights: {}, adjustment: {} }
-  // Someone without a weight stayed out of the split, so a draft keeps them out.
-  if (draft?.splitMethod !== 'weights') for (const id of memberIds) values.weights[id] = '1'
   if (!draft) return values
   const { currency, splitMethod, owedShares } = draft
   for (const { memberId, amount, splitValue } of owedShares) {
@@ -28,6 +28,72 @@ export function initialSplitValues(memberIds: readonly string[], draft?: Expense
     if (splitMethod === 'adjustment') values.adjustment[memberId] = formatAmountInput(splitValue, currency)
   }
   return values
+}
+
+// Changing method keeps who takes part. A method with nothing typed in it starts
+// from the split on screen, so nobody starts from zeros: Montos exactos gets the
+// Cuotas, Porcentajes their share of the total, and Proporciones one part each.
+// Partes iguales and Ajustes start from who is ticked, which they share.
+export function switchMethod(
+  to: SplitMethod,
+  {
+    values,
+    included,
+    activeIds,
+    takingPart,
+    shares,
+    currency,
+  }: {
+    values: SplitValues
+    included: Record<string, boolean>
+    // The active Members, in the order of the list.
+    activeIds: readonly string[]
+    // The active Members in the split now.
+    takingPart: readonly string[]
+    // Their Cuotas, when the split closes.
+    shares?: ReadonlyMap<string, number>
+    currency: string
+  },
+): { values: SplitValues; included: Record<string, boolean> } {
+  const taking = activeIds.filter((id) => takingPart.includes(id))
+  if (taking.length === 0) return { values, included }
+  const ticked = Object.fromEntries(activeIds.map((id) => [id, taking.includes(id)]))
+  const typed = activeIds.some((id) => (values[to][id] ?? '').trim() !== '')
+  if (to === 'equal' || to === 'adjustment' || typed) return { values, included: ticked }
+  let filled: Record<string, string> | undefined
+  switch (to) {
+    case 'weights':
+      filled = Object.fromEntries(taking.map((id) => [id, '1']))
+      break
+    case 'exact':
+      if (shares) filled = Object.fromEntries(taking.map((id) => [id, formatAmountInput(shares.get(id) ?? 0, currency)]))
+      break
+    case 'percentage': {
+      const parts = hundredths(taking.map((id) => shares?.get(id) ?? 1))
+      filled = Object.fromEntries(taking.map((id, i) => [id, formatPercentInput(parts[i] ?? 0)]))
+      break
+    }
+  }
+  return { values: filled ? { ...values, [to]: filled } : values, included: ticked }
+}
+
+// Each weight's share of 100 %, in hundredths that add up to exactly 10000: each
+// is rounded down and the hundredths left go to the largest remainders, the first
+// one on a tie. All weights zero count as equal.
+export function hundredths(weights: readonly number[]): number[] {
+  const all = weights.map((w) => BigInt(w))
+  const sum = all.reduce((a, b) => a + b, 0n)
+  const parts = sum > 0n ? all : all.map(() => 1n)
+  const total = sum > 0n ? sum : BigInt(all.length)
+  const shares = parts.map((w, index) => ({ index, value: (w * 10000n) / total, rest: (w * 10000n) % total }))
+  let left = 10000n - shares.reduce((a, x) => a + x.value, 0n)
+  const byRest = [...shares].sort((a, b) => (b.rest > a.rest ? 1 : b.rest < a.rest ? -1 : a.index - b.index))
+  for (const share of byRest) {
+    if (left <= 0n) break
+    share.value += 1n
+    left -= 1n
+  }
+  return shares.map((x) => Number(x.value))
 }
 
 export function initialPaidText(draft?: ExpenseDraft): Record<string, string> {

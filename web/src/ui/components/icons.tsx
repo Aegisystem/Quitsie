@@ -6,6 +6,7 @@ import type { Category, Member } from '../types'
 export type IconName =
   | 'back'
   | 'plus'
+  | 'minus'
   | 'check'
   | 'close'
   | 'offline'
@@ -26,6 +27,7 @@ export type IconName =
 const strokes: Record<IconName, string> = {
   back: 'M15 5l-7 7 7 7',
   plus: 'M12 5v14M5 12h14',
+  minus: 'M5 12h14',
   check: 'M5 12.5l4.5 4.5L19 7.5',
   close: 'M6 6l12 12M18 6L6 18',
   online: 'M7 20h10a4.5 4.5 0 0 0 .7-8.95A6 6 0 0 0 6.2 12 4 4 0 0 0 7 20zM9.5 15.5l2 2 3.5-4',

@@ -120,6 +120,7 @@ interface ServerExpense {
   description: string
   total: number
   category?: string
+  splitMethod: string
   version: number
   deletedAt?: string
   paidShares: { memberId: string; amount: number }[]
@@ -128,6 +129,7 @@ interface ServerExpense {
 
 // What the server holds for this device's User, whether the device is online or not.
 interface ServerMember {
+  id: string
   name: string
   userId?: string
   email?: string

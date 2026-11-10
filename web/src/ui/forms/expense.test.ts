@@ -8,9 +8,11 @@ import {
   formerParticipant,
   formerShares,
   initialPaidText,
+  hundredths,
   initialSplitValues,
   methodsFor,
   noFormerShares,
+  switchMethod,
   toOwedShares,
 } from './expense'
 
@@ -59,13 +61,12 @@ describe('toOwedShares', () => {
 })
 
 describe('initialSplitValues', () => {
-  it('starts everyone at one part in a new Expense', () => {
-    expect(initialSplitValues(['a', 'b']).weights).toEqual({ a: '1', b: '1' })
+  it('starts every method empty in a new Expense', () => {
+    expect(initialSplitValues()).toEqual({ equal: {}, exact: {}, percentage: {}, weights: {}, adjustment: {} })
   })
 
   it('brings back what each Participant had in the method', () => {
     const values = initialSplitValues(
-      ['a', 'b'],
       draft({
         splitMethod: 'percentage',
         owedShares: [
@@ -79,7 +80,6 @@ describe('initialSplitValues', () => {
 
   it('leaves out of the weights whoever was not in the split', () => {
     const values = initialSplitValues(
-      ['a', 'b', 'c'],
       draft({
         splitMethod: 'weights',
         owedShares: [
@@ -92,7 +92,76 @@ describe('initialSplitValues', () => {
   })
 
   it('offers the Cuotas as exact amounts, whatever the saved method', () => {
-    expect(initialSplitValues(['ana', 'beto', 'carla'], draft({})).exact).toEqual({ ana: '30.00', beto: '30.00', carla: '30.00' })
+    expect(initialSplitValues(draft({})).exact).toEqual({ ana: '30.00', beto: '30.00', carla: '30.00' })
+  })
+})
+
+describe('switchMethod', () => {
+  const activeIds = ['ana', 'beto', 'carla', 'dani']
+  const blank = initialSplitValues()
+  const everyone = { ana: true, beto: true, carla: true, dani: true }
+  const shares = new Map([
+    ['ana', 4000],
+    ['beto', 4000],
+    ['carla', 4000],
+  ])
+  const from = (overrides: Partial<Parameters<typeof switchMethod>[1]>) => ({
+    values: blank,
+    included: everyone,
+    activeIds,
+    takingPart: ['ana', 'beto', 'carla'],
+    shares,
+    currency: 'USD',
+    ...overrides,
+  })
+
+  it('starts exact amounts from the Cuotas on screen, for whoever takes part', () => {
+    const { values, included } = switchMethod('exact', from({}))
+    expect(values.exact).toEqual({ ana: '40.00', beto: '40.00', carla: '40.00' })
+    expect(included).toEqual({ ana: true, beto: true, carla: true, dani: false })
+  })
+
+  it('leaves exact amounts empty while the split does not close', () => {
+    expect(switchMethod('exact', from({ shares: undefined })).values.exact).toEqual({})
+  })
+
+  it('starts percentages that add up to exactly 100', () => {
+    expect(switchMethod('percentage', from({})).values.percentage).toEqual({ ana: '33.34', beto: '33.33', carla: '33.33' })
+    const uneven = new Map([
+      ['ana', 9000],
+      ['beto', 3000],
+    ])
+    expect(switchMethod('percentage', from({ takingPart: ['ana', 'beto'], shares: uneven })).values.percentage).toEqual({ ana: '75', beto: '25' })
+  })
+
+  it('starts one part each in weights', () => {
+    expect(switchMethod('weights', from({})).values.weights).toEqual({ ana: '1', beto: '1', carla: '1' })
+  })
+
+  it('keeps what was typed in the method', () => {
+    const typed = { ...blank, exact: { ana: '10' } }
+    expect(switchMethod('exact', from({ values: typed })).values.exact).toEqual({ ana: '10' })
+  })
+
+  it('ticks, for equal parts and adjustments, whoever took part', () => {
+    const exact = { ...blank, exact: { beto: '70', dani: '50' } }
+    const { values, included } = switchMethod('equal', from({ values: exact, takingPart: ['beto', 'dani'], shares: undefined }))
+    expect(included).toEqual({ ana: false, beto: true, carla: false, dani: true })
+    expect(values).toBe(exact)
+  })
+
+  it('changes nothing when nobody takes part', () => {
+    const none = { ana: false, beto: false, carla: false, dani: false }
+    expect(switchMethod('weights', from({ included: none, takingPart: [] }))).toEqual({ values: blank, included: none })
+  })
+})
+
+describe('hundredths', () => {
+  it('gives the hundredths left to the largest remainders, the first on a tie', () => {
+    expect(hundredths([1, 1, 1])).toEqual([3334, 3333, 3333])
+    expect(hundredths([1, 2])).toEqual([3333, 6667])
+    expect(hundredths([0, 0])).toEqual([5000, 5000])
+    expect(hundredths([10 ** 15, 1])).toEqual([10000, 0])
   })
 })
 

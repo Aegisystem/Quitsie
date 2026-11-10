@@ -1656,43 +1656,101 @@ select.input,
   outline-offset: 2px;
 }
 
-.payer-row {
+/* The split of an Expense (screens/ExpenseSplit.tsx): two lines on the form,
+   each opening a screen of its own. */
+
+.split-lines {
+  border-top: 1px solid var(--rule);
+}
+
+/* A problem takes the place of the amounts and may need two lines. */
+.row-sub.tone-problem {
+  font-weight: 600;
+  white-space: normal;
+}
+
+/* A row that is a button, such as a payer to choose. */
+.row-button {
+  width: calc(100% + 16px);
+  border: 0;
+  border-radius: 0;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+}
+
+.choice-rows {
+  border-top: 1px solid var(--rule);
+}
+
+.choice-rows .row-end {
+  color: var(--ink);
+}
+
+.button-start {
+  align-self: flex-start;
+  margin-left: -10px;
+}
+
+.split-hint {
+  margin-top: -10px;
+}
+
+.split-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.list-head {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 8px;
+  font-size: 0.875rem;
+  color: var(--ink-2);
 }
 
-.payer-row select {
-  flex: 1;
+.list-head .button-quiet {
+  margin-right: -10px;
 }
 
+/* The rows share their columns, so the values and the Cuotas line up whatever
+   their length. */
 .people {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) auto auto;
+  column-gap: 10px;
   list-style: none;
-  margin: 4px 0 0;
+  margin: 0;
   padding: 0;
   border-top: 1px solid var(--rule);
 }
 
+.participants-equal {
+  grid-template-columns: 56px minmax(0, 1fr) auto;
+}
+
+.participants-adjustment {
+  grid-template-columns: 56px minmax(0, 1fr) auto auto;
+}
+
+.participants-exact,
+.people-paid {
+  grid-template-columns: 32px minmax(0, 1fr) auto;
+}
+
 .p-row {
+  grid-column: 1 / -1;
   display: grid;
-  grid-template-columns: 56px minmax(0, 1fr) auto 5.75rem;
+  grid-template-columns: subgrid;
   align-items: center;
-  gap: 8px;
-  min-height: 56px;
+  min-height: 60px;
   border-bottom: 1px solid var(--rule);
   transition: opacity 0.2s;
 }
 
-.participants-equal .p-row {
-  grid-template-columns: 56px minmax(0, 1fr) 5.75rem;
-}
-
-.p-row-input {
-  grid-template-columns: 32px minmax(0, 1fr) 7rem;
-}
-
 /* One focus at a time: while a value is being typed, the other rows step back. */
-.participants:has(input:focus) .p-row:not(:has(input:focus)) {
+.participants:has(input:not([type='checkbox']):focus) .p-row:not(:has(input:focus)) {
   opacity: 0.45;
 }
 
@@ -1729,6 +1787,11 @@ select.input,
   transform: translateY(-1px) rotate(-45deg);
 }
 
+.p-check input:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
 .p-row.is-out .p-name,
 .p-row.is-out .figure,
 .p-row.is-out .p-share {
@@ -1756,12 +1819,8 @@ select.input,
   font-variant-numeric: tabular-nums;
 }
 
-.participants-percentage .input-amount {
+.input-percent {
   width: 4.5rem;
-}
-
-.participants-weights .input-amount {
-  width: 3.5rem;
 }
 
 .p-unit {
@@ -1770,13 +1829,67 @@ select.input,
   color: var(--ink-2);
 }
 
-.participants-exact .p-unit,
-.participants-adjustment .p-unit {
-  display: none;
+/* Proporciones: one part more or less without the keyboard. */
+.stepper {
+  display: flex;
+  align-items: stretch;
+  height: 40px;
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.stepper:hover {
+  border-color: var(--ink-2);
+}
+
+.stepper button {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius);
+  background: none;
+  cursor: pointer;
+}
+
+.stepper button:hover:not(:disabled) {
+  background: var(--sunken);
+}
+
+.stepper button:disabled {
+  color: var(--ink-3);
+  cursor: default;
+}
+
+.stepper input {
+  width: 2.5rem;
+  padding: 0;
+  border: 0;
+  border-inline: 1px solid var(--rule);
+  background: none;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.stepper input:focus {
+  outline: 2px solid var(--focus);
+  outline-offset: -1px;
+}
+
+.stepper input[aria-invalid='true'] {
+  outline: 2px solid var(--ink);
+  outline-offset: -2px;
+}
+
+.stepper input:disabled {
+  opacity: 0.45;
 }
 
 .p-share {
   position: relative;
+  min-width: 4.75rem;
   text-align: right;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
@@ -1802,7 +1915,6 @@ select.input,
   display: grid;
   grid-template-columns: repeat(10, 1fr);
   gap: 3px;
-  margin-top: 18px;
 }
 
 .meter i {
@@ -1821,10 +1933,9 @@ select.input,
 
 .closing {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
   gap: 2px 6px;
-  margin: 8px 0 0;
+  margin: 0;
   font-weight: 600;
 }
 
@@ -1838,24 +1949,8 @@ select.input,
   align-items: baseline;
 }
 
-.closing-sub {
-  flex-basis: 100%;
-  font-size: 0.875rem;
+.closing.tone-quiet {
   font-weight: 400;
-  color: var(--ink-2);
-}
-
-.split-status {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin-top: 8px;
-}
-
-.split-status .closing {
-  margin: 0;
 }
 
 .notice {

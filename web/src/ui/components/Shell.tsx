@@ -171,6 +171,7 @@ export function FirstSync() {
 export function Screen({
   title,
   back,
+  onBack,
   actions,
   tab,
   dock,
@@ -180,6 +181,8 @@ export function Screen({
 }: {
   title?: string
   back?: Route
+  // Runs instead of following `back`, in a view opened over a screen (openOver).
+  onBack?: () => void
   actions?: ReactNode
   tab?: 'home' | 'activity' | 'account'
   dock?: ReactNode
@@ -193,7 +196,18 @@ export function Screen({
       <header className="topbar">
         <div className="topbar-inner">
           {back ? (
-            <a className="topbar-back" href={href(back)} aria-label={t('nav.back')}>
+            <a
+              className="topbar-back"
+              href={href(back)}
+              aria-label={t('nav.back')}
+              onClick={
+                onBack &&
+                ((event) => {
+                  event.preventDefault()
+                  onBack()
+                })
+              }
+            >
               <Icon name="back" />
             </a>
           ) : (

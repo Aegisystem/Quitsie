@@ -1,4 +1,4 @@
-import { useEffect, useId, useState, type CSSProperties } from 'react'
+import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { api, type Category, type Member, type NewExpense as NewExpenseRecord, type SplitMethod, type User } from '../../api/client'
 import { liveExpenses, liveHome, liveLedger, liveRecords, type ExpenseView, type LedgerSummary, type RejectionReason } from '../../local'
@@ -18,9 +18,11 @@ import {
   initialSplitValues,
   methodsFor,
   noFormerShares,
+  switchMethod,
   toOwedShares,
   type SplitValues,
 } from '../forms/expense'
+import { payerStatus, payerSummary, splitStatus, splitSummary, type Say } from '../forms/splitSummary'
 import { activeMembers, isActive } from '../forms/people'
 import { afterEdit, updateExpense, type UpdateOutcome } from '../forms/updateExpense'
 import { problemPointer, readValue, valueError } from '../forms/values'
@@ -28,16 +30,17 @@ import { categories } from '../types'
 import { previewOwedShares, type SplitParticipant } from '../split'
 import { formatDay, todayISO } from '../dates'
 import { AmountInput } from '../forms/AmountInput'
-import { amountPlaceholder, formatAmountInput, formatMoney, formatPercent, readAmount } from '../money'
-import { href, navigate } from '../router'
+import { amountPlaceholder, formatAmountInput, formatMoney, readAmount } from '../money'
+import { closeOver, href, navigate, openOver, type ExpensePart, type Route } from '../router'
+import { PaidScreen, SplitScreen, SummaryRow, type Over } from './ExpenseSplit'
 
-export function NewExpense({ ledgerId, fromRejected }: { ledgerId?: string; fromRejected?: string }) {
+export function NewExpense({ ledgerId, fromRejected, part }: { ledgerId?: string; fromRejected?: string; part?: ExpensePart }) {
   if (!ledgerId) return <PickLedger />
   // Re-mount when the ledger changes so the form starts clean.
-  return <NewExpenseIn key={ledgerId} ledgerId={ledgerId} fromRejected={fromRejected} />
+  return <NewExpenseIn key={ledgerId} ledgerId={ledgerId} fromRejected={fromRejected} part={part} />
 }
 
-function NewExpenseIn({ ledgerId, fromRejected }: { ledgerId: string; fromRejected?: string }) {
+function NewExpenseIn({ ledgerId, fromRejected, part }: { ledgerId: string; fromRejected?: string; part?: ExpensePart }) {
   const { t } = useTranslation()
   const user = useUser()
   const [summary, ledgerLoaded] = useLive(`ledger:${ledgerId}`, () => liveLedger(replica, ledgerId))
@@ -48,7 +51,7 @@ function NewExpenseIn({ ledgerId, fromRejected }: { ledgerId: string; fromReject
   const rejected = records?.rejected.find((record) => record.id === fromRejected)
   const purpose: Purpose =
     rejected?.kind === 'expense' ? { kind: 'fix', id: rejected.id, reason: rejected.reason, draft: rejected.expense } : { kind: 'new' }
-  return <ExpenseForm summary={summary} user={user} me={me} purpose={purpose} />
+  return <ExpenseForm summary={summary} user={user} me={me} purpose={purpose} part={part} />
 }
 
 function PickLedger() {
@@ -88,7 +91,7 @@ function PickLedger() {
 }
 
 // Editing happens online, against the version the form was filled from (ADR 0001).
-export function EditExpense({ ledgerId, expenseId }: { ledgerId: string; expenseId: string }) {
+export function EditExpense({ ledgerId, expenseId, part }: { ledgerId: string; expenseId: string; part?: ExpensePart }) {
   const { t } = useTranslation()
   const user = useUser()
   // A key of its own: the form starts from what the replica has now, never from
@@ -107,12 +110,24 @@ export function EditExpense({ ledgerId, expenseId }: { ledgerId: string; expense
       </Screen>
     )
   }
-  return <EditExpenseFrom key={expenseId} latest={latest} summary={summary} user={user} me={me} />
+  return <EditExpenseFrom key={expenseId} latest={latest} summary={summary} user={user} me={me} part={part} />
 }
 
 // What the Usuario is editing stays put when a newer version reaches the replica:
 // the form tells them, and only loads it when they say so.
-function EditExpenseFrom({ latest, summary, user, me }: { latest: ExpenseView; summary: LedgerSummary; user: User; me: Member }) {
+function EditExpenseFrom({
+  latest,
+  summary,
+  user,
+  me,
+  part,
+}: {
+  latest: ExpenseView
+  summary: LedgerSummary
+  user: User
+  me: Member
+  part?: ExpensePart
+}) {
   const { t } = useTranslation()
   const [editing, setEditing] = useState(latest)
   if (editing.version === undefined || editing.deletedAt) {
@@ -129,6 +144,7 @@ function EditExpenseFrom({ latest, summary, user, me }: { latest: ExpenseView; s
       user={user}
       me={me}
       purpose={{ kind: 'edit', expense: editing, version: editing.version, latest, loadLatest: () => setEditing(latest) }}
+      part={part}
     />
   )
 }
@@ -138,7 +154,19 @@ type Purpose =
   | { kind: 'fix'; id: string; reason: RejectionReason; draft: NewExpenseRecord }
   | { kind: 'edit'; expense: ExpenseView; version: number; latest: ExpenseView; loadLatest: () => void }
 
-function ExpenseForm({ summary, user, me, purpose }: { summary: LedgerSummary; user: User; me: Member; purpose: Purpose }) {
+function ExpenseForm({
+  summary,
+  user,
+  me,
+  purpose,
+  part,
+}: {
+  summary: LedgerSummary
+  user: User
+  me: Member
+  purpose: Purpose
+  part?: ExpensePart
+}) {
   const { t, i18n } = useTranslation()
   const { ledger, members } = summary
   const online = useOnline()
@@ -180,12 +208,7 @@ function ExpenseForm({ summary, user, me, purpose }: { summary: LedgerSummary; u
   const [included, setIncluded] = useState<Record<string, boolean>>(() =>
     Object.fromEntries(active.map((m) => [m.id, draft ? draft.owedShares.some((o) => o.memberId === m.id) : true])),
   )
-  const [values, setValues] = useState<SplitValues>(() =>
-    initialSplitValues(
-      active.map((m) => m.id),
-      draft,
-    ),
-  )
+  const [values, setValues] = useState<SplitValues>(() => initialSplitValues(draft))
   const [touched, setTouched] = useState(false)
   const [saving, setSaving] = useState(false)
   const [failure, setFailure] = useState<UpdateOutcome>()
@@ -218,7 +241,6 @@ function ExpenseForm({ summary, user, me, purpose }: { summary: LedgerSummary; u
   })
 
   const preview = previewOwedShares(total, method, participants)
-  const shareOf = (id: string) => preview.shares.find((x) => x.memberId === id)
   const formerChange = preview.owedShares && changedFormerShare(former, preview.owedShares)
 
   const paidProblems = new Map<string, string>()
@@ -275,6 +297,32 @@ function ExpenseForm({ summary, user, me, purpose }: { summary: LedgerSummary; u
     if (changed) window.scrollTo(0, 0)
   }, [changed])
 
+  // The form's own address, under the parts opened over it.
+  const formRoute: Route = editing
+    ? { name: 'editExpense', ledgerId: ledger.id, expenseId: editing.expense.id }
+    : { name: 'newExpense', ledgerId: ledger.id, fromRejected: purpose.kind === 'fix' ? purpose.id : undefined }
+  const paidRow = useRef<HTMLAnchorElement>(null)
+  const splitRow = useRef<HTMLAnchorElement>(null)
+  // A part starts at the top. Closing it puts the form back where it was, with
+  // the focus on the line that opened it.
+  const formScroll = useRef(0)
+  const shownPart = useRef(part)
+  useLayoutEffect(() => {
+    const before = shownPart.current
+    shownPart.current = part
+    if (before === part) return
+    if (part) {
+      window.scrollTo(0, 0)
+      return
+    }
+    window.scrollTo(0, formScroll.current)
+    if (before) (before === 'paid' ? paidRow : splitRow).current?.focus({ preventScroll: true })
+  }, [part])
+  const open = (which: ExpensePart) => {
+    formScroll.current = window.scrollY
+    openOver({ ...formRoute, part: which })
+  }
+
   const setValue = (id: string, text: string) => setValues((v) => ({ ...v, [method]: { ...v[method], [id]: text } }))
   // Any change the User makes: every field of the form reports it with a change
   // event, and the few controls that do not call it themselves.
@@ -319,38 +367,105 @@ function ExpenseForm({ summary, user, me, purpose }: { summary: LedgerSummary; u
   const remainderShares = preview.shares.filter((x) => x.remainder > 0)
   const remainderTotal = remainderShares.reduce((sum, x) => sum + x.remainder, 0)
 
-  let closing: { tone: 'even' | 'problem' | 'quiet'; text: string }
-  if (total <= 0) closing = { tone: 'quiet', text: errors.amount ?? t('expenseForm.amountRequired') }
-  else if (valueProblem) closing = { tone: 'problem', text: valueProblem }
-  else if (preview.issue === 'noParticipants') closing = { tone: 'problem', text: t('expenseForm.noParticipants') }
-  else if (preview.issue === 'noWeights') closing = { tone: 'problem', text: t('expenseForm.noWeights') }
-  else if (preview.issue === 'negativeShare') closing = { tone: 'problem', text: t('expenseForm.negativeShare') }
-  else if (preview.issue === 'invalidValue') closing = { tone: 'problem', text: t('expenseForm.invalidValue') }
-  else if (preview.issue === 'percentageNot100')
-    closing =
-      percentSum < 10000
-        ? { tone: 'problem', text: t('expenseForm.percentMissing', { value: formatPercent(10000 - percentSum) }) }
-        : { tone: 'problem', text: t('expenseForm.percentOver', { value: formatPercent(percentSum - 10000) }) }
-  else if (preview.unassigned > 0) closing = { tone: 'problem', text: t('expenseForm.missing', { amount: money(preview.unassigned) }) }
-  else if (preview.unassigned < 0) closing = { tone: 'problem', text: t('expenseForm.over', { amount: money(-preview.unassigned) }) }
-  else if (formerChange)
-    closing = {
-      tone: 'problem',
-      text: t('expenseForm.formerShareChanges', { name: nameOf(formerChange.memberId), from: money(formerChange.from), to: money(formerChange.to) }),
-    }
-  else closing = { tone: 'even', text: t('expenseForm.closes') }
+  const say: Say = { t, nameOf, money }
+  const closing = splitStatus(
+    { total, method, issue: preview.issue, unassigned: preview.unassigned, percentSum, valueProblem, formerChange },
+    say,
+  )
+  const payersClosing = payerStatus({ left: paidLeft, paidProblem }, say)
+  const payersProblem = payersClosing.tone === 'problem' ? payersClosing.text : undefined
+  const takingPart = participants.filter((p) => p.included).map((p) => p.memberId)
+  const payerLine = payerSummary({ many: manyPayers, paid: paidShares, problem: payersProblem, me: me.id }, say)
+  const splitLine = splitSummary(
+    {
+      method,
+      takingPart,
+      everyone: splitting.length,
+      shares: preview.owedShares?.map(({ participantId, amount }) => ({ memberId: participantId, amount })),
+      problem: closing.tone === 'problem' ? closing.text : undefined,
+      me: me.id,
+    },
+    say,
+  )
 
   // What stops the save, said next to the button so it never looks dead.
-  const blocking =
-    errors.amount ??
-    errors.description ??
-    (!splitOk ? closing.text : undefined) ??
-    paidProblem ??
-    (paidLeft > 0
-      ? t('expenseForm.payersLeft', { amount: money(paidLeft) })
-      : paidLeft < 0
-        ? t('expenseForm.payersOver', { amount: money(-paidLeft) })
-        : undefined)
+  const blocking = errors.amount ?? errors.description ?? (!splitOk ? closing.text : undefined) ?? payersProblem
+
+  // A new method keeps who takes part and starts from the split on screen.
+  const chooseMethod = (to: SplitMethod) => {
+    const shares = splitOk && preview.owedShares ? new Map(preview.owedShares.map((s) => [s.participantId, s.amount])) : undefined
+    const next = switchMethod(to, { values, included, activeIds: active.map((m) => m.id), takingPart, shares, currency })
+    setValues(next.values)
+    setIncluded(next.included)
+    setMethod(to)
+  }
+
+  const formerNotice = formerNames.length > 0 && (
+    <p className="notice">{t('expenseForm.formerNote', { count: formerNames.length, names: new Intl.ListFormat(i18n.language).format(formerNames) })}</p>
+  )
+  const over: Over = {
+    back: formRoute,
+    close: () => closeOver(formRoute),
+    onEdit: edited,
+    context: [description.trim() || ledgerName(summary, user.id), total > 0 ? money(total) : undefined].filter(Boolean).join(' · '),
+    notices: formerNotice,
+  }
+
+  if (part === 'paid') {
+    return (
+      <PaidScreen
+        over={over}
+        active={active}
+        payers={payers}
+        many={manyPayers}
+        payer={payer}
+        formerPaid={former.paid}
+        paidText={paidText}
+        paidProblems={paidProblems}
+        status={payersClosing}
+        touched={touched}
+        currency={currency}
+        me={me.id}
+        nameOf={nameOf}
+        onPick={(id) => {
+          setPayer(id)
+          edited()
+          over.close()
+        }}
+        onMany={setManyPayers}
+        onPaidText={(id, text) => setPaidText((p) => ({ ...p, [id]: text }))}
+      />
+    )
+  }
+  if (part === 'split') {
+    return (
+      <SplitScreen
+        over={over}
+        methods={methodsFor(draft?.splitMethod, former)}
+        method={method}
+        onMethod={chooseMethod}
+        formerMethods={former.owed.size > 0}
+        members={splitting}
+        participants={participants}
+        preview={preview}
+        kept={new Set(former.owed.keys())}
+        values={values}
+        onValue={setValue}
+        included={included}
+        onInclude={(ids, on) => setIncluded((x) => ({ ...x, ...Object.fromEntries(ids.map((id) => [id, on])) }))}
+        valueProblems={valueProblems}
+        status={closing}
+        progress={progress}
+        remainder={
+          remainderTotal > 0 && !preview.issue ? t('expenseForm.remainder', { count: remainderShares.length, amount: money(remainderTotal) }) : undefined
+        }
+        touched={touched}
+        currency={currency}
+        nameOf={nameOf}
+        money={money}
+      />
+    )
+  }
 
   const backRoute = { name: 'ledger' as const, ledgerId: ledger.id }
   const title = editing ? t('expenseForm.editTitle') : purpose.kind === 'fix' ? t('expenseForm.fixTitle') : t('expenseForm.title')
@@ -425,11 +540,7 @@ function ExpenseForm({ summary, user, me, purpose }: { summary: LedgerSummary; u
 
         {purpose.kind === 'fix' && <p className="notice notice-problem">{rejectionText(purpose, groupCurrency, t)}</p>}
 
-        {formerNames.length > 0 && (
-          <p className="notice">
-            {t('expenseForm.formerNote', { count: formerNames.length, names: new Intl.ListFormat(i18n.language).format(formerNames) })}
-          </p>
-        )}
+        {formerNotice}
 
         <div className="field field-amount">
           <label htmlFor={`${ids}-amount`}>{t('expenseForm.amount')}</label>
@@ -522,189 +633,31 @@ function ExpenseForm({ summary, user, me, purpose }: { summary: LedgerSummary; u
         </div>
 
         <fieldset className="field">
-          <legend>{t('expenseForm.paidBy')}</legend>
-          {!manyPayers ? (
-            <div className="payer-row">
-              <select className="input" value={payer} onChange={(e) => setPayer(e.target.value)} aria-label={t('expenseForm.paidBy')}>
-                {active.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {nameOf(m.id)}
-                  </option>
-                ))}
-              </select>
-              <button
-                type="button"
-                className="button button-small button-quiet"
-                onClick={() => {
-                  setManyPayers(true)
-                  edited()
-                }}
-              >
-                {t('expenseForm.severalPayers')}
-              </button>
-            </div>
-          ) : (
-            <>
-              <ul className="people">
-                {payers.map((m) => {
-                  const problem = touched ? paidProblems.get(m.id) : undefined
-                  return (
-                    <li key={m.id} className="p-row p-row-input">
-                      <Figure state={figureState(m)} size={24} />
-                      <span className="p-name">{nameOf(m.id)}</span>
-                      <AmountInput
-                        className="input input-amount"
-                        currency={currency}
-                        placeholder="0"
-                        aria-label={t('expenseForm.valueFor', { name: nameOf(m.id) })}
-                        value={paidText[m.id] ?? ''}
-                        disabled={former.paid.has(m.id)}
-                        onChange={(text) => setPaidText((p) => ({ ...p, [m.id]: text }))}
-                        aria-invalid={!!problem}
-                        aria-describedby={problem ? `${ids}-paid-${m.id}` : undefined}
-                      />
-                      {problem && (
-                        <p className="field-error p-error" id={`${ids}-paid-${m.id}`}>
-                          {problem}
-                        </p>
-                      )}
-                    </li>
-                  )
-                })}
-              </ul>
-              <div className="split-status">
-                <p className={`closing tone-${!paidProblem && paidLeft === 0 ? 'even' : 'problem'}`}>
-                  {!paidProblem && paidLeft === 0 && <Icon name="check" size={18} />}
-                  <span className="closing-text">
-                    {paidProblem ??
-                      (paidLeft === 0
-                        ? t('expenseForm.payersOk')
-                        : paidLeft > 0
-                          ? t('expenseForm.payersLeft', { amount: money(paidLeft) })
-                          : t('expenseForm.payersOver', { amount: money(-paidLeft) }))}
-                  </span>
-                </p>
-                {former.paid.size === 0 && (
-                  <button
-                    type="button"
-                    className="button button-small button-quiet"
-                    onClick={() => {
-                      setManyPayers(false)
-                      edited()
-                    }}
-                  >
-                    {t('expenseForm.onePayer')}
-                  </button>
-                )}
-              </div>
-            </>
-          )}
-        </fieldset>
-
-        <fieldset className="field">
           <legend>{t('expenseForm.split')}</legend>
-          <div className="chips" role="radiogroup" aria-label={t('expenseForm.splitMethod')}>
-            {methodsFor(draft?.splitMethod, former).map((m) => (
-              <label key={m} className="chip">
-                <input type="radio" name={`${ids}-method`} checked={method === m} onChange={() => setMethod(m)} />
-                <span>{t(`splitMethods.${m}`)}</span>
-              </label>
-            ))}
-          </div>
-          <p className="hint">
-            {t(`splitHints.${method}`)} {former.owed.size > 0 && t('expenseForm.formerMethods')}
-          </p>
-
-          <ul className={`people participants participants-${method}`} aria-label={t('expenseForm.participants')}>
-            {splitting.map((m) => {
-              const share = shareOf(m.id)
-              const kept = former.owed.has(m.id)
-              const checkable = method === 'equal' || method === 'adjustment'
-              const on = participants.find((p) => p.memberId === m.id)?.included ?? false
-              // Once the split closes, a Cuota of zero is real (1 cent among three).
-              const owes = !!share && on && (share.amount !== 0 || !!preview.owedShares)
-              const problem = touched ? valueProblems.get(m.id) : undefined
-              return (
-                <li key={m.id} className={`p-row${on ? '' : ' is-out'}`}>
-                  {checkable ? (
-                    <label className="p-check">
-                      <input
-                        type="checkbox"
-                        checked={kept || (included[m.id] ?? false)}
-                        disabled={kept}
-                        onChange={(e) => setIncluded((x) => ({ ...x, [m.id]: e.target.checked }))}
-                        aria-label={t('expenseForm.includes', { name: nameOf(m.id) })}
-                      />
-                      <Figure state={figureState(m)} size={24} />
-                    </label>
-                  ) : (
-                    <Figure state={figureState(m)} size={24} />
-                  )}
-                  <span className="p-name">{nameOf(m.id)}</span>
-                  {method !== 'equal' && (
-                    <span className="p-value">
-                      {method === 'exact' || method === 'adjustment' ? (
-                        <AmountInput
-                          className="input input-amount"
-                          currency={currency}
-                          allowNegative={method === 'adjustment'}
-                          placeholder={method === 'adjustment' ? '+0' : '0'}
-                          aria-label={t('expenseForm.valueFor', { name: nameOf(m.id) })}
-                          value={values[method][m.id] ?? ''}
-                          disabled={kept || (method === 'adjustment' && !included[m.id])}
-                          onChange={(text) => setValue(m.id, text)}
-                          aria-invalid={!!problem}
-                          aria-describedby={problem ? `${ids}-value-${m.id}` : undefined}
-                        />
-                      ) : (
-                        <input
-                          className="input input-amount"
-                          inputMode={method === 'weights' ? 'numeric' : 'decimal'}
-                          placeholder="0"
-                          aria-label={t('expenseForm.valueFor', { name: nameOf(m.id) })}
-                          value={values[method][m.id] ?? ''}
-                          disabled={kept}
-                          onChange={(e) => setValue(m.id, e.target.value)}
-                          aria-invalid={!!problem}
-                          aria-describedby={problem ? `${ids}-value-${m.id}` : undefined}
-                        />
-                      )}
-                      <span className="p-unit" aria-hidden="true">
-                        {method === 'percentage' ? '%' : method === 'weights' ? t('expenseForm.weightUnit') : ''}
-                      </span>
-                    </span>
-                  )}
-                  <span className="p-share" aria-label={t('expenseForm.shareFor', { name: nameOf(m.id) })}>
-                    {owes ? money(share.amount) : '—'}
-                    {share && share.remainder > 0 && <sup className="p-remainder">+{money(share.remainder)}</sup>}
-                  </span>
-                  {problem && (
-                    <p className="field-error p-error" id={`${ids}-value-${m.id}`}>
-                      {problem}
-                    </p>
-                  )}
-                </li>
-              )
-            })}
+          <ul className="rows split-lines">
+            <li>
+              <SummaryRow
+                rowRef={paidRow}
+                label={t('expenseForm.paidTitle')}
+                line={payerLine}
+                glyph={manyPayers ? <GroupGlyph size={26} /> : <Figure state={figureState(members.find((m) => m.id === payer))} size={26} />}
+                href={href({ ...formRoute, part: 'paid' })}
+                onOpen={() => open('paid')}
+              />
+            </li>
+            <li>
+              <SummaryRow
+                rowRef={splitRow}
+                label={t('expenseForm.splitTitle')}
+                line={splitLine}
+                glyph={
+                  takingPart.length === 1 ? <Figure state={figureState(members.find((m) => m.id === takingPart[0]))} size={26} /> : <GroupGlyph size={26} />
+                }
+                href={href({ ...formRoute, part: 'split' })}
+                onOpen={() => open('split')}
+              />
+            </li>
           </ul>
-
-          <div className="meter" aria-hidden="true" style={{ '--p': Math.max(0, Math.min(1, progress)) } as CSSProperties}>
-            {Array.from({ length: 10 }, (_, i) => (
-              <i key={i} className={progress > 1 ? 'is-over' : ''} style={{ '--b': Math.max(0, Math.min(1, progress * 10 - i)) } as CSSProperties} />
-            ))}
-          </div>
-          <p className={`closing tone-${closing.tone}`} role="status">
-            {closing.tone === 'even' && <Icon name="check" size={18} />}
-            <span className="closing-text">{closing.text}</span>
-            {total > 0 && !preview.issue && (
-              <span className="closing-sub">{t('expenseForm.assigned', { assigned: money(preview.assigned), total: money(total) })}</span>
-            )}
-          </p>
-          {remainderTotal > 0 && !preview.issue && (
-            <p className="hint">
-              {t('expenseForm.remainder', { count: remainderShares.length, amount: money(remainderTotal) })}
-            </p>
-          )}
         </fieldset>
         <button type="submit" hidden />
       </form>
