@@ -1669,16 +1669,6 @@ select.input,
   white-space: normal;
 }
 
-/* A row that is a button, such as a payer to choose. */
-.row-button {
-  width: calc(100% + 16px);
-  border: 0;
-  border-radius: 0;
-  background: none;
-  text-align: left;
-  cursor: pointer;
-}
-
 .choice-rows {
   border-top: 1px solid var(--rule);
 }
