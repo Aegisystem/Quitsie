@@ -33,7 +33,8 @@ test('an Expense saved offline counts in the Saldo and reaches the server on rec
   await expect(provisional).toBeHidden()
   await expect(unsyncedMark(expenseRow(page, 'Cena'))).toBeHidden()
   await expect(balance(page)).toContainText('$60')
-  expect((await deviceRows(page)).queue).toBe(0)
+  // The server accepted it, but it leaves the queue with the pull that follows.
+  await expect.poll(async () => (await deviceRows(page)).queue).toBe(0)
   expect((await serverChanges(page)).expenses).toMatchObject([{ description: 'Cena', total: 12000 }])
 })
 

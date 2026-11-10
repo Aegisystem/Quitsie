@@ -88,7 +88,28 @@ export const expenseRow = (page: Page, description: string): Locator => page.get
 
 export const unsyncedMark = (row: Locator): Locator => row.getByRole('img', { name: 'Sin sincronizar' })
 
+// Whether the device's replica has the Expense with a version, which the edit
+// form needs. Once the server accepts it, the mark of the queue goes; the
+// version only comes with the pull that follows.
+function inReplica(page: Page, description: string): Promise<boolean> {
+  return page.evaluate(async (description) => {
+    const db = await new Promise<IDBDatabase>((resolve, reject) => {
+      const open = indexedDB.open('quitsie')
+      open.onsuccess = () => resolve(open.result)
+      open.onerror = () => reject(open.error)
+    })
+    const expenses = await new Promise<{ description: string; version?: number }[]>((resolve, reject) => {
+      const all = db.transaction('expenses').objectStore('expenses').getAll()
+      all.onsuccess = () => resolve(all.result)
+      all.onerror = () => reject(all.error)
+    })
+    db.close()
+    return expenses.some((expense) => expense.description === description && expense.version !== undefined)
+  }, description)
+}
+
 export async function openEditForm(page: Page, description: string) {
+  await expect.poll(() => inReplica(page, description)).toBe(true)
   await expenseRow(page, description).getByRole('button', { expanded: false }).click()
   await page.getByRole('link', { name: 'Editar gasto' }).click()
   await expect(page.getByLabel('Descripción')).toHaveValue(description)

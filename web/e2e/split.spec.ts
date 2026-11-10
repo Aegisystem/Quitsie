@@ -1,5 +1,5 @@
 import { type Page } from '@playwright/test'
-import { createGroup, expect, expenseRow, openEditForm, serverChanges, signUp, test, unsyncedMark } from './support'
+import { createGroup, expect, expenseRow, openEditForm, serverChanges, signUp, test } from './support'
 
 // The split of an Expense opens in screens of its own, over the form (DESIGN.md, Reparto).
 const paidLine = (page: Page) => page.getByRole('link', { name: /^Quién pagó:/ })
@@ -82,8 +82,7 @@ test('who paid and how it is divided open over the form, and going back keeps ev
   await ana.getByRole('button', { name: /^Guardar/ }).click()
   await expect(expenseRow(ana, 'Cena')).toBeVisible()
 
-  // Editing brings the split back as it was saved, once the server has it.
-  await expect(unsyncedMark(expenseRow(ana, 'Cena'))).toBeHidden()
+  // Editing brings the split back as it was saved.
   await openEditForm(ana, 'Cena')
   await expect(paidLine(ana)).toContainText('Pagó Beto')
   await splitLine(ana).click()
