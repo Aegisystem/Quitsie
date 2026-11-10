@@ -242,7 +242,7 @@ Color plano de imprenta: cuatro tintas con significado sobre una escala neutra l
 - **Rojo en contra** (against): banda «Debes», fichas y cifras de lo que el Usuario debe, lado izquierdo del gráfico de Saldos. Nada más.
 
 ### Tertiary
-- **Verde a mano** (even): banda «Estás a mano», etiqueta «a mano», el punto de equilibrio sobre el eje, el medidor del reparto cuando cierra justo y el fondo de la marca Quitsie (dos barras iguales).
+- **Verde a mano** (even): banda «Estás a mano», etiqueta «a mano», el punto de equilibrio sobre el eje, el medidor del reparto cuando cuadra y el fondo de la marca Quitsie (dos barras iguales).
 - **Ocre de espera** (pending): banda sin conexión, chip de estado sin conexión y contador de registros. Siempre con texto en tinta encima.
 - **Ocre de texto** (pending-ink): versión legible del ocre para texto y trazos sobre fondo claro: etiqueta «pendiente» discontinua, anillo de registro sin sincronizar, sobrante del reparto, coincidencia al Reclamar.
 
@@ -379,7 +379,12 @@ Un campo de color pleno por moneda: «Te deben» o «Debes» (1.0625rem, blanco 
 Leyenda arriba («A la izquierda, lo que se debe; a la derecha, lo que se le debe a cada uno» y «cada ● = importe»). Por Miembro: figura, nombre, etiqueta y cifra; debajo, un eje vertical de tinta de 2px con fichas rojas hacia la izquierda (alineadas al eje, la fracción cortada por su lado exterior) o azules hacia la derecha, y un anillo verde sobre el eje si está a mano. Cada cifra despliega su prueba: la lista de Gastos y Liquidaciones que la forman.
 
 ### Reparto
-Filas de participante con casilla de tinta, figura, valor y Cuota tabular. Mientras se escribe un valor, las demás filas bajan al 45 % (un foco a la vez). Debajo, un medidor de 10 celdas que se llena en tinta, se raya si se pasa y se vuelve verde cuando cierra justo, con el texto de cierre en tinta tachada o en verde con check. El sobrante de céntimos aparece en ocre sobre la Cuota.
+En el formulario de gasto, el reparto son dos filas bajo «Reparto»: quién pagó («Pagaste tú» y el total) y cómo se divide («Partes iguales entre los 4» y «$30.00 cada uno», o la lista de Cuotas). Son filas de enlace como las de los listados, con figura y chevron. Cada fila abre su propia pantalla sobre el formulario, con dirección propia (`part=paid` o `part=split`): el botón Atrás de la app, el del navegador y «Listo» vuelven al gasto sin perder lo escrito, en el mismo punto y con el foco en la fila que se tocó. Si el reparto no cuadra, la fila muestra el problema en tinta tachada en lugar de las Cuotas.
+
+- **Quién pagó:** una fila por persona, y la elegida lleva un check. Tocar una la elige y vuelve al gasto. La última fila, «Pagaron varios», cambia la lista por un campo de importe por persona, con el estado y «Listo» en el dock. Lo que falta por cubrir se marca como problema solo después de intentar guardar.
+- **Cómo se divide:** los métodos van en una fila de chips que se desplaza, como las Categorías, con la pista del método debajo. Partes iguales y Ajustes llevan casilla de tinta y «Marcar a todos» o «Quitar a todos». Proporciones lleva botones − y + alrededor de las partes. Las filas comparten columnas (subgrid), así que valores y Cuotas quedan alineados aunque sean largos. Mientras se escribe un valor, las demás filas bajan al 45 % (un foco a la vez).
+- Al cambiar de método se conservan las personas que participan. Un método sin valores empieza con el reparto en pantalla: Montos exactos con las Cuotas, Porcentajes con la parte de cada uno, que suma 100, y Proporciones con una parte por persona.
+- El dock lleva el medidor de 10 celdas, una línea de estado y «Listo». El medidor se llena en tinta, se raya si se pasa y se vuelve verde cuando cuadra. El estado va en tinta tachada, o en verde con check («Cuadra con el total de $120.00»). «Listo» vuelve al gasto aunque el reparto no cuadre, porque a veces lo que hay que corregir es el importe. El sobrante de céntimos aparece en ocre sobre la Cuota.
 
 ### Marcas de estado de registro
 Celda fija de 10px al final de la fila: punto rule-strong si está sincronizado, anillo ocre si no, círculo tachado en tinta si fue rechazado.
