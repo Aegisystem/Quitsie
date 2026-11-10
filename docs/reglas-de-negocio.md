@@ -22,14 +22,13 @@ Reglas acordadas durante el diseño. El vocabulario sigue [CONTEXT.md](../CONTEX
 
 ## Deudas
 
-- Sin Simplificación de deudas, las Deudas se calculan Gasto a Gasto: dentro de cada Gasto, quienes deben les deben a quienes pusieron de más, en proporción a lo que cada uno puso de más, con el sobrante repartido de forma determinista. Luego se compensan las Deudas en sentidos opuestos y se restan las Liquidaciones.
-- Con Simplificación de deudas, se parte de los Saldos y quien más debe le paga a quien más se le debe, hasta saldar todo. Deja como mucho un pago menos que el número de personas con Saldo distinto de cero; es una aproximación al mínimo.
-- Una Deuda simplificada nunca supera los Saldos de quienes la deben y la cobran. Una Deuda entre dos personas sí puede: si Ana paga por Beto, Beto por Carla y Carla por Ana, cada pareja se debe más con cada vuelta y los Saldos siguen en cero. Si alguna superara el tope de los Saldos (ver [Límites](#límites)), el libro muestra las Deudas simplificadas, que saldan lo mismo.
+- La Simplificación de deudas está siempre activada: la aplicación no ofrece desactivarla (decidido el 2026-11-10). Se parte de los Saldos y quien más debe le paga a quien más se le debe, hasta saldar todo. Deja como mucho un pago menos que el número de personas con Saldo distinto de cero; es una aproximación al mínimo.
+- Una Deuda simplificada nunca supera los Saldos de quienes la deben y la cobran.
+- La API todavía acepta desactivarla en un Grupo (`simplifyDebts` en `PATCH /groups/{groupId}`). Sin ella, las Deudas se calculan Gasto a Gasto: dentro de cada Gasto, quienes deben les deben a quienes pusieron de más, en proporción a lo que cada uno puso de más, con el sobrante repartido de forma determinista. Luego se compensan las Deudas en sentidos opuestos y se restan las Liquidaciones. Una Deuda entre dos personas sí puede superar los Saldos: si Ana paga por Beto, Beto por Carla y Carla por Ana, cada pareja se debe más con cada vuelta y los Saldos siguen en cero. Si alguna superara el tope de los Saldos (ver [Límites](#límites)), el libro muestra las Deudas simplificadas, que saldan lo mismo.
 
 ## Grupos
 
-- No hay roles: todos los Miembros vinculados pueden lo mismo (añadir Miembros, editar Gastos, cambiar la Simplificación de deudas, regenerar el Enlace de invitación).
-- La Simplificación de deudas viene activada por defecto.
+- No hay roles: todos los Miembros vinculados pueden lo mismo (añadir Miembros, editar Gastos, regenerar el Enlace de invitación).
 - Nadie puede salir ni ser sacado de un Grupo con Saldo distinto de cero; al salir pasa a ser Antiguo Miembro y pierde el acceso al Grupo, aunque su nombre sigue en los Gastos pasados.
 - Cualquier Miembro vinculado puede sacar a otro Miembro, pendiente o vinculado, si su Saldo es cero.
 - Quien fue sacado de un Grupo no puede volver a entrar con el Enlace de invitación hasta que un Miembro vinculado lo readmita. Quien salió por su cuenta sí puede volver con el enlace.

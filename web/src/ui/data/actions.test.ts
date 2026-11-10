@@ -72,13 +72,3 @@ describe('deleting and restoring records', () => {
     await expect(actions.deleteRecord('expense', id)).resolves.toBe('offline')
   })
 })
-
-describe('Debt simplification', () => {
-  it('sends the new value and then syncs', async () => {
-    const { actions, requests, sync } = setup(() => new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json' } }))
-    await expect(actions.setSimplifyDebts(id, false)).resolves.toBe('done')
-    expect(requests[0]?.method).toBe('PATCH')
-    await expect(requests[0]?.json()).resolves.toEqual({ simplifyDebts: false })
-    expect(sync).toHaveBeenCalledOnce()
-  })
-})

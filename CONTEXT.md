@@ -111,7 +111,7 @@ Cantidad que una persona le debe a otra persona concreta.
 _En código_: `Debt`
 
 **Simplificación de deudas**:
-Reorganización de las Deudas de un Grupo para saldarlas con el menor número de pagos sin cambiar ningún Saldo. Se activa o desactiva por Grupo.
+Reorganización de las Deudas de un Grupo para saldarlas con el menor número de pagos sin cambiar ningún Saldo. Está siempre activada en la aplicación; la API todavía permite desactivarla por Grupo.
 _En código_: debt simplification (`Group.SimplifyDebts`)
 
 **Liquidación**:

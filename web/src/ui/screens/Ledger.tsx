@@ -473,39 +473,15 @@ function BalancesTab({ group, members, me }: { group: Group; members: readonly M
 
 function DebtsTab({ group, members, me, debts }: { group: Group; members: readonly Member[]; me: string; debts: readonly Debt[] }) {
   const { t } = useTranslation()
-  const online = useOnline()
   const name = useNames(members, me)
   const [records] = useLive('records', () => liveRecords(replica))
-  const [saving, setSaving] = useState(false)
   const unit = tallyUnit(Math.max(1, ...debts.map((d) => d.amount)), group.currency, 7)
   const memberById = (id: string) => members.find((m) => m.id === id)
 
-  const setSimplify = async (on: boolean) => {
-    setSaving(true)
-    const result = await actions.setSimplifyDebts(group.id, on)
-    setSaving(false)
-    if (result !== 'done') toast(result === 'offline' ? t('common.noAnswer') : t('common.tryAgain'))
-  }
-
+  // Debt simplification is always on (docs/reglas-de-negocio.md): the fewest
+  // payments that leave everyone even.
   return (
     <>
-      <label className="switch-row">
-        <span>
-          <span className="switch-title">{t('ledger.simplifyToggle')}</span>
-          <span className="switch-hint">{group.simplifyDebts ? t('ledger.simplifyOn') : t('ledger.simplifyOff')}</span>
-          {!online && <span className="switch-hint">{t('ledger.simplifyOffline')}</span>}
-        </span>
-        <input
-          type="checkbox"
-          role="switch"
-          className="switch"
-          checked={group.simplifyDebts}
-          disabled={!online || saving}
-          title={online ? undefined : t('common.onlineOnly')}
-          onChange={(e) => void setSimplify(e.target.checked)}
-        />
-      </label>
-
       <h2 className="section-title">{t('ledger.debtsTitle')}</h2>
       {records?.unsynced.some((record) => record.ledgerId === group.id) && <p className="hint">{t('ledger.debtsWithoutQueue')}</p>}
       {debts.length === 0 ? (

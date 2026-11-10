@@ -41,7 +41,7 @@ Registrar gastos compartidos y saber en todo momento quién le debe cuánto a qu
 - Términos y nombres en código: CONTEXT.md (ADR 0009). En los textos se dice "Saldo", nunca "balance"; "Liquidación", nunca "pago" ni "reembolso".
 - Importes en enteros de la unidad mínima de su moneda (ISO 4217) y con sus decimales; nunca coma flotante.
 - Un Gasto sin grupo es siempre entre dos personas (ADR 0004).
-- La Simplificación de deudas viene activada por defecto y solo la calcula el servidor; sin conexión se muestran Saldos provisionales.
+- La Simplificación de deudas está siempre activada y solo la calcula el servidor; sin conexión se muestran Saldos provisionales.
 - v1 solo en español, con i18n preparada para más idiomas.
 - Sin decidir: precio o modelo de negocio, dominio, iconografía y paleta definitivas.
 

@@ -51,8 +51,5 @@ export function createActions({ api, engine }: { api: Api; engine: Pick<SyncEngi
           ? api.POST('/expenses/{expenseId}/restore', { params: { path: { expenseId: id } } })
           : api.POST('/settlements/{settlementId}/restore', { params: { path: { settlementId: id } } }),
       ),
-
-    setSimplifyDebts: (groupId: string, simplifyDebts: boolean) =>
-      run(() => api.PATCH('/groups/{groupId}', { params: { path: { groupId } }, body: { simplifyDebts } })),
   }
 }

@@ -321,7 +321,7 @@ El sistema es plano. No hay `box-shadow` de elevación en ningún elemento. La p
 
 ## Shapes
 
-Un solo radio suave (6px) para botones, campos, avisos, tarjetas, toasts y celdas; píldora (999px) para chips, etiquetas, interruptor y chip de estado; círculo perfecto para fichas, marcas de sincronización y el punto de equilibrio; 4px para la casilla del reparto. Las bandas de Saldo no tienen radio: son campos de color a sangre, separados por 3px de papel (en fila, 4px de calle).
+Un solo radio suave (6px) para botones, campos, avisos, tarjetas, toasts y celdas; píldora (999px) para chips, etiquetas y chip de estado; círculo perfecto para fichas, marcas de sincronización y el punto de equilibrio; 4px para la casilla del reparto. Las bandas de Saldo no tienen radio: son campos de color a sangre, separados por 3px de papel (en fila, 4px de calle).
 
 ### Fichas
 La ficha es un círculo lleno del color del texto (`currentColor`), 14px por defecto: 16px en bandas, 13px en el gráfico de Saldos, 10px en Deudas, 18px en el inicio de sesión. Separación de 4px. La unidad se elige de 1, 2 o 5 por potencia de diez para que no haya más de 10 fichas y nunca vale menos de una unidad entera de la moneda.
@@ -390,7 +390,7 @@ En el formulario de gasto, el reparto son dos filas bajo «Reparto»: quién pag
 Celda fija de 10px al final de la fila: punto rule-strong si está sincronizado, anillo ocre si no, círculo tachado en tinta si fue rechazado.
 
 ### Movimiento
-Una sola curva de salida, `cubic-bezier(0.16, 1, 0.3, 1)`. Las fichas entran escalando de 0.3 a 1 en 0.5s con 40ms de escalonado. Cuando un Saldo baja, las que sobran salen al revés, la última primero, y cierran su hueco; una banda que llega a cero se queda, a cero, hasta que su fila se vacía. El toast sube 12px en 0.45s; el interruptor se desliza en 0.3s; los botones cambian de fondo en 0.15s. Con `prefers-reduced-motion` se apagan las animaciones de fichas y toast y las transiciones del interruptor y del reparto.
+Una sola curva de salida, `cubic-bezier(0.16, 1, 0.3, 1)`. Las fichas entran escalando de 0.3 a 1 en 0.5s con 40ms de escalonado. Cuando un Saldo baja, las que sobran salen al revés, la última primero, y cierran su hueco; una banda que llega a cero se queda, a cero, hasta que su fila se vacía. El toast sube 12px en 0.45s; los botones cambian de fondo en 0.15s. Con `prefers-reduced-motion` se apagan las animaciones de fichas y toast y las transiciones del reparto.
 
 ### Voz
 Español neutro, tuteo, frases cortas. Vocabulario fijo: «Saldo», nunca «balance»; «Liquidación», nunca «pago» ni «reembolso». Un guiño ligero en estados vacíos y en el a mano («Así da gusto.», «Cuentas claras, amistades largas.»); precisión seca en errores y dinero.

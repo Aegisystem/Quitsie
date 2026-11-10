@@ -48,7 +48,6 @@ Ningún agente debe tomar estas decisiones por su cuenta.
 | 13 | Registros rechazados sin conexión | Descartar y corregir están deshabilitados, aunque ambos son locales |
 | 14 | Cifras de los límites de entrada | Provisionales: 40 correos por hora y 90 al día entre todos, un minuto de espera entre códigos por email y por dispositivo conocido (decidido el 2026-11-07), y 10 fallos al día por email y por dispositivo conocido. Se cambian por entorno las dos primeras y en `api/internal/auth/` el resto |
 | 15 | HSTS con `includeSubDomains` y `preload` | Solo la precarga protege la primera visita por `http://`, y exige `includeSubDomains`, que alcanza a los demás subdominios del dominio |
-| 16 | Deudas por parejas por encima de 2^53 - 1 | El Grupo muestra en silencio las Deudas simplificadas aunque tenga la Simplificación desactivada. Solo pasa con billones en círculo dentro del propio Grupo. ¿Hace falta un aviso? |
 | 17 | Banda a cero mientras se vacía su fila | Una moneda que llega a cero sigue en verde con «0» hasta que sus fichas salen. La alternativa es mostrar la cifra anterior |
 | 18 | Error de un campo por persona | Aparece al intentar guardar, como el del total. La alternativa es mostrarlo al salir del campo |
 

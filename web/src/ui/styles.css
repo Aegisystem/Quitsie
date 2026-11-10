@@ -1165,66 +1165,6 @@ h3 {
   color: var(--ink-2);
 }
 
-.switch-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 16px 0;
-  border-bottom: 1px solid var(--rule);
-  cursor: pointer;
-}
-
-.switch-title {
-  display: block;
-  font-weight: 500;
-}
-
-.switch-hint {
-  display: block;
-  margin-top: 2px;
-  font-size: 0.875rem;
-  color: var(--ink-2);
-}
-
-.switch {
-  appearance: none;
-  position: relative;
-  flex: none;
-  width: 48px;
-  height: 28px;
-  margin: 0;
-  border-radius: 999px;
-  background: var(--rule-strong);
-  cursor: pointer;
-  transition: background-color 0.2s;
-}
-
-.switch::after {
-  content: '';
-  position: absolute;
-  top: 3px;
-  left: 3px;
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  background: var(--surface);
-  transition: transform 0.3s var(--ease-out);
-}
-
-.switch:checked {
-  background: var(--ink);
-}
-
-.switch:checked::after {
-  transform: translateX(20px);
-}
-
-.switch:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-
 .debt {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -2520,7 +2460,6 @@ select.input,
     display: none;
   }
 
-  .switch::after,
   .p-row {
     transition: none;
   }
