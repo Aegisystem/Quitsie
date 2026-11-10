@@ -55,14 +55,14 @@ Ningún agente debe tomar estas decisiones por su cuenta.
 
 Lo tiene que hacer el dueño, porque exige abrir cuentas, comprar el dominio y pagar. Los pasos y las variables están en [despliegue.md](despliegue.md).
 
-Después de desplegar, comprueba:
+El 2026-11-10 se comprobó en `quitsie.aegisystem.xyz` que `http://` redirige a `https://`, que `https://` trae `strict-transport-security` y que Cloudflare ya no guarda `/sw.js` (`cache-control: no-cache` y `cf-cache-status: DYNAMIC`).
 
-- Que `http://` redirija a `https://` y que `https://` traiga `strict-transport-security` ([HTTPS](despliegue.md#https)).
+Falta comprobar:
+
 - Que los respaldos de la base estén activos, y una restauración de prueba con `record-restore` en una base aparte.
 - Un correo real de Resend y, si se activa, un inicio de sesión real con Google.
 - La memoria y el tiempo de `GET /sync` en el plan de Railway elegido.
 - La PWA instalada en Safari de iOS.
-- Que Cloudflare no guarde `/sw.js` en caché. El 2026-11-09 respondía `max-age=14400` y `cf-cache-status: EXPIRED`, aunque el servidor manda `no-cache` ([Caché de Cloudflare](despliegue.md#caché-de-cloudflare)).
 - Las notificaciones push: generar las claves VAPID, ponerlas en Railway ([variables](despliegue.md#variables)), activarlas en un iPhone con la PWA instalada y recibir una de otro Usuario.
 
 ## 5. Falta fuera del código
