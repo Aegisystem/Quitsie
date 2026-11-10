@@ -2,7 +2,7 @@ import { useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { session, useSession } from '../session'
 import { Screen, useOnline } from './components/Shell'
-import { href, useRoute } from './router'
+import { href, screenOf, useRoute } from './router'
 import { Account } from './screens/Account'
 import { Activity } from './screens/Activity'
 import { EditExpense, NewExpense } from './screens/ExpenseForm'
@@ -28,9 +28,12 @@ export function App() {
     if (online || session.getState().status === 'loading') void session.check()
   }, [online])
 
+  // A new screen starts at the top. A part of a form opened over it is the same
+  // screen, and the form keeps its own place (ExpenseForm).
+  const screen = screenOf(route)
   useEffect(() => {
     window.scrollTo(0, 0)
-  }, [route])
+  }, [screen])
 
   // The way in. The route stays in the address meanwhile, so an invite opened
   // while signed out is still there after signing in.
