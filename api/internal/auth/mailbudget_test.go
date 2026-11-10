@@ -163,31 +163,44 @@ func TestARequestRefusedForTheBudgetCostsTheSenderNothing(t *testing.T) {
 }
 
 // Requests at once can all pass the look at the budget and race for its last
-// email. Those that lose it under the write lock cost nothing either.
+// email. Those that lose it under the write lock cost nothing either: each can
+// ask again at once when the budget has room. Each request comes from its own
+// sender, because two of the same sender also race for that sender's cooldown,
+// and the one that loses it is refused for the cooldown instead.
 func TestRequestsThatLoseTheLastEmailCostTheSenderNothing(t *testing.T) {
-	f := newFixture(t, withMailBudget(1, 10))
-	f.clock.Advance(50 * time.Minute)
-	results := make(chan error, 20)
-	for range 20 {
-		go func() { results <- f.newBrowser(anaIP).requestCodeNow(anaEmail) }()
+	f := newFixture(t, withMailBudget(20, 100))
+	// Half a cooldown before the next hour of the budget, with one email left.
+	f.clock.Advance(time.Hour - sendCooldown/2)
+	f.askForCodes(t, 19)
+	type result struct {
+		email string
+		err   error
 	}
-	sent := 0
+	results := make(chan result, 20)
+	for i := range 20 {
+		email := fmt.Sprintf("racer%d@example.com", i)
+		go func() { results <- result{email, f.newBrowser(anaIP).requestCodeNow(email)} }()
+	}
+	var lost []string
 	for range 20 {
-		switch err := <-results; {
-		case err == nil:
-			sent++
-		case !errors.Is(err, auth.ErrMailBudgetSpent):
-			t.Errorf("err = %v, want ErrMailBudgetSpent", err)
+		switch r := <-results; {
+		case r.err == nil:
+		case errors.Is(r.err, auth.ErrMailBudgetSpent):
+			lost = append(lost, r.email)
+		default:
+			t.Errorf("err = %v, want ErrMailBudgetSpent", r.err)
 		}
 	}
-	if sent != 1 {
-		t.Fatalf("sent %d codes, want the 1 of the budget", sent)
+	if len(lost) != 19 {
+		t.Fatalf("sent %d codes, want the 1 left in the budget", 20-len(lost))
 	}
 
-	f.clock.Advance(10 * time.Minute) // a new hour of the budget
+	f.clock.Advance(sendCooldown / 2) // a new hour of the budget, still within the cooldown
 
-	if err := f.newBrowser(anaIP).requestCode(anaEmail); err != nil {
-		t.Errorf("err = %v, want Ana's second code", err)
+	for _, email := range lost {
+		if err := f.newBrowser(anaIP).requestCodeNow(email); err != nil {
+			t.Errorf("%s: err = %v, want the code it lost the race for", email, err)
+		}
 	}
 }
 
