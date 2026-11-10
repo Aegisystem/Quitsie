@@ -1603,7 +1603,12 @@ select.input,
   border-top: 1px solid var(--rule);
 }
 
-/* A problem takes the place of the amounts and may need two lines. */
+/* The Cuotas and the problems are what the line is for, so they wrap instead
+   of being cut short. */
+.summary-row .row-sub {
+  white-space: normal;
+}
+
 .row-sub.tone-problem {
   font-weight: 600;
   white-space: normal;

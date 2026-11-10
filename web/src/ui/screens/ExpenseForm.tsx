@@ -30,6 +30,7 @@ import { categories } from '../types'
 import { previewOwedShares, type SplitParticipant } from '../split'
 import { formatDay, todayISO } from '../dates'
 import { AmountInput } from '../forms/AmountInput'
+import { useChosenChipInSight } from '../forms/chosenChip'
 import { amountPlaceholder, formatAmountInput, formatMoney, readAmount } from '../money'
 import { closeOver, href, navigate, openOver, type ExpensePart, type Route } from '../router'
 import { PaidScreen, SplitScreen, SummaryRow, type Over } from './ExpenseSplit'
@@ -197,6 +198,7 @@ function ExpenseForm({
   const categoryHistory = useCategoryHistory(user.id)
   const suggestedCategory = categoryChosen ? undefined : suggestCategory(description, categoryHistory)
   const shownCategory = categoryChosen ? category : suggestedCategory
+  const categoriesRow = useChosenChipInSight(shownCategory)
   const [date, setDate] = useState(draft?.date ?? todayISO())
   const [manyPayersChosen, setManyPayers] = useState((draft?.paidShares.length ?? 1) > 1)
   // A former member's Aporte cannot go away, so nobody else can pay it all.
@@ -597,7 +599,7 @@ function ExpenseForm({
             {t('categories.label')}
             {suggestedCategory && <span className="legend-note">{t('categories.suggested')}</span>}
           </legend>
-          <div className="chips chips-scroll" role="radiogroup" aria-label={t('categories.label')}>
+          <div ref={categoriesRow} className="chips chips-scroll" role="radiogroup" aria-label={t('categories.label')}>
             {categories.map((c) => (
               <label key={c} className="chip chip-glyph">
                 <input

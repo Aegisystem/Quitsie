@@ -87,6 +87,8 @@ test('who paid and how it is divided open over the form, and going back keeps ev
   await expect(paidLine(ana)).toContainText('Pagó Beto')
   await splitLine(ana).click()
   await expect(ana.getByRole('radio', { name: 'Proporciones' })).toBeChecked()
+  // The chosen method is in sight, though it is the fourth of a row that scrolls.
+  await expect(ana.getByText('Proporciones', { exact: true })).toBeInViewport({ ratio: 1 })
   await expect(ana.getByLabel('Valor de Beto')).toHaveValue('2')
 
   // Asked last: a pull of its own would make the app's wait its turn.

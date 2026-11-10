@@ -4,6 +4,7 @@ import type { Member, SplitMethod } from '../../api/client'
 import { Figure, figureState, GroupGlyph, Icon } from '../components/icons'
 import { Screen } from '../components/Shell'
 import { AmountInput } from '../forms/AmountInput'
+import { useChosenChipInSight } from '../forms/chosenChip'
 import type { SplitValues } from '../forms/expense'
 import type { Status, SummaryLine } from '../forms/splitSummary'
 import { readValue } from '../forms/values'
@@ -290,6 +291,7 @@ export function SplitScreen({
 }) {
   const { t } = useTranslation()
   const ids = useId()
+  const methodsRow = useChosenChipInSight(method)
   const checkable = method === 'equal' || method === 'adjustment'
   const isIn = (memberId: string) => participants.find((p) => p.memberId === memberId)?.included ?? false
   const choosable = members.filter((m) => !kept.has(m.id))
@@ -319,7 +321,7 @@ export function SplitScreen({
         </Done>
       }
     >
-      <div className="chips chips-scroll" role="radiogroup" aria-label={t('expenseForm.splitMethod')}>
+      <div ref={methodsRow} className="chips chips-scroll" role="radiogroup" aria-label={t('expenseForm.splitMethod')}>
         {methods.map((m) => (
           <label key={m} className="chip">
             <input type="radio" name={`${ids}-method`} checked={method === m} onChange={() => onMethod(m)} />
