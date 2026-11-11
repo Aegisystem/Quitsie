@@ -44,7 +44,7 @@ export interface Person {
 const newPerson = (name: string): Person => ({ name, email: `${name.toLowerCase()}-${randomUUID()}@quitsie.test` })
 
 // The last code the server logged for this email, which replaces the earlier ones.
-function loginCode(email: string): string {
+export function loginCode(email: string): string {
   const line = readFileSync(serverLog, 'utf8')
     .split('\n')
     .findLast((text) => text.includes(`to=${email} `))

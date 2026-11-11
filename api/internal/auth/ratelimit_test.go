@@ -57,6 +57,26 @@ func TestACodeThatCouldNotBeSentMakesNobodyWait(t *testing.T) {
 	}
 }
 
+// What the sign-in screen counts on to let someone type the code they have
+// when they cannot ask for another: a refused request sends nothing and leaves
+// the browser's earlier code as it was.
+func TestTheEarlierCodeStillWorksAfterARefusedRequest(t *testing.T) {
+	f := newFixture(t)
+	phone := f.newBrowser(anaIP)
+	if err := phone.requestCodeNow(anaEmail); err != nil {
+		t.Fatal(err)
+	}
+	code := f.mail.lastCode(t, anaEmail)
+
+	if err := phone.requestCodeNow(anaEmail); !errors.Is(err, auth.ErrRateLimited) {
+		t.Fatalf("again within the minute: err = %v, want ErrRateLimited", err)
+	}
+
+	if _, err := phone.verify(anaEmail, code); err != nil {
+		t.Errorf("the code sent before the refusal: %v, want a sign-in", err)
+	}
+}
+
 // Each code is an email out of the server's budget, which one address could
 // otherwise spend alone by asking for many emails.
 func TestAnIPGetsTenCodesPerHour(t *testing.T) {

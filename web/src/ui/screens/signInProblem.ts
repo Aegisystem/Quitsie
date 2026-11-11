@@ -24,3 +24,15 @@ export function signInProblemText(t: TFunction, error: CallError): string {
   if (error.code === 'validation_failed') return t('signIn.invalidEmail')
   return t('signIn.failed')
 }
+
+// How many seconds until the browser can ask for another code, when the
+// server refused to send one because of a wait. It sent nothing, but it left
+// alone the code this browser asked for before, which may be in the inbox, so
+// the screen goes on to the code. Undefined for any other failure, and for an
+// email locked after too many wrong guesses: that lasts hours, and until then
+// the server takes no code.
+export function waitToAskAgain(error: CallError): number | undefined {
+  if (error.kind !== 'problem' || error.code !== 'rate_limited') return undefined
+  const wait = error.retryAfter
+  return wait && wait <= HOUR ? wait : undefined
+}

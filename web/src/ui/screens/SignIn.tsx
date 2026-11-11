@@ -5,7 +5,7 @@ import { googleSignInUrl, session, type CallError, type SignedOutNotice } from '
 import { GoogleMark, Icon, Mark } from '../components/icons'
 import { useOnline } from '../components/Shell'
 import { loginMethodsStaleTime, offersGoogle } from './loginMethods'
-import { signInProblemText } from './signInProblem'
+import { signInProblemText, waitToAskAgain } from './signInProblem'
 
 // The server allows 5 attempts per code, and a new code replaces the old one.
 const MAX_ATTEMPTS = 5
@@ -25,6 +25,9 @@ export function SignIn({ notice }: { notice?: SignedOutNotice }) {
   const [codeError, setCodeError] = useState<string>()
   const [resendIn, setResendIn] = useState(RESEND_SECONDS)
   const [resent, setResent] = useState(false)
+  // Why the server sent no code on the way to the code step, where the person
+  // can still type one they got before.
+  const [notSent, setNotSent] = useState<string>()
   const [sending, setSending] = useState(false)
   const [checking, setChecking] = useState(false)
   const codeRef = useRef<HTMLInputElement>(null)
@@ -63,17 +66,32 @@ export function SignIn({ notice }: { notice?: SignedOutNotice }) {
     const result = await session.requestCode(address)
     setSending(false)
     if (!result.ok) {
-      if (resend) setCodeError(callFailed(result.error))
-      else setEmailError(callFailed(result.error))
+      const wait = waitToAskAgain(result.error)
+      if (wait !== undefined) setResendIn(wait)
+      if (resend) {
+        setCodeError(callFailed(result.error))
+      } else if (wait !== undefined) {
+        // Nothing was sent, but the code this browser asked for before still
+        // works, and the person may have it in their inbox.
+        setNotSent(callFailed(result.error))
+        showCodeStep(false)
+      } else {
+        setEmailError(callFailed(result.error))
+      }
       return
     }
+    setNotSent(undefined)
+    setResendIn(RESEND_SECONDS)
+    showCodeStep(resend)
+  }
+
+  const showCodeStep = (afterResending: boolean) => {
     setEmailError(undefined)
     setCodeError(undefined)
     setStep('code')
     setCode('')
-    setResendIn(RESEND_SECONDS)
     setAttemptsLeft(MAX_ATTEMPTS)
-    setResent(resend)
+    setResent(afterResending)
     focusCode()
   }
 
@@ -182,7 +200,7 @@ export function SignIn({ notice }: { notice?: SignedOutNotice }) {
             }}
           >
             <h1 className="page-title">{t('signIn.codeTitle')}</h1>
-            <p className="lead">{t('signIn.codeBody', { email: email.trim() })}</p>
+            <p className="lead">{t(notSent ? 'signIn.codeBodyNotSent' : 'signIn.codeBody', { email: email.trim() })}</p>
             <div className="field">
               <label htmlFor={`${ids}-code`}>{t('signIn.code')}</label>
               <div className={`code-input${codeError ? ' has-error' : ''}`}>
@@ -218,7 +236,7 @@ export function SignIn({ notice }: { notice?: SignedOutNotice }) {
                 </p>
               ) : (
                 <p className="hint" id={`${ids}-code-hint`} role="status">
-                  {resent ? t('signIn.resent') : t('signIn.codeHint')}
+                  {notSent ?? (resent ? t('signIn.resent') : t('signIn.codeHint'))}
                 </p>
               )}
             </div>
@@ -228,7 +246,13 @@ export function SignIn({ notice }: { notice?: SignedOutNotice }) {
             <div className="button-row button-row-split">
               <button type="button" className="button button-quiet button-small" disabled={resendIn > 0 || sending || !online} onClick={() => void sendCode(true)}>
                 <Icon name="refresh" size={18} />
-                {sending ? t('signIn.sending') : resendIn > 0 ? t('signIn.resendIn', { seconds: resendIn }) : t('signIn.resend')}
+                {sending
+                  ? t('signIn.sending')
+                  : resendIn > 90
+                    ? t('signIn.resendInMinutes', { minutes: Math.ceil(resendIn / 60) })
+                    : resendIn > 0
+                      ? t('signIn.resendIn', { seconds: resendIn })
+                      : t('signIn.resend')}
               </button>
               <button
                 type="button"
