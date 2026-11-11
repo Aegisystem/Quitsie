@@ -53,11 +53,20 @@ export function readPercent(text: string): Result<number, ParseError> {
   return parsePercentage(text.replace('%', ''), regionLocale())
 }
 
+// The smallest a token may stand for, in the major unit, where one unit is
+// too little to count: 1.000 pesos buy almost nothing, 5.000 are a coin's worth.
+const smallestTallyUnit: Readonly<Record<string, number>> = { COP: 5000 }
+
 // The unit one token stands for in a tally: a round number (1, 2 or 5 × 10ⁿ in
-// the major unit) so that the largest amount needs at most `maxTokens` tokens.
+// the major unit) so that the largest amount needs at most `maxTokens` tokens,
+// and never below the currency's smallest.
 export function tallyUnit(maxMinor: number, currency: string, maxTokens = 10): number {
   const scale = 10 ** minorUnitDigits(currency)
-  const major = Math.abs(maxMinor) / scale
+  const smallest = (smallestTallyUnit[currency] ?? 1) * scale
+  return Math.max(smallest, roundTallyUnit(Math.abs(maxMinor) / scale, scale, maxTokens))
+}
+
+function roundTallyUnit(major: number, scale: number, maxTokens: number): number {
   if (major === 0) return scale
   // Never smaller than one major unit: half a token reads better than "each = 0.05".
   let magnitude = Math.max(1, 10 ** Math.floor(Math.log10(major / maxTokens)))

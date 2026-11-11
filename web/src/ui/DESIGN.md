@@ -324,7 +324,7 @@ El sistema es plano. No hay `box-shadow` de elevación en ningún elemento. La p
 Un solo radio suave (6px) para botones, campos, avisos, tarjetas, toasts y celdas; píldora (999px) para chips, etiquetas y chip de estado; círculo perfecto para fichas, marcas de sincronización y el punto de equilibrio; 4px para la casilla del reparto. Las bandas de Saldo no tienen radio: son campos de color a sangre, separados por 3px de papel (en fila, 4px de calle).
 
 ### Fichas
-La ficha es un círculo lleno del color del texto (`currentColor`), 14px por defecto: 16px en bandas, 13px en el gráfico de Saldos, 10px en Deudas, 18px en el inicio de sesión. Separación de 4px. La unidad se elige de 1, 2 o 5 por potencia de diez para que no haya más de 10 fichas y nunca vale menos de una unidad entera de la moneda.
+La ficha es un círculo lleno del color del texto (`currentColor`), 14px por defecto: 16px en bandas, 13px en el gráfico de Saldos, 10px en Deudas, 18px en el inicio de sesión. Separación de 4px. La unidad se elige de 1, 2 o 5 por potencia de diez para que no haya más de 10 fichas y nunca vale menos de una unidad entera de la moneda. En pesos colombianos (COP) nunca vale menos de 5.000, porque 1.000 pesos es muy poco para contarlo.
 
 ### Iconos: dos familias
 - **Controles**: trazo de 2px en una rejilla de 24, extremos y uniones redondeados, `fill: none` (volver, añadir, cerrar, compartir, copiar, bandeja, nube en línea, nube tachada, flechas de sincronizar, casa, actividad, cuenta, flecha, chevron, restaurar, descargar). La pestaña activa engrosa el trazo a 2.5.
