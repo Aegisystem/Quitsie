@@ -31,6 +31,13 @@ type Deps struct {
 	PushKey string
 	// Now is the clock of the limit of requests per IP; nil is time.Now.
 	Now func() time.Time
+	// CloudflareSecret is what Cloudflare writes on every request it forwards,
+	// in the header X-Quitsie-Cloudflare-Secret (ADR 0014). A request that
+	// carries it came through Cloudflare, so its CF-Connecting-IP is the
+	// address of the visitor, and the limits per IP count it as that one.
+	// Every other request counts as one same client. Empty when nothing adds
+	// the secret, as in development: then no header is believed.
+	CloudflareSecret string
 	// HSTS makes every response ask for HTTPS only. Production sets it;
 	// it would lock a developer's localhost out of plain HTTP.
 	HSTS bool

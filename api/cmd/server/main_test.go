@@ -94,6 +94,45 @@ func TestOnlyProductionAsksForHTTPSOnly(t *testing.T) {
 	}
 }
 
+// Only Cloudflare and the server know the secret, so it needs the length of
+// one. Without it the server still starts: nothing says Cloudflare is in front.
+func TestTheSecretOfCloudflare(t *testing.T) {
+	secret := strings.Repeat("c", 32)
+	cfg, err := loadConfig(env(production, map[string]string{"QUITSIE_CLOUDFLARE_SECRET": secret}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.cloudflareSecret != secret || cfg.visitorsShareLimits {
+		t.Errorf("cloudflareSecret = %q (visitors share the limits: %t), want the configured one", cfg.cloudflareSecret, cfg.visitorsShareLimits)
+	}
+
+	cfg, err = loadConfig(env(production, nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.cloudflareSecret != "" || !cfg.visitorsShareLimits {
+		t.Errorf("cloudflareSecret = %q (visitors share the limits: %t), want none, and a warning of it", cfg.cloudflareSecret, cfg.visitorsShareLimits)
+	}
+
+	// The end-to-end tests come as many visitors with it.
+	cfg, err = loadConfig(env(development, map[string]string{"QUITSIE_CLOUDFLARE_SECRET": secret}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.cloudflareSecret != secret {
+		t.Errorf("development: cloudflareSecret = %q, want the configured one", cfg.cloudflareSecret)
+	}
+
+	// A developer is the only visitor, so there is nothing to warn about.
+	cfg, err = loadConfig(env(development, nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.visitorsShareLimits {
+		t.Error("development without the secret warns that visitors share the limits")
+	}
+}
+
 func TestTheDefaultCurrencyIsDollars(t *testing.T) {
 	cfg, err := loadConfig(env(production, nil))
 	if err != nil {
@@ -156,6 +195,8 @@ func TestProductionRefusesToStartWithABadEnvironment(t *testing.T) {
 		{"no sender", map[string]string{"QUITSIE_MAIL_FROM": ""}, "QUITSIE_MAIL_FROM"},
 		{"no invite secret", map[string]string{"QUITSIE_INVITE_SECRET": ""}, "QUITSIE_INVITE_SECRET"},
 		{"short invite secret", map[string]string{"QUITSIE_INVITE_SECRET": "short"}, "QUITSIE_INVITE_SECRET"},
+		// One that short could be guessed, and then anyone would choose their address.
+		{"short secret of Cloudflare", map[string]string{"QUITSIE_CLOUDFLARE_SECRET": strings.Repeat("c", 31)}, "QUITSIE_CLOUDFLARE_SECRET"},
 		{"Google without a secret", map[string]string{"QUITSIE_GOOGLE_CLIENT_ID": "id"}, "QUITSIE_GOOGLE_CLIENT_SECRET"},
 		{"Google without a client", map[string]string{"QUITSIE_GOOGLE_CLIENT_SECRET": "secret"}, "QUITSIE_GOOGLE_CLIENT_ID"},
 		{"unknown currency", map[string]string{"QUITSIE_DEFAULT_CURRENCY": "XYZ"}, "QUITSIE_DEFAULT_CURRENCY"},

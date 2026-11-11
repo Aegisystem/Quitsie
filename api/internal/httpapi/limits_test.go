@@ -1,6 +1,7 @@
 package httpapi_test
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"net/http"
@@ -192,27 +193,64 @@ func TestALongHistoryArrivesInPages(t *testing.T) {
 	}
 }
 
-// limited is a server with a clock the test moves.
-func limited(t *testing.T) (http.Handler, *clock) {
-	t.Helper()
-	c := &clock{now: time.Date(2026, 10, 27, 12, 0, 0, 0, time.UTC)}
-	return httpapi.NewHandler(httpapi.NewServer(fakeDB{}, "test").WithDeps(httpapi.Deps{Now: c.Now}), builtPWA), c
-}
+// cloudflareSecret is what the Transform Rule of the zone writes on every
+// request, in the tests.
+const cloudflareSecret = "a-secret-only-cloudflare-and-the-server-know"
 
-// A connection that comes straight from the Internet, and the one from
-// cloudflared, which runs on the same machine.
+// railway and anotherRailway are two of the proxies of Railway. Every
+// connection of production comes from one of them, whoever the visitor is.
 const (
-	direct = "203.0.113.9:40000"
-	tunnel = "127.0.0.1:40000"
+	railway        = "100.64.0.9:40000"
+	anotherRailway = "100.64.0.10:40000"
 )
 
-// visit asks for target over a connection from peer. visitor is the
-// CF-Connecting-IP the request carries, if any.
-func visit(h http.Handler, peer, visitor, target string) *httptest.ResponseRecorder {
+// limited is the server of production, behind Cloudflare, with a clock the
+// test moves.
+func limited(t *testing.T) (http.Handler, *clock) {
+	t.Helper()
+	return limitedWith(t, cloudflareSecret)
+}
+
+// limitedWith is limited for a server that expects secret from Cloudflare;
+// with none, it is the server of development, or one with no Cloudflare.
+func limitedWith(t *testing.T, secret string) (http.Handler, *clock) {
+	t.Helper()
+	c := &clock{now: time.Date(2026, 10, 27, 12, 0, 0, 0, time.UTC)}
+	deps := httpapi.Deps{Now: c.Now, CloudflareSecret: secret}
+	return httpapi.NewHandler(httpapi.NewServer(fakeDB{}, "test").WithDeps(deps), builtPWA), c
+}
+
+// visitor is where a request comes from: the connection that hands it to the
+// server, and what its headers say.
+type visitor struct {
+	// peer is the other end of the connection; empty is railway.
+	peer string
+	// secret and address are the headers X-Quitsie-Cloudflare-Secret and
+	// CF-Connecting-IP, when not empty.
+	secret  string
+	address string
+}
+
+// through is a visitor at address who came through Cloudflare.
+func through(address string) visitor {
+	return visitor{secret: cloudflareSecret, address: address}
+}
+
+// outside is whoever reaches Railway without going through Cloudflare. It can
+// write any address in CF-Connecting-IP, and does not know the secret.
+func outside(address string) visitor {
+	return visitor{address: address}
+}
+
+// visit asks for target as from.
+func visit(h http.Handler, from visitor, target string) *httptest.ResponseRecorder {
 	req := httptest.NewRequest(http.MethodGet, target, nil)
-	req.RemoteAddr = peer
-	if visitor != "" {
-		req.Header.Set("CF-Connecting-IP", visitor)
+	req.RemoteAddr = cmp.Or(from.peer, railway)
+	if from.secret != "" {
+		req.Header.Set("X-Quitsie-Cloudflare-Secret", from.secret)
+	}
+	if from.address != "" {
+		req.Header.Set("CF-Connecting-IP", from.address)
 	}
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
@@ -221,14 +259,14 @@ func visit(h http.Handler, peer, visitor, target string) *httptest.ResponseRecor
 
 // spend uses up the 300 requests per minute of a client, half on the API and
 // half on the PWA, and fails if any of them is refused.
-func spend(t *testing.T, h http.Handler, peer, visitor string) {
+func spend(t *testing.T, h http.Handler, from visitor) {
 	t.Helper()
 	for i := range 300 {
 		target := "/"
 		if i%2 == 0 {
 			target = "/api/v1/nope"
 		}
-		if rec := visit(h, peer, visitor, target); rec.Code == http.StatusTooManyRequests {
+		if rec := visit(h, from, target); rec.Code == http.StatusTooManyRequests {
 			t.Fatalf("request %d: code = 429, want it within the limit", i+1)
 		}
 	}
@@ -236,91 +274,147 @@ func spend(t *testing.T, h http.Handler, peer, visitor string) {
 
 func TestAClientOverTheLimitGets429AndWhenToComeBack(t *testing.T) {
 	h, c := limited(t)
-	spend(t, h, direct, "")
+	ana := through("203.0.113.9")
+	spend(t, h, ana)
 
-	rec := visit(h, direct, "", "/api/v1/nope")
+	rec := visit(h, ana, "/api/v1/nope")
 
 	if got := rec.Header().Get("Retry-After"); got != "1" {
 		t.Errorf("Retry-After = %q, want 1", got)
 	}
 	decodeProblem(t, rec, http.StatusTooManyRequests, httpapi.ProblemCodeRateLimited)
-	if rec := visit(h, direct, "", "/"); rec.Code != http.StatusTooManyRequests {
+	if rec := visit(h, ana, "/"); rec.Code != http.StatusTooManyRequests {
 		t.Errorf("PWA over the limit: code = %d, want 429", rec.Code)
 	}
 
 	c.Advance(time.Second)
 
-	if rec := visit(h, direct, "", "/"); rec.Code != http.StatusOK {
+	if rec := visit(h, ana, "/"); rec.Code != http.StatusOK {
 		t.Errorf("after Retry-After: code = %d, want 200", rec.Code)
-	}
-}
-
-func TestEachClientHasItsOwnLimit(t *testing.T) {
-	h, _ := limited(t)
-	spend(t, h, direct, "")
-
-	if rec := visit(h, "198.51.100.7:40000", "", "/"); rec.Code != http.StatusOK {
-		t.Errorf("another client: code = %d, want 200", rec.Code)
 	}
 }
 
 func TestHealthIsNeverLimitedNorCounted(t *testing.T) {
 	h, _ := limited(t)
+	ana := through("203.0.113.9")
 	for i := range 500 {
-		if rec := visit(h, direct, "", "/api/v1/health"); rec.Code != http.StatusOK {
+		if rec := visit(h, ana, "/api/v1/health"); rec.Code != http.StatusOK {
 			t.Fatalf("health check %d: code = %d, want 200", i+1, rec.Code)
 		}
 	}
-	spend(t, h, direct, "")
+	spend(t, h, ana)
 
-	if rec := visit(h, direct, "", "/api/v1/health"); rec.Code != http.StatusOK {
+	if rec := visit(h, ana, "/api/v1/health"); rec.Code != http.StatusOK {
 		t.Errorf("health over the limit: code = %d, want 200", rec.Code)
 	}
 }
 
-func TestBehindTheTunnelEachVisitorHasItsOwnLimit(t *testing.T) {
+// Every connection comes from Railway's proxy, so the address of the visitor
+// is the one Cloudflare writes.
+func TestEachVisitorThroughCloudflareHasItsOwnLimit(t *testing.T) {
 	h, _ := limited(t)
-	spend(t, h, tunnel, "198.51.100.7")
+	spend(t, h, through("198.51.100.7"))
 
-	if rec := visit(h, tunnel, "198.51.100.7", "/"); rec.Code != http.StatusTooManyRequests {
+	if rec := visit(h, through("198.51.100.7"), "/"); rec.Code != http.StatusTooManyRequests {
 		t.Errorf("same visitor: code = %d, want 429", rec.Code)
 	}
-	if rec := visit(h, tunnel, "198.51.100.8", "/"); rec.Code != http.StatusOK {
+	if rec := visit(h, through("198.51.100.8"), "/"); rec.Code != http.StatusOK {
 		t.Errorf("another visitor: code = %d, want 200", rec.Code)
 	}
-}
-
-// Only cloudflared can vouch for that header. Whoever reaches the server
-// directly could write a new address on each request and never be limited.
-func TestAClientOutsideTheTunnelCannotForgeItsAddress(t *testing.T) {
-	h, _ := limited(t)
-	for i := range 300 {
-		visit(h, direct, fmt.Sprintf("198.51.100.%d", i%256), "/")
-	}
-
-	if rec := visit(h, direct, "198.51.100.200", "/"); rec.Code != http.StatusTooManyRequests {
-		t.Errorf("forged address: code = %d, want 429", rec.Code)
+	// Whichever of Railway's proxies hands the request over.
+	if rec := visit(h, visitor{peer: anotherRailway, secret: cloudflareSecret, address: "198.51.100.7"}, "/"); rec.Code != http.StatusTooManyRequests {
+		t.Errorf("same visitor through another proxy of Railway: code = %d, want 429", rec.Code)
 	}
 }
 
-func TestAnAddressThatIsNotOneFallsBackToTheConnection(t *testing.T) {
-	h, _ := limited(t)
-	spend(t, h, tunnel, "not an address")
+// Railway also serves whoever skips Cloudflare, by the domain Railway gives or
+// straight at its edge. Nothing stops them from writing a new address on each
+// request, so only the secret that Cloudflare adds makes one believed.
+func TestWithoutTheSecretNobodyChoosesTheirAddress(t *testing.T) {
+	tests := []struct {
+		name   string
+		secret string
+	}{
+		{"no secret", ""},
+		{"a wrong secret", "a-secret-someone-made-up-to-try-their-luck!!"},
+		{"the start of the secret", cloudflareSecret[:len(cloudflareSecret)-1]},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h, _ := limited(t)
+			for i := range 300 {
+				visit(h, visitor{secret: tt.secret, address: fmt.Sprintf("198.51.100.%d", i%256)}, "/")
+			}
 
-	if rec := visit(h, tunnel, "another fake", "/"); rec.Code != http.StatusTooManyRequests {
-		t.Errorf("code = %d, want 429: both count as the connection", rec.Code)
+			rec := visit(h, visitor{secret: tt.secret, address: "198.51.100.200"}, "/")
+
+			if rec.Code != http.StatusTooManyRequests {
+				t.Errorf("forged address: code = %d, want 429", rec.Code)
+			}
+		})
+	}
+}
+
+// What skips Cloudflare shares one limit, whichever proxy of Railway brings
+// it: Railway does not say how many it has. Visitors through Cloudflare never
+// notice.
+func TestEverythingOutsideCloudflareCountsAsOneClient(t *testing.T) {
+	h, _ := limited(t)
+	spend(t, h, outside("198.51.100.7"))
+
+	if rec := visit(h, visitor{peer: anotherRailway}, "/"); rec.Code != http.StatusTooManyRequests {
+		t.Errorf("outside Cloudflare, through another proxy of Railway: code = %d, want 429", rec.Code)
+	}
+	if rec := visit(h, through("198.51.100.7"), "/"); rec.Code != http.StatusOK {
+		t.Errorf("a visitor through Cloudflare: code = %d, want 200", rec.Code)
+	}
+}
+
+// Cloudflare always writes an address. Should it ever not, the request counts
+// with the ones outside, never as a client with a limit of its own to spend.
+func TestThroughCloudflareWithoutAnAddressCountsAsOutside(t *testing.T) {
+	h, _ := limited(t)
+	spend(t, h, through("not an address"))
+
+	if rec := visit(h, through(""), "/"); rec.Code != http.StatusTooManyRequests {
+		t.Errorf("no address: code = %d, want 429", rec.Code)
+	}
+	if rec := visit(h, outside(""), "/"); rec.Code != http.StatusTooManyRequests {
+		t.Errorf("outside Cloudflare: code = %d, want 429: they count together", rec.Code)
 	}
 }
 
 // An IPv6 customer gets a whole /64: one person can use 2^64 addresses.
 func TestAnIPv6NetworkCountsAsOneClient(t *testing.T) {
 	h, _ := limited(t)
-	spend(t, h, tunnel, "2001:db8:1:2::1")
+	spend(t, h, through("2001:db8:1:2::1"))
 
-	if rec := visit(h, tunnel, "2001:db8:1:2:ffff::9", "/"); rec.Code != http.StatusTooManyRequests {
+	if rec := visit(h, through("2001:db8:1:2:ffff::9"), "/"); rec.Code != http.StatusTooManyRequests {
 		t.Errorf("same /64: code = %d, want 429", rec.Code)
 	}
-	if rec := visit(h, tunnel, "2001:db8:1:3::1", "/"); rec.Code != http.StatusOK {
+	if rec := visit(h, through("2001:db8:1:3::1"), "/"); rec.Code != http.StatusOK {
 		t.Errorf("another /64: code = %d, want 200", rec.Code)
+	}
+}
+
+// Development, and a server with no Cloudflare in front, expect no secret.
+// Then nothing a request says is believed, not even a secret left empty, and
+// each connection counts as its other end.
+func TestAServerThatExpectsNoSecretBelievesNoHeader(t *testing.T) {
+	h, _ := limitedWith(t, "")
+	local := "127.0.0.1:40000"
+	for i := range 300 {
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		req.RemoteAddr = local
+		req.Header.Set("X-Quitsie-Cloudflare-Secret", "")
+		req.Header.Set("CF-Connecting-IP", fmt.Sprintf("198.51.100.%d", i%256))
+		h.ServeHTTP(httptest.NewRecorder(), req)
+	}
+
+	if rec := visit(h, visitor{peer: local, address: "198.51.100.200"}, "/"); rec.Code != http.StatusTooManyRequests {
+		t.Errorf("forged address: code = %d, want 429", rec.Code)
+	}
+	if rec := visit(h, visitor{peer: "[::1]:40000"}, "/"); rec.Code != http.StatusOK {
+		t.Errorf("another connection: code = %d, want 200", rec.Code)
 	}
 }

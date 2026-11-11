@@ -13,9 +13,15 @@ export const test = base.extend<{ newDevice: (path?: string) => Promise<Page> }>
     const contexts: BrowserContext[] = []
     const crashes: string[] = []
     await use(async (path = '/') => {
-      // Each one is a visitor of its own, as behind the tunnel. All on 127.0.0.1,
-      // a run with its precaching would reach the 300 requests per minute per IP.
-      const context = await browser.newContext({ extraHTTPHeaders: { 'CF-Connecting-IP': `198.51.${randomInt(256)}.${randomInt(256)}` } })
+      // Each one is a visitor of its own, as through Cloudflare, which writes the
+      // visitor's address next to its secret. Counted as one, a run with its
+      // precaching would reach the 300 requests per minute per IP.
+      const context = await browser.newContext({
+        extraHTTPHeaders: {
+          'X-Quitsie-Cloudflare-Secret': process.env.QUITSIE_E2E_CLOUDFLARE_SECRET ?? '',
+          'CF-Connecting-IP': `198.51.${randomInt(256)}.${randomInt(256)}`,
+        },
+      })
       contexts.push(context)
       const page = await context.newPage()
       page.on('pageerror', (error) => crashes.push(error.stack ?? error.message))

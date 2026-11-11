@@ -67,7 +67,7 @@ func TestEveryAnswerCarriesTheSecurityHeaders(t *testing.T) {
 	h := served(false)
 	for _, tt := range everyKindOfAnswer {
 		t.Run(tt.name, func(t *testing.T) {
-			rec := ask(h, tt.method, tt.target, direct, nil)
+			rec := ask(h, tt.method, tt.target, railway, nil)
 
 			if rec.Code != tt.code {
 				t.Fatalf("code = %d, want %d", rec.Code, tt.code)
@@ -87,7 +87,7 @@ func TestOnlyAPIAnswersAreNeverStored(t *testing.T) {
 	h := served(false)
 	for _, tt := range everyKindOfAnswer {
 		t.Run(tt.name, func(t *testing.T) {
-			rec := ask(h, tt.method, tt.target, direct, nil)
+			rec := ask(h, tt.method, tt.target, railway, nil)
 
 			if got := rec.Header().Get("Cache-Control"); got != tt.cacheControl {
 				t.Errorf("Cache-Control = %q, want %q", got, tt.cacheControl)
@@ -99,10 +99,11 @@ func TestOnlyAPIAnswersAreNeverStored(t *testing.T) {
 // The limit per IP answers before anything else, and still with the headers.
 func TestARefusedRequestCarriesTheSecurityHeaders(t *testing.T) {
 	h, _ := limited(t)
-	spend(t, h, direct, "")
+	ana := through("203.0.113.9")
+	spend(t, h, ana)
 
 	for _, target := range []string{"/", "/api/v1/me"} {
-		rec := visit(h, direct, "", target)
+		rec := visit(h, ana, target)
 
 		if rec.Code != http.StatusTooManyRequests {
 			t.Fatalf("%s: code = %d, want 429", target, rec.Code)
@@ -111,7 +112,7 @@ func TestARefusedRequestCarriesTheSecurityHeaders(t *testing.T) {
 			t.Errorf("%s: Content-Security-Policy = %q", target, got)
 		}
 	}
-	if got := visit(h, direct, "", "/api/v1/me").Header().Get("Cache-Control"); got != "no-store" {
+	if got := visit(h, ana, "/api/v1/me").Header().Get("Cache-Control"); got != "no-store" {
 		t.Errorf("API 429: Cache-Control = %q, want no-store", got)
 	}
 }
@@ -121,7 +122,7 @@ func TestOnlyProductionAsksForHTTPSOnly(t *testing.T) {
 	production, development := served(true), served(false)
 	for _, tt := range everyKindOfAnswer {
 		t.Run(tt.name, func(t *testing.T) {
-			rec := ask(production, tt.method, tt.target, direct, nil)
+			rec := ask(production, tt.method, tt.target, railway, nil)
 
 			if rec.Code != tt.code {
 				t.Fatalf("code = %d, want %d", rec.Code, tt.code)
@@ -133,7 +134,7 @@ func TestOnlyProductionAsksForHTTPSOnly(t *testing.T) {
 					t.Errorf("production: %s = %q, want %q", name, got, want)
 				}
 			}
-			if got := ask(development, tt.method, tt.target, direct, nil).Header().Get("Strict-Transport-Security"); got != "" {
+			if got := ask(development, tt.method, tt.target, railway, nil).Header().Get("Strict-Transport-Security"); got != "" {
 				t.Errorf("development: Strict-Transport-Security = %q, want none", got)
 			}
 		})
@@ -148,7 +149,7 @@ func TestOnlyProductionAsksForHTTPSOnly(t *testing.T) {
 func TestTheServerLeavesTheRedirectToHTTPSToTheProxies(t *testing.T) {
 	saysHTTP := map[string]string{"X-Forwarded-Proto": "http", "CF-Visitor": `{"scheme":"http"}`}
 	h := served(true)
-	for _, peer := range []string{direct, "127.0.0.1:40000"} {
+	for _, peer := range []string{railway, "127.0.0.1:40000"} {
 		for _, method := range []string{http.MethodGet, http.MethodPost} {
 			rec := ask(h, method, "/api/v1/health", peer, saysHTTP)
 

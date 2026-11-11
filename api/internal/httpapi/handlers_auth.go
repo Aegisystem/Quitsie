@@ -30,7 +30,7 @@ func (s *Server) GetLoginMethods(context.Context, GetLoginMethodsRequestObject) 
 
 func (s *Server) RequestLoginCode(ctx context.Context, req RequestLoginCodeRequestObject) (RequestLoginCodeResponseObject, error) {
 	r := requestFrom(ctx)
-	flow, err := s.deps.Auth.RequestCode(ctx, string(req.Body.Email), auth.BrowserOf(r, clientIP(r)))
+	flow, err := s.deps.Auth.RequestCode(ctx, string(req.Body.Email), auth.BrowserOf(r, s.clientIP(r)))
 	var limited *auth.RateLimitError
 	var spent *auth.MailBudgetError
 	switch {
@@ -62,7 +62,7 @@ func (s *Server) VerifyLoginCode(ctx context.Context, req VerifyLoginCodeRequest
 			authProblem(http.StatusBadRequest, ProblemCodeValidationFailed, "A login code is 6 digits.")), nil
 	}
 	r := requestFrom(ctx)
-	signIn, err := s.deps.Auth.VerifyCode(ctx, string(req.Body.Email), req.Body.Code, device(r), auth.BrowserOf(r, clientIP(r)))
+	signIn, err := s.deps.Auth.VerifyCode(ctx, string(req.Body.Email), req.Body.Code, device(r), auth.BrowserOf(r, s.clientIP(r)))
 	switch {
 	case err == nil:
 	case errors.Is(err, auth.ErrInvalidEmail):

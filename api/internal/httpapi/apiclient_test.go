@@ -66,9 +66,10 @@ func newTestAPI(t *testing.T, options ...func(*testAPI, *auth.Config)) *testAPI 
 	}
 
 	a.srv.Config.Handler = httpapi.NewHandler(httpapi.NewServer(db, "test").WithDeps(httpapi.Deps{
-		DB:      db,
-		Auth:    a.auth,
-		Origins: []string{a.origin()},
+		DB:               db,
+		Auth:             a.auth,
+		Origins:          []string{a.origin()},
+		CloudflareSecret: cloudflareSecret,
 	}), builtPWA)
 	a.srv.StartTLS()
 	t.Cleanup(a.srv.Close)
@@ -119,9 +120,9 @@ type client struct {
 	http   *http.Client
 	origin string
 	device string
-	// ip is the address the client comes from, which the server reads from
-	// CF-Connecting-IP because the test server listens on loopback. Empty is
-	// 127.0.0.1.
+	// ip is the address of a client that comes through Cloudflare, which
+	// writes it in CF-Connecting-IP next to its secret. Empty is a client
+	// that reaches the server outside Cloudflare; all of them count as one.
 	ip string
 }
 
@@ -161,6 +162,7 @@ func (c *client) do(method, path, body string) *http.Response {
 	}
 	req.Header.Set("User-Agent", c.device)
 	if c.ip != "" {
+		req.Header.Set("X-Quitsie-Cloudflare-Secret", cloudflareSecret)
 		req.Header.Set("CF-Connecting-IP", c.ip)
 	}
 	resp, err := c.http.Do(req)

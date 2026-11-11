@@ -1,4 +1,4 @@
-import { generateKeyPairSync } from 'node:crypto'
+import { generateKeyPairSync, randomBytes } from 'node:crypto'
 import { mkdtempSync } from 'node:fs'
 import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
@@ -36,6 +36,9 @@ if (!process.env.QUITSIE_E2E_VAPID_PUBLIC_KEY) {
   process.env.QUITSIE_E2E_VAPID_PUBLIC_KEY = keys.publicKey
   process.env.QUITSIE_E2E_VAPID_PRIVATE_KEY = keys.privateKey
 }
+// What Cloudflare adds in production to every request it forwards; with it the
+// server believes the address each device says it comes from (e2e/support.ts).
+process.env.QUITSIE_E2E_CLOUDFLARE_SECRET ??= randomBytes(32).toString('hex')
 const port = process.env.QUITSIE_E2E_PORT
 const dir = process.env.QUITSIE_E2E_DIR
 
@@ -78,6 +81,7 @@ export default defineConfig({
       QUITSIE_DATABASE_URL: databaseURL(process.env.QUITSIE_E2E_DATABASE),
       // The tests sign one User in on two devices within seconds.
       QUITSIE_LOGIN_CODE_COOLDOWN: '1ms',
+      QUITSIE_CLOUDFLARE_SECRET: process.env.QUITSIE_E2E_CLOUDFLARE_SECRET,
       QUITSIE_VAPID_PUBLIC_KEY: process.env.QUITSIE_E2E_VAPID_PUBLIC_KEY ?? '',
       QUITSIE_VAPID_PRIVATE_KEY: process.env.QUITSIE_E2E_VAPID_PRIVATE_KEY ?? '',
     },

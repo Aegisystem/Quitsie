@@ -22,6 +22,10 @@
 //	                              (default 1m); the end-to-end tests shorten it
 //	QUITSIE_INVITE_SECRET         required: at least 32 bytes that sign the Invite links; changing it revokes them all
 //	                              (development generates one on each start if it is missing)
+//	QUITSIE_CLOUDFLARE_SECRET     at least 32 bytes that a Transform Rule of Cloudflare writes on every request,
+//	                              in the header X-Quitsie-Cloudflare-Secret (docs/despliegue.md). With it the
+//	                              limits per IP count each visitor by the address Cloudflare saw; without it,
+//	                              every visitor of production counts as one
 //	QUITSIE_VAPID_PUBLIC_KEY      with QUITSIE_VAPID_PRIVATE_KEY, the key pair that signs push notifications
 //	QUITSIE_VAPID_PRIVATE_KEY     (ADR 0013); `quitsie vapid-keys` prints a new one. Without them the server
 //	                              sends no push notifications. Changing them turns notifications off on each
@@ -101,6 +105,9 @@ func run(logger *slog.Logger) error {
 	if cfg.inviteSecretGenerated {
 		logger.Warn("QUITSIE_INVITE_SECRET is not set: generated one for this run, so Invite links stop working on restart")
 	}
+	if cfg.visitorsShareLimits {
+		logger.Warn("QUITSIE_CLOUDFLARE_SECRET is not set: every visitor counts as one for the limits per IP (docs/despliegue.md)")
+	}
 	if cfg.vapid == nil {
 		logger.Warn("QUITSIE_VAPID_PUBLIC_KEY and QUITSIE_VAPID_PRIVATE_KEY are not set: no push notifications")
 	}
@@ -152,13 +159,14 @@ func run(logger *slog.Logger) error {
 	}
 
 	api := httpapi.NewServer(db, version).WithDeps(httpapi.Deps{
-		DB:           db,
-		Changes:      changes,
-		Auth:         authService,
-		Origins:      cfg.origins,
-		InviteSecret: cfg.inviteSecret,
-		HSTS:         cfg.hsts,
-		PushKey:      pushKey,
+		DB:               db,
+		Changes:          changes,
+		Auth:             authService,
+		Origins:          cfg.origins,
+		InviteSecret:     cfg.inviteSecret,
+		CloudflareSecret: cfg.cloudflareSecret,
+		HSTS:             cfg.hsts,
+		PushKey:          pushKey,
 	})
 	srv := newHTTPServer(cfg.addr, httpapi.NewHandler(api, pwa), logger)
 	// Event streams never end on their own; Shutdown would wait for them.
@@ -253,6 +261,12 @@ type config struct {
 	origins []string
 	// hsts makes the server ask for HTTPS only; production sets it.
 	hsts bool
+	// cloudflareSecret is what Cloudflare writes on every request it forwards;
+	// empty when nothing does.
+	cloudflareSecret string
+	// visitorsShareLimits says production has no cloudflareSecret, so the
+	// limits per IP count every visitor as one.
+	visitorsShareLimits bool
 	// logMail writes emails to the log instead of sending them with resend.
 	logMail bool
 	resend  mail.ResendConfig
@@ -273,6 +287,9 @@ type config struct {
 
 const (
 	googleCallbackPath = "/api/v1/auth/google/callback"
+	// minCloudflareSecretLength keeps the secret of Cloudflare from being
+	// guessed; `openssl rand -hex 32` gives twice as much.
+	minCloudflareSecretLength = 32
 	// viteOrigin is the PWA under `npm run dev`, which proxies /api here.
 	viteOrigin = "http://localhost:5173"
 	// runLocally is the hint of the errors a developer meets first.
@@ -384,6 +401,12 @@ func loadConfig(getenv func(string) string) (config, error) {
 	default:
 		return config{}, fmt.Errorf("QUITSIE_INVITE_SECRET must have at least %d bytes", invites.MinSecretLength)
 	}
+
+	cfg.cloudflareSecret = getenv("QUITSIE_CLOUDFLARE_SECRET")
+	if n := len(cfg.cloudflareSecret); n > 0 && n < minCloudflareSecretLength {
+		return config{}, fmt.Errorf("QUITSIE_CLOUDFLARE_SECRET must have at least %d bytes", minCloudflareSecretLength)
+	}
+	cfg.visitorsShareLimits = cfg.cloudflareSecret == "" && !development
 
 	keys := push.Keys{Public: getenv("QUITSIE_VAPID_PUBLIC_KEY"), Private: getenv("QUITSIE_VAPID_PRIVATE_KEY")}
 	switch {
