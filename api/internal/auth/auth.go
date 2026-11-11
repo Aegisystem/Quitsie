@@ -49,6 +49,7 @@ type Service struct {
 	mailPerHour     int
 	mailPerDay      int
 	sends           *limiter
+	sendsPerIP      *limiter
 	verifications   *limiter
 	google          *google
 }
@@ -75,6 +76,7 @@ func New(cfg Config) (*Service, error) {
 		mailPerHour:     cmp.Or(cfg.MailPerHour, DefaultMailPerHour),
 		mailPerDay:      cmp.Or(cfg.MailPerDay, DefaultMailPerDay),
 		sends:           newLimiter(cmp.Or(cfg.SendCooldown, DefaultSendCooldown)),
+		sendsPerIP:      newLimiter(sendWindow),
 		verifications:   newLimiter(verifyWindow),
 	}
 	if cfg.Google != nil {

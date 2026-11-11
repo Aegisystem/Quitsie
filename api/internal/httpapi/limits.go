@@ -185,13 +185,24 @@ func (s *Server) throughCloudflare(r *http.Request) bool {
 // many proxies it has, so their addresses would be as many limits to spend.
 const outsideCloudflare = "outside-cloudflare"
 
-// IPv6 customers get a whole network, not one address: a /64 at least. The
-// limits count each /64 as one client.
-const requestPrefixBits = 64
+// IPv6 customers get a whole network, not one address: a /64 at least, and
+// often a /56 that holds 256 of them. The limits count each network as one
+// client: requests by the /64, and login codes by the /56, because each one
+// is an email out of the server's budget.
+const (
+	requestPrefixBits = 64
+	sendPrefixBits    = 56
+)
 
 // clientIP is who a request counts as for the limits per IP.
 func (s *Server) clientIP(r *http.Request) string {
 	return s.clientNetwork(r, requestPrefixBits)
+}
+
+// senderIP is who a request for a login code counts as for the codes an IP
+// gets per hour.
+func (s *Server) senderIP(r *http.Request) string {
+	return s.clientNetwork(r, sendPrefixBits)
 }
 
 // clientNetwork is the address a request comes from, or its network of

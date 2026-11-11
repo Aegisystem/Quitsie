@@ -30,7 +30,7 @@ func (s *Server) GetLoginMethods(context.Context, GetLoginMethodsRequestObject) 
 
 func (s *Server) RequestLoginCode(ctx context.Context, req RequestLoginCodeRequestObject) (RequestLoginCodeResponseObject, error) {
 	r := requestFrom(ctx)
-	flow, err := s.deps.Auth.RequestCode(ctx, string(req.Body.Email), auth.BrowserOf(r, s.clientIP(r)))
+	flow, err := s.deps.Auth.RequestCode(ctx, string(req.Body.Email), auth.BrowserOf(r, s.senderIP(r)))
 	var limited *auth.RateLimitError
 	var spent *auth.MailBudgetError
 	switch {

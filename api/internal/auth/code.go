@@ -53,9 +53,10 @@ var (
 	// ErrTooManyAttempts means the code was guessed wrong too many times and
 	// no longer works. The User must ask for another.
 	ErrTooManyAttempts = errors.New("auth: too many attempts with this login code")
-	// ErrRateLimited means too many codes were requested for that email or
-	// from that IP in the last hour. RequestCode returns it as a
-	// *RateLimitError, which says when to try again.
+	// ErrRateLimited means the email got a code too recently, too many were
+	// requested from that IP in the last hour, or too many guesses were wrong.
+	// RequestCode and VerifyCode return it as a *RateLimitError, which says
+	// when to try again.
 	ErrRateLimited = errors.New("auth: too many login codes requested")
 )
 
@@ -108,10 +109,14 @@ func ClearCodeFlowCookie() *http.Cookie {
 //
 // After a code goes out, the email waits Config.SendCooldown for the next one. A
 // browser that email's User signed in from before waits on its own; any
-// other one shares the wait of the email, which anybody can spend. A code the
-// email service refused costs no wait. Every email also counts against the
-// server's budget (see DefaultMailPerHour); when it is spent, RequestCode
-// returns a *MailBudgetError.
+// other one shares the wait of the email, which anybody can spend. The IP of
+// the browser gets maxSendsPerIP codes in sendWindow, whatever the emails. A
+// code the email service refused costs neither. Every email also counts
+// against the server's budget (see DefaultMailPerHour); when it is spent,
+// RequestCode returns a *MailBudgetError.
+//
+// A request refused for any of those waits leaves the browser's earlier code
+// alone, so whoever already has one can still use it.
 func (s *Service) RequestCode(ctx context.Context, email string, from Browser) (*http.Cookie, error) {
 	email, err := NormalizeEmail(email)
 	if err != nil {
@@ -136,8 +141,9 @@ func (s *Service) RequestCode(ctx context.Context, email string, from Browser) (
 	if known.ok() {
 		quotas = []quota{{"known-device:" + known.tokenHash, 1}}
 	}
+	perIP := quota{"ip:" + from.IP, maxSendsPerIP}
 	// Only a look: the quotas count the request once nothing else refuses it.
-	if wait := s.sends.wait(s.now(), quotas...); wait > 0 {
+	if wait := max(s.sends.wait(s.now(), quotas...), s.sendsPerIP.wait(s.now(), perIP)); wait > 0 {
 		return nil, &RateLimitError{RetryAfter: wait}
 	}
 	code, err := newCode()
@@ -185,6 +191,10 @@ func (s *Service) RequestCode(ctx context.Context, email string, from Browser) (
 		if ok, retryAfter := s.sends.allow(now, quotas...); !ok {
 			return &RateLimitError{RetryAfter: retryAfter}
 		}
+		if ok, retryAfter := s.sendsPerIP.allow(now, perIP); !ok {
+			s.sends.forget(now, quotas...)
+			return &RateLimitError{RetryAfter: retryAfter}
+		}
 		err = q.CreateLoginCode(ctx, store.CreateLoginCodeParams{
 			ID:        id.String(),
 			Email:     email,
@@ -205,10 +215,11 @@ func (s *Service) RequestCode(ctx context.Context, email string, from Browser) (
 	if err := s.mail.Send(ctx, codeMessage(email, code)); err != nil {
 		// Nobody got this code, so it could only ever be guessed, and its
 		// owner would never hear of it. Nor did it cost an email, nor does it
-		// make the sender wait. Requests for an address the email service
-		// keeps refusing are bounded only by the limit of requests per IP
-		// (httpapi/limits.go).
+		// make the sender wait or count against its IP. Requests for an
+		// address the email service keeps refusing are bounded only by the
+		// limit of requests per IP (httpapi/limits.go).
 		s.sends.forget(now, quotas...)
+		s.sendsPerIP.forget(now, perIP)
 		q, ctx := store.New(s.db), context.WithoutCancel(ctx)
 		cleanup := errors.Join(q.DeleteLoginCodeOfFlow(ctx, ptr(hashToken(flow))), q.UncountMailSend(ctx, budget.hour))
 		return nil, fmt.Errorf("auth: send login code: %w", errors.Join(err, cleanup))

@@ -6,18 +6,25 @@ import (
 )
 
 // Limits on sending login codes. After a code goes out, the email waits
-// DefaultSendCooldown (Config.SendCooldown) before it gets another, so nobody can flood an inbox; a code
-// the email service refused costs nothing, so a failure never makes anyone
-// wait. Anybody can spend the wait of an email, so a known device has its
-// own instead (ADR 0011). The server's budget of emails (mailbudget.go) caps
-// the codes of everyone together.
+// DefaultSendCooldown (Config.SendCooldown) before it gets another, so nobody
+// can flood an inbox. Anybody can spend the wait of an email, so a known
+// device has its own instead (ADR 0011). An IP gets maxSendsPerIP codes in
+// sendWindow, whatever the emails and the devices, and the server's budget of
+// emails (mailbudget.go) caps the codes of everyone together. A code the email
+// service refused costs none of them, so a failure never makes anyone wait.
 //
 // The owner chose on 2026-11-07 a minute between codes over the earlier
-// quotas per hour, which kept someone out for up to an hour after a few
-// attempts. There is no quota per IP: behind Railway's proxy every visitor
-// shares one (docs/pendientes.md).
+// quotas per email and per hour, which kept someone out for up to an hour
+// after a few attempts, and on 2026-11-10 to bring back the one per IP, once
+// the server could tell visitors apart behind Railway's proxy (ADR 0014).
 const (
 	DefaultSendCooldown = time.Minute
+	// maxSendsPerIP is a few people's worth, because many share an address
+	// behind a carrier's NAT. Each code is an email out of the server's
+	// budget, which one address asking for many emails would spend alone;
+	// with it, that takes a few addresses.
+	sendWindow    = time.Hour
+	maxSendsPerIP = 10
 	// maxVerificationsPerIP, in verifyWindow, stops one sender from spreading
 	// guesses over many emails, whose codes it may have asked for from other
 	// addresses.

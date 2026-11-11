@@ -124,6 +124,9 @@ type client struct {
 	// writes it in CF-Connecting-IP next to its secret. Empty is a client
 	// that reaches the server outside Cloudflare; all of them count as one.
 	ip string
+	// forged is the CF-Connecting-IP that a client outside Cloudflare writes
+	// itself, without the secret.
+	forged string
 }
 
 func (a *testAPI) newClient(t *testing.T) *client {
@@ -164,6 +167,9 @@ func (c *client) do(method, path, body string) *http.Response {
 	if c.ip != "" {
 		req.Header.Set("X-Quitsie-Cloudflare-Secret", cloudflareSecret)
 		req.Header.Set("CF-Connecting-IP", c.ip)
+	}
+	if c.forged != "" {
+		req.Header.Set("CF-Connecting-IP", c.forged)
 	}
 	resp, err := c.http.Do(req)
 	if err != nil {

@@ -197,8 +197,14 @@ func TestRequestsThatLoseTheLastEmailCostTheSenderNothing(t *testing.T) {
 
 	f.clock.Advance(sendCooldown / 2) // a new hour of the budget, still within the cooldown
 
-	for _, email := range lost {
-		if err := f.newBrowser(anaIP).requestCodeNow(email); err != nil {
+	for i, email := range lost {
+		// After the code that won the race, the IP has nine left in its hour.
+		// Had the losers counted against it, it would have none.
+		ip := anaIP
+		if i >= 9 {
+			ip = fmt.Sprintf("198.51.100.%d", i)
+		}
+		if err := f.newBrowser(ip).requestCodeNow(email); err != nil {
 			t.Errorf("%s: err = %v, want the code it lost the race for", email, err)
 		}
 	}

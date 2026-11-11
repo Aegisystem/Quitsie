@@ -330,6 +330,52 @@ func TestAnEmailWaitsAMinuteBetweenLoginCodes(t *testing.T) {
 	wantStatus(t, request(2), http.StatusNoContent)
 }
 
+// Each code is an email out of the server's budget. Many IPv6 customers get a
+// /56, which holds 256 of the /64 that the other limits count by, so the
+// codes count by the /56.
+func TestAnIPGetsTenLoginCodesPerHour(t *testing.T) {
+	var clk *clock
+	api := newTestAPI(t, withClock(&clk))
+	request := func(ip string, i int) *http.Response {
+		browser := api.newClient(t)
+		browser.ip = ip
+		return browser.do(http.MethodPost, "/api/v1/auth/login-code", fmt.Sprintf(`{"email":"user%d@example.com"}`, i))
+	}
+	for i := range 10 {
+		wantStatus(t, request(fmt.Sprintf("2001:db8:1:2%02x::1", i), i), http.StatusNoContent)
+	}
+	clk.Advance(20 * time.Minute)
+
+	resp := request("2001:db8:1:2ff::9", 10)
+
+	wantProblem(t, resp, http.StatusTooManyRequests, httpapi.ProblemCodeRateLimited)
+	if got := resp.Header.Get("Retry-After"); got != "2400" {
+		t.Errorf("Retry-After = %q, want the 2400 seconds left of the hour", got)
+	}
+	wantStatus(t, request("2001:db8:1:300::1", 11), http.StatusNoContent)
+}
+
+// What the limit is for: whoever reached Railway without going through
+// Cloudflare could ask for a code for each of many emails, with a new address
+// on each request, and spend the server's budget of emails for everyone.
+func TestWhoeverSkipsCloudflareSharesTheLoginCodesOfOneIP(t *testing.T) {
+	api := newTestAPI(t)
+	request := func(i int) *http.Response {
+		attacker := api.newClient(t)
+		attacker.forged = fmt.Sprintf("198.51.100.%d", i)
+		return attacker.do(http.MethodPost, "/api/v1/auth/login-code", fmt.Sprintf(`{"email":"user%d@example.com"}`, i))
+	}
+	for i := range 10 {
+		wantStatus(t, request(i), http.StatusNoContent)
+	}
+
+	wantProblem(t, request(10), http.StatusTooManyRequests, httpapi.ProblemCodeRateLimited)
+
+	visitor := api.newClient(t)
+	visitor.ip = "203.0.113.7"
+	wantStatus(t, visitor.do(http.MethodPost, "/api/v1/auth/login-code", `{"email":"ana@example.com"}`), http.StatusNoContent)
+}
+
 // The client must tell this apart from its own limits: nobody gets a code.
 func TestASpentBudgetOfEmailsIsAServiceProblem(t *testing.T) {
 	var clk *clock
