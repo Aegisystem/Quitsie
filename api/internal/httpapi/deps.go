@@ -31,11 +31,9 @@ type Deps struct {
 	PushKey string
 	// Now is the clock of the limit of requests per IP; nil is time.Now.
 	Now func() time.Time
-	// HTTPSOrigin is the public origin in production, such as
-	// "https://quitsie.app", and empty in development. With it every
-	// response asks for HTTPS only (HSTS), and a visitor Cloudflare saw on
-	// plain HTTP is sent there.
-	HTTPSOrigin string
+	// HSTS makes every response ask for HTTPS only. Production sets it;
+	// it would lock a developer's localhost out of plain HTTP.
+	HSTS bool
 }
 
 // WithDeps gives the handlers their dependencies.

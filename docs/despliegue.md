@@ -86,7 +86,12 @@ Un rebote de tipo **Transient** no bloquea la dirección en Resend: el siguiente
 
 ## HTTPS
 
-Railway termina el TLS. El servidor envía `Strict-Transport-Security: max-age=31536000` en producción. La redirección de `http://` a `https://` que hace el propio servidor solo actúa detrás de `cloudflared` en la misma máquina, así que en Railway depende de Railway. Compruébalo tras el primer despliegue: `curl -sI http://<dominio>/` debe responder con una redirección a `https://`, y `curl -sI https://<dominio>/` debe traer `strict-transport-security`.
+Railway termina el TLS. El servidor envía `Strict-Transport-Security: max-age=31536000` en producción y no redirige a nadie a `https://`: Railway escribe `X-Forwarded-Proto: https` en todas las peticiones, así que el servidor no sabe quién llegó por `http://`. La redirección la hacen los dos proxies:
+
+- **Cloudflare.** En **SSL/TLS → Edge Certificates**, activa **Always Use HTTPS**. Sin ese ajuste, quien escriba `http://<dominio>` recibe la app sin cifrar entre su navegador y Cloudflare.
+- **Railway.** Redirige por su cuenta lo que le llega por `http://` sin pasar por Cloudflare.
+
+Compruébalo tras el primer despliegue: `curl -sI http://<dominio>/` debe responder con una redirección a `https://`, y `curl -sI https://<dominio>/` debe traer `strict-transport-security`.
 
 ### Caché de Cloudflare
 

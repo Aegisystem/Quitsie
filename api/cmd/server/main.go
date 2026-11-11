@@ -8,8 +8,7 @@
 //	PORT                          the port a hosting platform such as Railway routes to
 //	QUITSIE_DATABASE_URL          required: the PostgreSQL database, such as postgres://user:password@host:5432/quitsie
 //	                              (development defaults to the one in compose.yaml)
-//	QUITSIE_ENV                   production (default) or development; production also sends HSTS and
-//	                              redirects visitors Cloudflare saw on plain HTTP to QUITSIE_PUBLIC_ORIGIN
+//	QUITSIE_ENV                   production (default) or development; production also sends HSTS
 //	QUITSIE_PUBLIC_ORIGIN         required: the app's base URL, such as https://quitsie.app (development defaults to http://localhost:8080)
 //	QUITSIE_MAIL                  resend (default), or log to write emails to the log, login codes included; development only
 //	QUITSIE_RESEND_API_KEY        required with resend: the key of the Resend account
@@ -158,7 +157,7 @@ func run(logger *slog.Logger) error {
 		Auth:         authService,
 		Origins:      cfg.origins,
 		InviteSecret: cfg.inviteSecret,
-		HTTPSOrigin:  cfg.httpsOrigin,
+		HSTS:         cfg.hsts,
 		PushKey:      pushKey,
 	})
 	srv := newHTTPServer(cfg.addr, httpapi.NewHandler(api, pwa), logger)
@@ -239,7 +238,7 @@ func newHTTPServer(addr string, handler http.Handler, logger *slog.Logger) *http
 		// connections, such as running out of file descriptors. All of it
 		// needs the owner, and the alerts only read level=ERROR; without
 		// this it goes through the log package at INFO. The server speaks
-		// plain HTTP to cloudflared, so the TLS handshake errors that
+		// plain HTTP to Railway's proxy, so the TLS handshake errors that
 		// scanners cause never reach it.
 		ErrorLog: slog.NewLogLogger(logger.Handler(), slog.LevelError),
 	}
@@ -252,9 +251,8 @@ type config struct {
 	// origins are the app's own origins; requests that change data must
 	// come from one of them.
 	origins []string
-	// httpsOrigin is the public origin in production, where the server
-	// enforces HTTPS; empty in development.
-	httpsOrigin string
+	// hsts makes the server ask for HTTPS only; production sets it.
+	hsts bool
 	// logMail writes emails to the log instead of sending them with resend.
 	logMail bool
 	resend  mail.ResendConfig
@@ -324,9 +322,7 @@ func loadConfig(getenv func(string) string) (config, error) {
 	if development && origin != viteOrigin {
 		cfg.origins = append(cfg.origins, viteOrigin)
 	}
-	if !development {
-		cfg.httpsOrigin = origin
-	}
+	cfg.hsts = !development
 
 	if _, ok := domain.Currency(cfg.defaultCurrency).Decimals(); !ok {
 		return config{}, fmt.Errorf("QUITSIE_DEFAULT_CURRENCY is not an ISO 4217 currency: %q", cfg.defaultCurrency)
