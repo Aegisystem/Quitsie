@@ -61,6 +61,8 @@ Reglas acordadas durante el diseño. El vocabulario sigue [CONTEXT.md](../CONTEX
 - Quien entra por primera vez con un código llega sin nombre; la aplicación le pide su nombre y su Moneda preferida, proponiendo la del idioma del navegador. Con Google, el nombre viene de la cuenta. Sin nombre no se pueden crear Grupos ni Amistades.
 - Un código solo sirve en el navegador que lo pidió, y pedir otro desde ese navegador invalida el anterior.
 - Después de enviar un código, el email espera un minuto para recibir otro. Un navegador en el que el Usuario ya entró espera por su cuenta. Si el correo no se pudo enviar, no hay espera.
+- Una misma IP recibe 10 códigos por hora, sean para el email que sean. Un correo que no se pudo enviar no cuenta.
+- Cuando no se envía otro código por una de esas dos esperas, la pantalla de entrada pasa igualmente a pedir el código: el que ese navegador pidió antes sigue sirviendo.
 - Un email admite 10 códigos equivocados en 24 horas desde navegadores en los que su Usuario nunca entró, sumando todos sus códigos. Al llegar a 10 no se aceptan ni se envían códigos a esos navegadores hasta que pasen 24 horas desde el primer fallo. Un navegador en el que el Usuario ya entró no cuenta en esos 10 y tiene otros 10 propios, así que nadie puede impedirle entrar ([ADR 0011](adr/0011-codigos-atados-al-navegador.md)). Google y las sesiones abiertas siguen funcionando.
 - El email de un Miembro pendiente o de un Amigo pendiente cumple la misma regla que el del inicio de sesión: una dirección simple de 254 caracteres como máximo.
 - Un Usuario puede estar en 200 Grupos y Amistades. Otra persona puede crear una Amistad con ese Usuario por encima de ese número.

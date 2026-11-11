@@ -9,7 +9,8 @@ Quitsie corre en Railway como dos servicios del mismo proyecto: la aplicación, 
 3. Verifica en Resend el dominio del remitente de los códigos ([Dominio del correo](#dominio-del-correo)).
 4. Rellena las variables de la aplicación ([Variables](#variables)).
 5. En **Settings → Networking**, pulsa **Generate Domain**, o añade tu dominio propio. Railway detecta el puerto por la variable `PORT`, que él mismo pone.
-6. En **Settings → Deploy**, activa **Wait for CI**. Así Railway solo despliega los commits de `main` que pasaron la CI.
+6. Si el dominio pasa por el proxy de Cloudflare, configura el secreto ([Secreto de Cloudflare](#secreto-de-cloudflare)) y activa **Always Use HTTPS** ([HTTPS](#https)).
+7. En **Settings → Deploy**, activa **Wait for CI**. Así Railway solo despliega los commits de `main` que pasaron la CI.
 
 Al terminar, `https://<dominio>/` muestra la PWA y `https://<dominio>/api/v1/health` responde `{"status":"ok","database":"ok","version":"<commit>"}`.
 
@@ -34,6 +35,7 @@ Opcionales:
 | `QUITSIE_GOOGLE_CLIENT_ID` y `QUITSIE_GOOGLE_CLIENT_SECRET` | Inicio de sesión con Google. Sin los dos, el botón no aparece. La URI de redirección del cliente en Google Cloud es `<QUITSIE_PUBLIC_ORIGIN>/api/v1/auth/google/callback`. |
 | `QUITSIE_DEFAULT_CURRENCY` | Moneda preferida de los Usuarios nuevos. Por defecto, `USD`. |
 | `QUITSIE_MAIL_MAX_PER_HOUR` y `QUITSIE_MAIL_MAX_PER_DAY` | Tope de correos con códigos por hora y por 24 horas. Por defecto 40 y 90, por debajo de los 100 diarios gratuitos de Resend. |
+| `QUITSIE_CLOUDFLARE_SECRET` | 32 bytes o más que una regla de Cloudflare añade a cada petición. Con ella, los límites por IP cuentan a cada visitante por su dirección. Sin ella, todos cuentan como uno ([Secreto de Cloudflare](#secreto-de-cloudflare)). |
 | `QUITSIE_VAPID_PUBLIC_KEY` y `QUITSIE_VAPID_PRIVATE_KEY` | Notificaciones push. Genera el par en tu equipo con `go -C api run ./cmd/server vapid-keys`. Sin las dos, el servidor no envía notificaciones. Cambiarlas apaga las notificaciones de cada dispositivo hasta que la PWA se abre allí de nuevo. Guarda la privada también en tu gestor de contraseñas. |
 | `GOMEMLIMIT` | Memoria a partir de la cual Go recoge basura con más fuerza, por ejemplo `400MiB` en un plan de 512 MB. |
 
@@ -106,6 +108,43 @@ Debe decir `cache-control: no-cache` y `cf-cache-status: DYNAMIC` o `BYPASS`. Si
 1. En **Caching → Configuration**, **Browser Cache TTL** debe estar en **Respect Existing Headers**.
 2. En **Caching → Cache Rules**, crea una regla para la ruta `/sw.js` con **Bypass cache**, antes de cualquier regla que guarde archivos `.js`.
 
+## Secreto de Cloudflare
+
+El servidor cuenta los límites por IP con la dirección que Cloudflare escribe en `CF-Connecting-IP`. Solo la cree cuando la petición trae un secreto que añade una regla de Cloudflare ([ADR 0014](adr/0014-secreto-compartido-con-cloudflare.md)). Railway atiende también a quien llega sin pasar por Cloudflare, y ese visitante puede escribir la dirección que quiera.
+
+Sin el secreto, todos los visitantes cuentan como uno y comparten 300 peticiones por minuto, 60 verificaciones de código por hora y 10 códigos por hora. La regla y la variable se pueden poner antes de desplegar: un servidor anterior las ignora.
+
+1. Genera el secreto en tu equipo y guárdalo en tu gestor de contraseñas. No lo pegues en un chat ni en el repositorio.
+
+   ```bash
+   openssl rand -hex 32
+   ```
+
+2. En Cloudflare, abre el dominio y ve a **Rules → Overview**. Pulsa **Create rule** y elige **Request Header Transform Rule**.
+   - **Rule name:** un nombre que reconozcas, por ejemplo `Secreto de Quitsie`.
+   - **When incoming requests match:** **Custom filter expression**, con **Field** `Hostname`, **Operator** `equals` y **Value** el host de la aplicación, sin `https://`. Así el secreto no viaja a otros sitios del mismo dominio.
+   - **Modify request header:** **Set static**, con **Header name** `X-Quitsie-Cloudflare-Secret` y **Value** el secreto.
+   - Pulsa **Deploy**.
+3. En Railway, añade a la aplicación la variable `QUITSIE_CLOUDFLARE_SECRET` con el mismo valor. Railway vuelve a desplegar.
+4. En Cloudflare, comprueba en **SSL/TLS → Overview** que el modo es **Full**, que es el que pide Railway. Con **Flexible**, el secreto viajaría sin cifrar entre Cloudflare y Railway.
+5. En Cloudflare, deja apagado el Managed Transform **Remove visitor IP headers**. Encendido, quita `CF-Connecting-IP` y todos los visitantes cuentan como uno.
+
+Lo que llega a Railway sin pasar por Cloudflare, por ejemplo por el dominio `*.up.railway.app`, cuenta siempre como un solo visitante.
+
+### Comprobar el secreto
+
+1. En los logs de Railway, el arranque no debe traer la línea `QUITSIE_CLOUDFLARE_SECRET is not set`.
+2. Desde tu equipo, agota tu propio cupo durante cerca de un minuto:
+
+   ```bash
+   seq 3000 | xargs -P 10 -I{} curl -s -o /dev/null -w '%{http_code}\n' https://<dominio>/api/v1/auth/methods | sort | uniq -c
+   ```
+
+3. Mientras el comando corre, abre la aplicación en un teléfono con datos móviles, sin la Wi-Fi de tu equipo, y entra. Debe funcionar con normalidad.
+4. Al terminar, el comando muestra cuántas respuestas hubo de cada código. Debe haber muchas `429`: tu equipo agotó su cupo.
+
+Si el teléfono también recibe errores mientras el comando corre, los dos comparten cupo. Las causas son tres: el valor de la regla y el de la variable no coinciden, la regla no se aplica a ese host, o `CF-Connecting-IP` no llega.
+
 ## Respaldo y restauración
 
 Los respaldos son los de la base de Railway (pestaña **Backups** del servicio PostgreSQL). Comprueba en tu plan si están incluidos y cada cuánto se hacen.
@@ -128,7 +167,7 @@ QUITSIE_DATABASE_URL='<DATABASE_PUBLIC_URL de la base>' go -C api run ./cmd/serv
 
 - **Logs.** En Railway, pestaña **Logs** de la aplicación. El servidor escribe en `level=ERROR` todo lo que necesita al dueño, también cada respuesta 500.
 - **Avisos.** Railway avisa por email cuando un despliegue falla o el servicio se cae (Settings de la cuenta → Notifications). Para enterarte de que la aplicación no responde aunque Railway la vea viva, crea un monitor externo gratuito, por ejemplo en UptimeRobot, que pida `https://<dominio>/api/v1/health` cada 5 minutos.
-- **Límites de peticiones.** Cada IP tiene 300 peticiones por minuto. Un cuerpo no puede pasar de 2 MiB, ni de 4 KiB en `POST /auth/*`. Cada Usuario envía como máximo 5 MiB de cambios por hora. Un `429` de estos límites es normal y el cliente reintenta.
+- **Límites de peticiones.** Cada IP tiene 300 peticiones por minuto, 60 verificaciones de código por hora y 10 códigos por hora. Un cuerpo no puede pasar de 2 MiB, ni de 4 KiB en `POST /auth/*`. Cada Usuario envía como máximo 5 MiB de cambios por hora. Un `429` de estos límites es normal y el cliente reintenta.
 
 ### Rotar secretos
 
@@ -136,11 +175,12 @@ QUITSIE_DATABASE_URL='<DATABASE_PUBLIC_URL de la base>' go -C api run ./cmd/serv
 | --- | --- |
 | Clave de Resend | Crea una nueva en Resend, cámbiala en las variables de Railway y revoca la vieja. Railway vuelve a desplegar al cambiar una variable. |
 | Secreto de invitaciones | Cámbialo en las variables. Revoca todos los Enlaces de invitación a la vez. |
+| Secreto de Cloudflare | Genera otro y cámbialo en la regla de Cloudflare y en la variable de Railway ([Secreto de Cloudflare](#secreto-de-cloudflare)). Mientras no coinciden, la aplicación funciona y todos los visitantes cuentan como uno. |
 | Contraseña de la base | Desde el servicio PostgreSQL de Railway. `QUITSIE_DATABASE_URL` la toma por referencia, así que basta con volver a desplegar la aplicación. |
 
 ## Límites conocidos
 
-- **Todos los visitantes cuentan como la IP del proxy de Railway.** El servidor solo cree la IP del visitante si la conexión llega por loopback, que era como entraba `cloudflared` en la VM ([limits.go](../api/internal/httpapi/limits.go)). En Railway llega desde su proxy. Los límites por IP (300 peticiones por minuto, 60 verificaciones de código por hora) los comparten entonces todos los Usuarios. Está en [pendientes](pendientes.md#2-seguridad).
+- **Lo que no pasa por Cloudflare cuenta como un solo visitante.** Railway sirve la aplicación también por su dominio `*.up.railway.app`. Esas peticiones comparten un solo cupo de los límites por IP, sea quien sea. Sin `QUITSIE_CLOUDFLARE_SECRET`, o si su valor no coincide con el de la regla, les pasa lo mismo a todos los visitantes ([Secreto de Cloudflare](#secreto-de-cloudflare)).
 - **Una sola instancia.** Los límites de peticiones viven en la memoria del proceso. Con dos réplicas, cada una contaría por su lado.
 
 ## Si algo falla
@@ -151,6 +191,6 @@ QUITSIE_DATABASE_URL='<DATABASE_PUBLIC_URL de la base>' go -C api run ./cmd/serv
 | El log dice `open database` | `QUITSIE_DATABASE_URL` no apunta a la base, o la base no está arrancada. |
 | El build falla en `npm run build` o en `go build` | El mismo fallo aparece en el job `image` de la CI. Reprodúcelo con `docker build .`. |
 | Tras restaurar, `record-restore` dice «check the clock» | El reloj de la máquina donde lo ejecutas va tan adelantado que el salto pasaría de lo que la PWA lee con exactitud. Corrige la hora y repítelo. |
-| Muchos `429` con poco tráfico | Los límites por IP ([Límites conocidos](#límites-conocidos)). |
+| Muchos `429` con poco tráfico, o «Pediste demasiados códigos» a quien no los pidió | Todos los visitantes cuentan como uno: falta `QUITSIE_CLOUDFLARE_SECRET` o no coincide con la regla de Cloudflare ([Secreto de Cloudflare](#secreto-de-cloudflare)). |
 | Un teléfono no ve el aviso de versión nueva horas después de desplegar | Cloudflare guarda `/sw.js` en su caché ([Caché de Cloudflare](#caché-de-cloudflare)). |
 | Resend muestra un rebote con `Message lacks SPF/DKIM/DMARC Auth Records`, o los códigos llegan a spam | Falta un registro DNS del correo, casi siempre el DMARC ([Dominio del correo](#dominio-del-correo)). |

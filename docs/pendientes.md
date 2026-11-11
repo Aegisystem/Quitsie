@@ -22,7 +22,7 @@ Borra cada punto de aquí cuando quede terminado. Antes de actuar sobre un punto
 
 Los 14 hallazgos de [revision-seguridad.md](revision-seguridad.md) están arreglados. Quedan las comprobaciones que solo se pueden hacer al desplegar (sección 4).
 
-- **Límites por IP detrás del proxy de Railway.** El servidor solo cree la IP del visitante en `CF-Connecting-IP`, y solo si la conexión llega por loopback ([limits.go](../api/internal/httpapi/limits.go)). En Railway todas las conexiones llegan desde su proxy, así que todos los visitantes comparten los límites por IP: 300 peticiones por minuto y 60 verificaciones por hora. Por eso tampoco hay un cupo de envío de códigos por IP. Mientras falte, quien pida códigos para muchos emails distintos puede agotar el tope global de 40 correos por hora, y entonces nadie recibe códigos hasta la hora siguiente. Arreglarlo exige saber qué encabezado escribe el proxy de Railway con la IP real y en qué conexiones se puede creer.
+Desde el 2026-11-10, los límites por IP cuentan a cada visitante por la dirección que escribe Cloudflare, y el servidor solo la cree con un secreto que añade Cloudflare ([ADR 0014](adr/0014-secreto-compartido-con-cloudflare.md)). Falta configurarlo en producción (sección 4).
 
 ## 3. Decisiones del dueño
 
@@ -46,7 +46,7 @@ Ningún agente debe tomar estas decisiones por su cuenta.
 | 11 | Moneda propuesta | `es` propone EUR y `es-419` no propone ninguna, lo que encaja mal con Latinoamérica |
 | 12 | Formato de importes | Se agrupan miles siempre, y es-CO escribe «EUR 88» |
 | 13 | Registros rechazados sin conexión | Descartar y corregir están deshabilitados, aunque ambos son locales |
-| 14 | Cifras de los límites de entrada | Provisionales: 40 correos por hora y 90 al día entre todos, un minuto de espera entre códigos por email y por dispositivo conocido (decidido el 2026-11-07), y 10 fallos al día por email y por dispositivo conocido. Se cambian por entorno las dos primeras y en `api/internal/auth/` el resto |
+| 14 | Cifras de los límites de entrada | Provisionales: 40 correos por hora y 90 al día entre todos, 10 códigos por hora por IP (decidido el 2026-11-10), un minuto de espera entre códigos por email y por dispositivo conocido (decidido el 2026-11-07), y 10 fallos al día por email y por dispositivo conocido. Se cambian por entorno las dos primeras y en `api/internal/auth/` el resto |
 | 15 | HSTS con `includeSubDomains` y `preload` | Solo la precarga protege la primera visita por `http://`, y exige `includeSubDomains`, que alcanza a los demás subdominios del dominio |
 | 17 | Banda a cero mientras se vacía su fila | Una moneda que llega a cero sigue en verde con «0» hasta que sus fichas salen. La alternativa es mostrar la cifra anterior |
 | 18 | Error de un campo por persona | Aparece al intentar guardar, como el del total. La alternativa es mostrarlo al salir del campo |
@@ -57,8 +57,10 @@ Lo tiene que hacer el dueño, porque exige abrir cuentas, comprar el dominio y p
 
 El 2026-11-10 se comprobó en `quitsie.aegisystem.xyz` que `http://` redirige a `https://`, que `https://` trae `strict-transport-security` y que Cloudflare ya no guarda `/sw.js` (`cache-control: no-cache` y `cf-cache-status: DYNAMIC`).
 
-Falta comprobar:
+Falta hacer y comprobar:
 
+- **El secreto de Cloudflare.** Crear la regla en Cloudflare, poner `QUITSIE_CLOUDFLARE_SECRET` en Railway y seguir [Comprobar el secreto](despliegue.md#comprobar-el-secreto). Hasta entonces todos los visitantes cuentan como uno y comparten 300 peticiones por minuto, 60 verificaciones de código por hora y 10 códigos por hora.
+- **Always Use HTTPS** activo en Cloudflare ([despliegue.md](despliegue.md#https)). El servidor ya no redirige a `https://`.
 - Que los respaldos de la base estén activos, y una restauración de prueba con `record-restore` en una base aparte.
 - Un correo real de Resend y, si se activa, un inicio de sesión real con Google.
 - La memoria y el tiempo de `GET /sync` en el plan de Railway elegido.
@@ -78,10 +80,6 @@ Falta comprobar:
 - Tras reconstruir la réplica por un `410`, o cuando un pull completo no trae un registro que el servidor había aceptado, ese registro vuelve a la cola pero sale en la siguiente sincronización, no en la misma. Mientras tanto, Registros lo muestra sin sincronizar aunque haya conexión.
 - Dos pestañas abiertas ejecutan dos motores de sincronización sobre la misma IndexedDB sin coordinarse: un pull atrasado de una puede retroceder el cursor o soltar un libro un momento.
 - Si alguien borra su cuenta desde otro dispositivo y en este entra otro Usuario, los registros sin sincronizar de la cuenta borrada quedan apartados y ocultos en IndexedDB para siempre: nadie puede enviarlos ni descartarlos.
-
-**Documentación:**
-
-- `api/internal/httpapi/limits.go`, `headers.go` y sus comentarios hablan de `cloudflared` y del túnel, que ya no existen. Se corrigen con el arreglo de los límites por IP (sección 2).
 
 **Limpieza:** en la máquina del dueño, los worktrees `api-endurecer-48a67d`, `web-escritura-c04f34`, `web-grupos-25864f` y `web-lectura-59f6a4` ya están integrados en `main`.
 
@@ -107,7 +105,7 @@ Falta comprobar:
 QUITSIE_ENV=development QUITSIE_MAIL=log QUITSIE_ADDR=127.0.0.1:18731 QUITSIE_PUBLIC_ORIGIN=http://prueba.localhost:18731 ./quitsie
 ```
 
-Los códigos de acceso salen en el log. `curl` no guarda las cookies `Secure` por `http`, así que léelas de `Set-Cookie` y reenvíalas: un código solo se comprueba con la cookie de flujo que dejó su petición. Por loopback puedes rotar `CF-Connecting-IP` en las pruebas para no chocar con el límite por IP. Sin `QUITSIE_DATABASE_URL`, el modo de desarrollo usa la base de `compose.yaml`.
+Los códigos de acceso salen en el log. `curl` no guarda las cookies `Secure` por `http`, así que léelas de `Set-Cookie` y reenvíalas: un código solo se comprueba con la cookie de flujo que dejó su petición. Sin más ajustes, todas tus peticiones cuentan como una misma IP. Para probar como varios visitantes, arranca con `QUITSIE_CLOUDFLARE_SECRET=<32 caracteres o más>` y envía en cada petición `X-Quitsie-Cloudflare-Secret` con ese valor y `CF-Connecting-IP` con la dirección que quieras. Sin `QUITSIE_DATABASE_URL`, el modo de desarrollo usa la base de `compose.yaml`.
 
 **Migraciones.** Solo avanzan, y cada una debe ser compatible con la versión anterior del binario, porque un despliegue puede revertir el binario.
 
@@ -117,7 +115,7 @@ Los códigos de acceso salen en el log. `curl` no guarda las cookies `Secure` po
 
 | Límite | Archivo |
 | --- | --- |
-| Peticiones por IP, bytes por Usuario, cuerpos, pulls a la vez, y cómo se agrupa IPv6 | `api/internal/httpapi/limits.go` |
+| Peticiones por IP, a quién se le cree la IP, bytes por Usuario, cuerpos, pulls a la vez, y cómo se agrupa IPv6 | `api/internal/httpapi/limits.go` |
 | Miembros por Grupo, libros por Usuario | `api/internal/httpapi/handlers_ledgers.go` |
 | Filas por libro | `api/internal/ledgers/ledgers.go` |
 | Filas por pull | `api/internal/sync/pull.go` |
@@ -135,5 +133,6 @@ Los códigos de acceso salen en el log. `curl` no guarda las cookies `Secure` po
 - `openapi_types.Email` valida al escribir la respuesta, así que un campo de salida con `format: email` puede romper la respuesta entera.
 - Los archivos de `assets/` son `immutable`, así que una prueba de precache debe exigir `response.fromServiceWorker()`.
 - `npx playwright test --repeat-each` comparte servidor y agota los 40 correos por hora: todo falla a los 10 s. Para repetir la suite, lánzala varias veces seguidas; cada ejecución tiene su servidor y su base.
+- Un servidor con `QUITSIE_CLOUDFLARE_SECRET` cuenta como un solo visitante todo lo que llega sin la cabecera del secreto. En las pruebas de Go, los clientes sin `ip` comparten por eso 10 códigos por hora.
 - La PWA enruta tras `#`: un libro es `/#/ledgers/<id>`, no `/groups/<id>`.
 - Tras restaurar un respaldo, las versiones de sincronización saltan a unos 1,8·10^15. Siguen siendo enteros exactos en JavaScript hasta el año 2255.

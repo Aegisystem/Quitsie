@@ -19,7 +19,8 @@ flowchart LR
     Proxy[Proxy HTTPS] --> Bin[Binario Go<br/>PWA + API]
     Bin --> DB[(PostgreSQL)]
   end
-  Motor <-->|HTTPS /api/v1| Proxy
+  Motor <-->|HTTPS /api/v1| CF[Cloudflare]
+  CF <--> Proxy
   Bin -->|códigos de acceso| Resend[Resend]
   Bin -->|notificaciones cifradas| PushSvc[Servicios push<br/>de los navegadores]
   PushSvc -.-> SW
@@ -57,6 +58,7 @@ flowchart LR
 | Servidor | Railway, con la imagen del `Dockerfile` |
 | Base de datos | PostgreSQL en Railway, en el mismo proyecto |
 | TLS y dominio | Railway |
+| Proxy delante de Railway | Cloudflare, plan gratuito: DNS, «Always Use HTTPS» y el secreto que marca sus peticiones ([ADR 0014](adr/0014-secreto-compartido-con-cloudflare.md)) |
 | Respaldos | Los de la base de Railway |
 | Emails | Resend, gratis hasta 3.000 al mes |
 | Código y CI | GitHub + Actions |
@@ -147,11 +149,11 @@ Los Saldos no se guardan: se calculan sumando, lo cual es rápido a esta escala.
 - En producción el servidor envía HSTS de un año. Railway termina el TLS. La redirección de `http://` a `https://` la hace Cloudflare con «Always Use HTTPS», y Railway para lo que le llega sin pasar por Cloudflare ([despliegue](despliegue.md#https)). El servidor no redirige: Railway escribe `X-Forwarded-Proto: https` en todas las peticiones, así que no sabe quién llegó por HTTP.
 - Los códigos de acceso caducan a los 10 minutos y admiten 5 intentos como máximo. Cada código queda atado al navegador que lo pidió con una cookie de flujo, así que nadie más puede comprobarlo ni gastar sus intentos ([ADR 0011](adr/0011-codigos-atados-al-navegador.md)).
 - Cada inicio de sesión deja una cookie de dispositivo conocido, que cerrar sesión no borra. Un dispositivo conocido no gasta los límites por email, que cualquiera puede agotar, y tiene los suyos: un código por minuto y 10 equivocados al día. Así nadie puede impedir entrar a quien ya entró en ese navegador.
-- Después de enviar un código, el email espera un minuto para recibir otro. Los navegadores desconocidos comparten esa espera. Un envío que el servicio de correo rechaza no cuenta, así que un fallo no hace esperar a nadie. No hay cupo de envíos por IP: detrás del proxy de Railway todos compartirían la misma. El tope global de correos limita los envíos de todos juntos.
+- Después de enviar un código, el email espera un minuto para recibir otro. Los navegadores desconocidos comparten esa espera. Un envío que el servicio de correo rechaza no cuenta, así que un fallo no hace esperar a nadie. Una IP recibe 10 códigos por hora, sean para el email que sean, y en IPv6 se cuenta por /56. Así una sola dirección no agota el tope global de correos. Cuando el servidor no envía un código por una de estas esperas, la PWA pasa igualmente a pedir el código: el que ese navegador pidió antes sigue sirviendo.
 - El servidor envía como máximo 40 correos por hora y 90 en 24 horas, entre todos, por debajo de los 100 diarios gratuitos de Resend. Las cifras son provisionales y se cambian con `QUITSIE_MAIL_MAX_PER_HOUR` y `QUITSIE_MAIL_MAX_PER_DAY`. La cuenta vive en la base, así que un reinicio no la borra. Al agotarse, pedir un código responde `503 mail_budget_spent` y el log tiene una línea `ERROR` por cada hora o día agotado.
 - Un email admite 10 códigos equivocados al día desde navegadores desconocidos, sumando todos sus códigos. Esa cuenta y la de cada dispositivo conocido viven en la base, así que un código nuevo o un reinicio no dan más intentos. Una IP admite 60 verificaciones por hora.
 - Los tokens de sesión son aleatorios y en la base solo se guarda su hash. Los Enlaces de invitación se derivan con un HMAC de una clave del servidor, así que no se guardan ([ADR 0010](adr/0010-enlaces-de-invitacion-derivados.md)).
-- Hay un límite de 300 peticiones por minuto por IP en Go. El servidor solo cree `CF-Connecting-IP` si la conexión llega por loopback, para que un cliente no pueda inventar su IP. En Railway las conexiones llegan desde su proxy, así que todos los visitantes cuentan como la IP del proxy ([pendientes](pendientes.md#2-seguridad)).
+- Hay un límite de 300 peticiones por minuto por IP en Go. La IP del visitante es la que Cloudflare escribe en `CF-Connecting-IP`, y el servidor solo la cree si la petición trae el secreto que añade una regla de Cloudflare ([ADR 0014](adr/0014-secreto-compartido-con-cloudflare.md)). Lo que llega a Railway sin pasar por Cloudflare cuenta como un solo visitante.
 - El cuerpo de las peticiones a la API tiene un tope de 2 MiB, suficiente para el lote más grande de `POST /records`. En `POST /auth/*` el tope es de 4 KiB.
 - Cada Usuario tiene un presupuesto de 5 MiB de cambios por hora, además del límite de peticiones.
 - Un Grupo admite 200 Miembros, un Usuario 200 libros y un libro 200.000 filas (ver [reglas](reglas-de-negocio.md#límites)).
@@ -206,5 +208,5 @@ Los Saldos no se guardan: se calculan sumando, lo cual es rápido a esta escala.
 ## Límites conocidos y cuándo crecer
 
 - Una sola instancia: los límites de peticiones viven en la memoria del proceso. Para tener varias, esos contadores tendrían que pasar a la base o a otro almacén compartido.
-- Detrás del proxy de Railway, todos los visitantes cuentan como la misma IP en los límites por IP ([despliegue.md](despliegue.md#límites-conocidos)).
+- Lo que llega sin pasar por Cloudflare cuenta como un solo visitante en los límites por IP. Sin el secreto de Cloudflare, les pasa a todos ([despliegue.md](despliegue.md#límites-conocidos)).
 - Para crecer, se sube el plan de Railway o se mueve la base a otro proveedor de PostgreSQL cambiando `QUITSIE_DATABASE_URL`.
