@@ -8,7 +8,7 @@ Borra cada punto de aquí cuando quede terminado. Antes de actuar sobre un punto
 
 - **API:** las 40 operaciones de `openapi.yaml` están implementadas.
 - **PWA:** usa datos reales: réplica, cola, formularios, Grupos, Amistades, invitaciones y sesiones.
-- **Calidad:** la CI corre con Go 1.26.10 las pruebas de Go contra PostgreSQL, las de la web y las de punta a punta, `govulncheck`, `actionlint` y la compilación de la imagen de Railway.
+- **Calidad:** la CI corre con Go 1.26.11 las pruebas de Go contra PostgreSQL, las de la web y las de punta a punta, `govulncheck`, `actionlint` y la compilación de la imagen de Railway.
 - **Seguridad:** los 14 hallazgos están arreglados. El detalle está en [revision-seguridad.md](revision-seguridad.md).
 - **Producción:** Quitsie se despliega en Railway con PostgreSQL ([ADR 0012](adr/0012-postgres-en-railway.md), [despliegue.md](despliegue.md)). Las comprobaciones de la sección 4 están sin hacer.
 
